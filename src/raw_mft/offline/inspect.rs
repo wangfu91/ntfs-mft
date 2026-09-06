@@ -75,15 +75,20 @@ impl Inspection {
         let header_size = if attr.is_non_resident() { 64 } else { 24 };
         let valid_name =
             valid_name && (!attr.has_name() || attr.header.name_offset as usize >= header_size);
+        let payload_min = if attr.has_name() {
+            header_size.max(attr.header.name_offset as usize + attr.header.name_length as usize * 2)
+        } else {
+            header_size
+        };
         let valid_payload = if attr.is_non_resident() {
             attr.nonresident_header().is_some_and(|h| {
                 h.lowest_vcn >= 0
-                    && h.data_runs_offset as usize >= header_size
+                    && h.data_runs_offset as usize >= payload_min
                     && (h.data_runs_offset as usize) < attr.len()
             })
         } else {
             attr.resident_header()
-                .is_some_and(|h| h.value_offset as usize >= header_size)
+                .is_some_and(|h| h.value_offset as usize >= payload_min)
                 && attr.resident_value().is_some()
         };
         let valid_typed = match kind {
@@ -109,6 +114,10 @@ impl Inspection {
             0x80 => {
                 self.present[if attr.has_name() { 3 } else { 2 }] = true;
                 if let Some(header) = attr.nonresident_header() {
+                    // Stream sizes are authoritative only in the initial segment.
+                    if header.lowest_vcn == 0 && header.initialized_size > header.data_size {
+                        self.issue(number, Some(kind), OfflineIssue::MalformedAttribute);
+                    }
                     if header.lowest_vcn != 0 {
                         self.issue(number, Some(kind), OfflineIssue::SplitDataStream);
                         // The existing builder uses the first segment's sizes; do not

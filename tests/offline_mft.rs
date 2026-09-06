@@ -505,6 +505,72 @@ fn selected_extension_file_name_uses_shared_builder() -> MftResult<()> {
     Ok(())
 }
 
+#[test]
+fn overlapping_attribute_names_and_payloads_are_rejected() -> MftResult<()> {
+    let mut resident_overlap = resident(0x80, 1, "ads", b"payload");
+    resident_overlap[20..22].copy_from_slice(&24u16.to_le_bytes());
+    let mut nonresident_overlap = nonresident(0x80, 1, 0);
+    nonresident_overlap[9] = 1;
+    nonresident_overlap[10..12].copy_from_slice(&64u16.to_le_bytes());
+    for attr in [resident_overlap, nonresident_overlap] {
+        let mut stream = MftStream::from_reader(Cursor::new(record(1024, 0, &[attr])), options()?)?;
+        let row = stream.read_record(0)?;
+        assert!(row.entry.alternate_data_streams.is_empty());
+        assert_eq!(row.metadata.alternate_data_streams, State::Unknown);
+        assert!(
+            row.diagnostics
+                .iter()
+                .any(|d| matches!(d.issue, OfflineIssue::MalformedAttribute))
+        );
+    }
+    // A named runlist immediately after the name is valid (no required gap).
+    let mut valid = nonresident(0x80, 1, 0);
+    valid.resize(80, 0);
+    valid[4..8].copy_from_slice(&80u32.to_le_bytes());
+    valid[9] = 4;
+    valid[10..12].copy_from_slice(&64u16.to_le_bytes());
+    valid[32..34].copy_from_slice(&72u16.to_le_bytes());
+    valid[64..72].copy_from_slice(&[b'n', 0, b'a', 0, b'm', 0, b'e', 0]);
+    valid[72..76].copy_from_slice(&[0x11, 1, 50, 0]);
+    let mut stream = MftStream::from_reader(Cursor::new(record(1024, 0, &[valid])), options()?)?;
+    let row = stream.read_record(0)?;
+    assert_eq!(row.entry.alternate_data_streams[0].name, "name");
+    assert_eq!(
+        row.metadata.alternate_data_streams,
+        State::Present { complete: true }
+    );
+    assert!(row.diagnostics.is_empty());
+    Ok(())
+}
+
+#[test]
+fn impossible_initialized_size_is_not_complete_metadata() -> MftResult<()> {
+    let mut attr = nonresident(0x80, 1, 0);
+    attr[56..64].copy_from_slice(&13u64.to_le_bytes()); // logical size is 12
+    let mut stream = MftStream::from_reader(Cursor::new(record(1024, 0, &[attr])), options()?)?;
+    let row = stream.read_record(0)?;
+    assert_eq!(
+        row.metadata.unnamed_data,
+        State::Present { complete: false }
+    );
+    assert!(
+        row.diagnostics
+            .iter()
+            .any(|d| matches!(d.issue, OfflineIssue::MalformedAttribute))
+    );
+    let mut continuation = nonresident(0x80, 1, 1);
+    continuation[56..64].copy_from_slice(&u64::MAX.to_le_bytes());
+    let mut stream =
+        MftStream::from_reader(Cursor::new(record(1024, 0, &[continuation])), options()?)?;
+    let row = stream.read_record(0)?;
+    assert!(
+        !row.diagnostics
+            .iter()
+            .any(|d| matches!(d.issue, OfflineIssue::MalformedAttribute))
+    );
+    Ok(())
+}
+
 struct HugeStream;
 impl Read for HugeStream {
     fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
