@@ -2,5 +2,94 @@
 name = "ntfs-mft"
 version = "0.1.0"
 edition = "2024"
+autoexamples = false
+exclude = ["integration-tests/**"]
+description = "Read-only raw NTFS Master File Table parsing and serial/parallel scanning on Windows and Linux."
+license = "MIT"
+repository = "https://github.com/wangfu91/ntfs-mft"
+keywords = ["filesystem", "ntfs", "mft", "forensics"]
+categories = ["filesystem"]
+
+[package.metadata.docs.rs]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "i686-pc-windows-msvc",
+]
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
 
 [dependencies]
+bitflags = "2"
+log = "0.4"
+rustc-hash = "2"
+thiserror = "2"
+zerocopy = { version = "0.8.48", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Ioctl",
+    "Win32_System_Time",
+    "Win32_System_Threading",
+]
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[example]]
+name = "raw_mft_read"
+path = "examples/raw_mft_read.rs"
+
+[[example]]
+name = "raw_mft_serial_read"
+[[example]]
+name = "raw_mft_serial_read_profile"
+[[example]]
+name = "raw_mft_parallel_chunks"
+[[example]]
+name = "raw_mft_parallel_ingest_profile"
+[[example]]
+name = "deletion_forensic"
+
+[[bench]]
+name = "raw_mft"
+harness = false
+
+[[bench]]
+name = "raw_mft_ingest"
+harness = false
+
+[target.'cfg(windows)'.dev-dependencies]
+injectorpp = "0.5"
+
+[profile.test]
+opt-level = 0
+debug = true
+incremental = false
+
+[profile.bench]
+lto = "thin"
+
+[profile.release]
+debug = true
+
+[features]
+windows-examples = []
+
+[[bench]]
+name = "path_resolver"
+harness = false
+required-features = ["windows-examples"]

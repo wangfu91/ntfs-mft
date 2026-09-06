@@ -1,0 +1,8 @@
+# Changelog
+
+## 0.1.0 (unreleased)
+
+- Extract raw NTFS MFT reading from usn-journal-rs as an independent crate.
+- Preserve serial/parallel scans, metadata parsing, snapshot/historical paths,
+  and Windows/Linux read-only volume access.
+- Expose MftError and MftResult and root-level raw reader exports.
