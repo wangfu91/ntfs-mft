@@ -33,19 +33,24 @@ where
 {
     let (attrs_off, used) = record.attrs_range();
     for_each_attribute(record.data, attrs_off, used, |attr| {
-        let type_id = attr.type_id();
-        if type_id == NtfsAttributeType::StandardInformation as u32 {
-            consumer.on_standard_information(attr);
-        } else if type_id == NtfsAttributeType::FileName as u32 {
-            consumer.on_file_name(attr);
-        } else if type_id == NtfsAttributeType::Data as u32 {
-            consumer.on_data(attr);
-        } else if type_id == NtfsAttributeType::ReparsePoint as u32 {
-            consumer.on_reparse_point(attr);
-        } else if type_id == NtfsAttributeType::AttributeList as u32
-            && let Some(attr_list) = capture_attribute_list(attr)
-        {
-            consumer.on_attribute_list(attr_list);
-        }
+        fold_attribute(attr, consumer);
     });
+}
+
+/// Dispatch one selected attribute, including attributes from validated extensions.
+pub(super) fn fold_attribute<C: AttributeConsumer>(attr: &NtfsAttribute<'_>, consumer: &mut C) {
+    let type_id = attr.type_id();
+    if type_id == NtfsAttributeType::StandardInformation as u32 {
+        consumer.on_standard_information(attr);
+    } else if type_id == NtfsAttributeType::FileName as u32 {
+        consumer.on_file_name(attr);
+    } else if type_id == NtfsAttributeType::Data as u32 {
+        consumer.on_data(attr);
+    } else if type_id == NtfsAttributeType::ReparsePoint as u32 {
+        consumer.on_reparse_point(attr);
+    } else if type_id == NtfsAttributeType::AttributeList as u32
+        && let Some(attr_list) = capture_attribute_list(attr)
+    {
+        consumer.on_attribute_list(attr_list);
+    }
 }

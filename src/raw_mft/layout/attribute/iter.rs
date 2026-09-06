@@ -66,6 +66,20 @@ pub(crate) fn for_each_attribute<'a, F>(
 ) where
     F: FnMut(&NtfsAttribute<'a>),
 {
+    let _ = for_each_attribute_checked(data, attrs_offset, used_size, &mut f);
+}
+
+/// Walk attributes and report whether an end marker was reached.
+/// The legacy walker intentionally discards this diagnostic.
+pub(crate) fn for_each_attribute_checked<'a, F>(
+    data: &'a [u8],
+    attrs_offset: usize,
+    used_size: usize,
+    mut f: F,
+) -> bool
+where
+    F: FnMut(&NtfsAttribute<'a>),
+{
     let used = used_size.min(data.len());
     let mut offset = attrs_offset;
     while offset + 4 <= used {
@@ -79,7 +93,7 @@ pub(crate) fn for_each_attribute<'a, F>(
             data[offset + 3],
         ]);
         if type_id == NtfsAttributeType::End as u32 {
-            break;
+            return true;
         }
         let slice = &data[offset..used];
         let attr = match NtfsAttribute::new(slice) {
@@ -96,6 +110,7 @@ pub(crate) fn for_each_attribute<'a, F>(
             _ => break,
         };
     }
+    false
 }
 
 #[cfg(test)]

@@ -44,6 +44,7 @@ mod entry_build;
 pub mod history;
 mod io;
 mod layout;
+mod offline;
 mod options;
 mod parallel;
 mod path_resolver;
@@ -70,6 +71,10 @@ pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawM
 pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
 pub use layout::data_run::{DataRun as DataRunInfo, DataRunSummary};
+pub use offline::{
+    MftStream, MftStreamIter, MftStreamOptions, OfflineDiagnostic, OfflineExternalPayload,
+    OfflineFieldState, OfflineIssue, OfflineMetadata, OfflineMftRecord,
+};
 pub use options::{
     RawMftEntryOptions, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
     RawMftScanOptionsBuilder,
