@@ -36,6 +36,10 @@
 mod attr_list;
 mod bootstrap;
 mod chunk_plan;
+// Enabled only by the non-publishable differential test package's build script.
+#[cfg(all(test, ntfs_mft_differential))]
+#[path = "../../differential-tests/tests/mod.rs"]
+mod differential_tests;
 mod entry_build;
 pub mod history;
 mod io;
