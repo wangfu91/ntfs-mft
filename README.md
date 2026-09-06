@@ -46,6 +46,7 @@ fn main() -> MftResult<()> {
 ```text
 cargo build
 cargo test
+cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
 cargo clippy --all-targets --all-features -- -D warnings
 cargo package
 cargo run --example raw_mft_serial_read -- C
@@ -59,6 +60,7 @@ cargo bench --features windows-examples --bench path_resolver
 On Linux, pass an NTFS mount point or `/dev/...` device instead of `C`.
 Device tests skip when privileges or a suitable volume are unavailable.
 See [cross-repository tests](integration-tests/README.md),
+[offline parser differential tests](differential-tests/README.md),
 [implementation](docs/raw-mft-read.md), and [extraction provenance](docs/EXTRACTION.md).
 Performance notes retain the original benchmark environment variable names.
 
