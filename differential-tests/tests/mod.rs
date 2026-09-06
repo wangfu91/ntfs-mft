@@ -91,7 +91,18 @@ fn ours(number: u64, bytes: &[u8]) -> TestResult<Record> {
                 ],
             }),
             0x80 => {
-                let name = units(attr.name_bytes().unwrap_or_default());
+                let name = match attr.name_bytes() {
+                    Some(bytes) => units(bytes),
+                    None if !attr.has_name() => Vec::new(),
+                    None => {
+                        let instance = attr.header.id;
+                        failure = Some(format!(
+                            "record {number}, attribute {offset:#x}, instance {instance}: invalid DATA name range"
+                        ));
+                        offset += attr.len();
+                        return;
+                    }
+                };
                 if attr.is_non_resident() {
                     attr.nonresident_header().map(|h| Value::Data {
                         name,

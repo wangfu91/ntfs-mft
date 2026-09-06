@@ -48,6 +48,10 @@ the low-level adapter. Non-overlapping attribute payloads are not compared, but
 their headers must still be traversable. No upstream attribute errors are discarded.
 
 Names are exact UTF-16 units from the parsed views, not lossy display strings.
+For DATA, a missing name view is normalized to an empty name only when the
+declared name length is zero. A nonzero length with an invalid name range is an
+adapter error with record, attribute offset and instance context; resident and
+nonresident malformed-name cases cover this distinction.
 Parent and base references retain all 48 record bits and 16 sequence bits. SI and
 FN timestamps remain separate. DATA residency comes from the attribute form;
 resident size is payload length, while nonresident size, allocated length,

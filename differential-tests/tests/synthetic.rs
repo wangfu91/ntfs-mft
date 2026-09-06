@@ -313,6 +313,34 @@ fn malformed_attribute_is_local_stop_and_upstream_error() -> TestResult {
 }
 
 #[test]
+fn malformed_data_name_is_not_normalized_to_an_unnamed_stream() -> TestResult {
+    for mut attr in [
+        resident(0x80, &text("named"), b"x"),
+        nonresident(&text("named"), 0),
+    ] {
+        // NameLength remains nonzero, but NameOffset cannot address this attribute.
+        put16(&mut attr, 10, u16::MAX);
+        let bytes = record(vec![attr], 1, 0);
+        let other = MftEntry::from_buffer(bytes.clone(), 42)?;
+        assert!(
+            other
+                .iter_attributes()
+                .next()
+                .ok_or("missing attribute")?
+                .is_err()
+        );
+        let error = ours(42, &bytes)
+            .err()
+            .ok_or("invalid counted name became an unnamed stream")?;
+        assert_eq!(
+            error.to_string(),
+            "record 42, attribute 0x38, instance 0: invalid DATA name range"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn attribute_name_nul_termination_is_an_explicit_representation_difference() -> TestResult {
     let bytes = record(vec![resident(0x80, &[0x61, 0, 0x62], b"x")], 1, 0);
     assert_eq!(
