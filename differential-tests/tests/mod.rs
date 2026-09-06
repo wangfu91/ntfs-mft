@@ -1,6 +1,7 @@
 //! Development-only comparison with the immutable upstream revision in Cargo.toml.
 //! See ../README.md for normalization rules and deliberately different policies.
 
+mod stream;
 mod synthetic;
 
 use super::layout::{attribute::for_each_attribute, record::FileRecord};

@@ -36,3 +36,10 @@ seeks/reads, overflow rejection, and original USA byte preservation.
 
 Strict Clippy and `cargo package --allow-dirty --offline` also pass. Device tests
 in an unelevated environment skip; such skips do not count as live validation.
+
+The separate pinned differential suite passes all 11 cases. Its added stream
+case reverses all fixture sectors on a simulated device and compares the
+production extent adapter plus public iterator against upstream: 13,068 FILE
+records, 20 zero slots, all existing overlapping attribute comparisons, public
+metadata checks, and backwards random reads. Both the main and differential
+packages pass Clippy with `--all-targets --all-features -- -D warnings`.

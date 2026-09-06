@@ -120,7 +120,7 @@ struct Segment {
 
 // Generic internally so the exact production mapping is testable with a memory
 // device, including arbitrary partial reads and injected OS failures.
-struct MappedReader<R> {
+pub(super) struct MappedReader<R> {
     reader: R,
     segments: Vec<Segment>,
     capacity: u64,
@@ -130,7 +130,7 @@ struct MappedReader<R> {
 }
 
 impl<R> MappedReader<R> {
-    fn new(reader: R, map: &ExtentMap) -> MftResult<Self> {
+    pub(super) fn new(reader: R, map: &ExtentMap) -> MftResult<Self> {
         if map.cluster_size == 0 {
             return Err(MftError::InvalidDataRun("zero cluster size"));
         }
