@@ -23,9 +23,12 @@ iteration over the first 32 slots. D: is ReFS and is not an MFT validation targe
 The same binary launched by the agent through `sudo --inline` failed in the
 existing `RawMft` bootstrap before adapter construction. A separate PowerShell
 script using .NET `FileStream` also failed to read C: via that launch path, with
-Windows error 0x80070032. Those failures do not identify sudo itself as the cause;
-the launch/execution environment remains a separate investigation. Speculative
-changes to access flags and boot read sizes were reverted.
+Windows error 0x80070032. The investigation confirmed that Windows `wcifs`
+rejected the read in Codex's inherited MSIX Silo; independent-terminal sudo
+reads succeeded. See [Windows raw-volume access and MSIX](windows-raw-volume-access.md)
+for the evidence and application runtime declaration. This is an environment
+restriction, not an adapter defect. Speculative access-flag and boot-read-size
+changes were reverted.
 
 ## Deterministic tests
 

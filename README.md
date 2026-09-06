@@ -75,7 +75,9 @@ live-scan consistency limitations still apply.
 
 - NTFS only; ReFS is rejected. USN journal APIs and Windows FSCTL enumeration
   remain in [usn-journal-rs](https://github.com/wangfu91/usn-journal-rs).
-- Windows raw volume access requires Administrator privileges. Linux requires
+- Windows raw volume access requires Administrator privileges and a launch context
+  permitting raw-volume I/O; see [MSIX runtime requirements](docs/windows-raw-volume-access.md).
+  Linux requires
   read permission for the backing block device. All device opens are read-only.
 - A live scan is not an atomic filesystem snapshot; concurrent changes can affect results.
 - Attribute-list enrichment is one level deep. Historical paths are best effort.
