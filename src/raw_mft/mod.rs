@@ -179,3 +179,6 @@ impl Volume {
         RawMft::new(self)
     }
 }
+
+#[cfg(test)]
+mod fixture_tests;

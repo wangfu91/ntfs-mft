@@ -65,3 +65,17 @@ Performance notes retain the original benchmark environment variable names.
 ## License
 
 MIT; see [LICENSE](LICENSE).
+
+## Test fixture attribution
+
+Our offline correctness tests use the unmodified samples/MFT fixture from
+[omerbenamram/mft](https://github.com/omerbenamram/mft), copyright (c) 2019
+Omer Ben-Amram. Upstream offers MIT/Apache-2.0 licensing; this copy uses the MIT
+option and retains the [upstream license](tests/fixtures/omerbenamram-mft/LICENSE-MIT).
+See [fixture provenance and test scope](tests/fixtures/omerbenamram-mft/README.md)
+for the pinned commit, checksum, and coverage. Run these tests with cargo test;
+no NTFS volume or Administrator privileges are needed for the fixture tests.
+
+The MFT fixture is stored with Git LFS. Install Git LFS, then run
+`git lfs install` and `git lfs pull` after cloning and before building or
+testing. CI checks out LFS objects automatically.

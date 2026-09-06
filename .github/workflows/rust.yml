@@ -8,6 +8,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - run: cargo build
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test
