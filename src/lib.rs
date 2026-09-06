@@ -3,6 +3,7 @@
 //!
 //! Open a [`Volume`] and construct a [`RawMft`] to iterate metadata records.
 //! See [`raw_mft`] for scan options, parallel iteration, and limitations.
+//! For an extracted `$MFT` file or memory buffer, use [`MftStream`] without a volume.
 #[cfg(not(any(windows, target_os = "linux")))]
 compile_error!("ntfs-mft supports only Windows and Linux targets");
 mod display;
@@ -25,7 +26,7 @@ pub type MftResult<T> = std::result::Result<T, MftError>;
 /// Common imports for raw MFT scanning.
 pub mod prelude {
     pub use crate::{
-        Fid, FileAttributes, Filetime, MftError, MftResult, RawMft, RawMftEntry,
-        RawMftPathResolver, RawMftScanOptions, Usn, Volume,
+        Fid, FileAttributes, Filetime, MftError, MftResult, MftStream, MftStreamOptions, RawMft,
+        RawMftEntry, RawMftPathResolver, RawMftScanOptions, Usn, Volume,
     };
 }

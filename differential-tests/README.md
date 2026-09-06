@@ -118,11 +118,27 @@ parser fixes require separate scope approval.
 
 ## Limits
 
+The `stream::fragmented_stream_matches_pinned_parser_and_public_iterator` test
+also routes the entire fixture through the production `MappedReader` core used
+by `MftByteReader`. Every 512-byte sector is placed in reverse physical order,
+forcing every 1024-byte FILE record to cross extents. It checks exact original
+bytes, the existing full low-level comparison, and public `MftStream` iteration
+(headers, SI timestamps, selected FN tuple membership and unnamed DATA metadata).
+It asserts all 13,068 FILE outcomes and 20 zero-slot errors, plus backwards random
+reads. Primary-name ranking remains implementation-specific; the selected tuple
+must exist in upstream attributes. No timestamp normalization beyond the existing
+microsecond truncation is added. Raw UTF-16 comparisons remain in the low-level
+test; public OS strings follow the crate's platform conversion policy.
+
+This extension tests simulated extent reconstruction and the offline public API.
+It does not open a device or replace the separate user-reported C: smoke test in
+[`docs/mft-stream-validation.md`](../docs/mft-stream-validation.md).
+
 Agreement on a shared corpus does not establish parser correctness for every NTFS
 version, sector geometry or corrupt input. This is not a fuzzing campaign. It does
 not validate boot-sector discovery, live-volume consistency, raw-device I/O,
-external attribute payloads, runlist correctness, cross-record enrichment, full
-stream reconstruction, path resolution, or serial/parallel scanning and scheduling.
+external attribute payloads, on-disk runlist discovery, cross-record enrichment,
+path resolution, or raw serial/parallel scanning and scheduling.
 No performance claim is made. Windows/Linux display-string policies are not
 equated by comparing raw UTF-16 views.
 

@@ -35,6 +35,7 @@
 
 mod attr_list;
 mod bootstrap;
+mod byte_reader;
 mod chunk_plan;
 // Enabled only by the non-publishable differential test package's build script.
 #[cfg(all(test, ntfs_mft_differential))]
@@ -44,6 +45,7 @@ mod entry_build;
 pub mod history;
 mod io;
 mod layout;
+mod offline;
 mod options;
 mod parallel;
 mod path_resolver;
@@ -66,10 +68,15 @@ use crate::{
     volume::Volume,
 };
 
+pub use byte_reader::MftByteReader;
 pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawMftWorkChunk};
 pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
 pub use layout::data_run::{DataRun as DataRunInfo, DataRunSummary};
+pub use offline::{
+    MftStream, MftStreamIter, MftStreamOptions, OfflineDiagnostic, OfflineExternalPayload,
+    OfflineFieldState, OfflineIssue, OfflineMetadata, OfflineMftRecord,
+};
 pub use options::{
     RawMftEntryOptions, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
     RawMftScanOptionsBuilder,

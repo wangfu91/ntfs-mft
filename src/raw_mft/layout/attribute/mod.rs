@@ -17,5 +17,6 @@ pub(crate) use headers::{
 };
 pub(crate) use iter::{
     for_each_attr_list_entry, for_each_attr_list_entry_header, for_each_attribute,
+    for_each_attribute_checked,
 };
 pub(crate) use view::{NtfsAttribute, osstring_from_utf16le};

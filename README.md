@@ -31,11 +31,53 @@ fn main() -> MftResult<()> {
 }
 ```
 
+## Extracted MFT streams
+
+`MftStream` reads a standalone logical `$MFT` file using ordinary file permissions.
+It accepts any `Read + Seek` source, including borrowed memory:
+
+```rust,no_run
+use ntfs_mft::{MftResult, MftStream, MftStreamOptions};
+use std::io::Cursor;
+
+fn main() -> MftResult<()> {
+    let options = MftStreamOptions::new(1024)?;
+    let mut mft = MftStream::from_path("extracted.MFT", options)?;
+    for record in mft.iter_records() {
+        match record {
+            Ok(record) => println!("{} {:?}", record.entry, record.metadata),
+            Err(error) => eprintln!("{error}"),
+        }
+    }
+    let bytes = std::fs::read("extracted.MFT")?;
+    let mut memory = MftStream::from_reader(Cursor::new(bytes.as_slice()), options)?;
+    let root = memory.read_record(5)?;
+    println!("{}", root.entry.file_name.to_string_lossy());
+    Ok(())
+}
+```
+
+Record size is explicit; there is no automatic geometry detection. Iteration
+includes system, unused, extension, and non-FILE slots. Each bad slot returns an
+error. Enable `options.resolve_extensions(true)` for one level of resident
+attribute-list references. Always retain `metadata`, `diagnostics`, and
+`external_payloads` when exporting: a missing value may be unknown, not absent.
+An MFT-only stream cannot supply non-resident attribute payloads or arbitrary
+file contents. See [the offline API contract](docs/offline-mft.md).
+
+For direct volume input without exporting first, pass `raw.byte_reader()?` to
+`MftStream::from_reader`, where `raw` is an existing `RawMft`. The adapter handles
+fragmented extents and exposes logical `$MFT::$DATA` bytes through `Read + Seek`.
+Use `raw.file_record_size()` for the parser options. Raw-volume permissions and
+live-scan consistency limitations still apply.
+
 ## Scope and limitations
 
 - NTFS only; ReFS is rejected. USN journal APIs and Windows FSCTL enumeration
   remain in [usn-journal-rs](https://github.com/wangfu91/usn-journal-rs).
-- Windows raw volume access requires Administrator privileges. Linux requires
+- Windows raw volume access requires Administrator privileges and a launch context
+  permitting raw-volume I/O; see [MSIX runtime requirements](docs/windows-raw-volume-access.md).
+  Linux requires
   read permission for the backing block device. All device opens are read-only.
 - A live scan is not an atomic filesystem snapshot; concurrent changes can affect results.
 - Attribute-list enrichment is one level deep. Historical paths are best effort.

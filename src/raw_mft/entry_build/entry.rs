@@ -175,6 +175,18 @@ impl fmt::Display for RawMftEntry {
 }
 
 impl RawMftEntry {
+    /// Build metadata from a caller-selected, validated attribute sequence.
+    pub(crate) fn from_attributes<'a>(
+        record: &FileRecord<'_>,
+        attributes: impl IntoIterator<Item = NtfsAttribute<'a>>,
+    ) -> Self {
+        let mut builder = RawMftEntryBuilder::new(record, EntryBuildOptions::full());
+        for attr in attributes {
+            super::fold::fold_attribute(&attr, &mut builder);
+        }
+        builder.build().0
+    }
+
     /// Build a `RawMftEntry` and also return any `$ATTRIBUTE_LIST` data
     /// found in the record.
     ///
