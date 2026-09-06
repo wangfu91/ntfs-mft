@@ -83,6 +83,17 @@ live-scan consistency limitations still apply.
 - Attribute-list enrichment is one level deep. Historical paths are best effort.
 - Snapshot paths are the default; Windows live fallback is explicitly opt-in.
 
+## Optional JSONL export
+
+Enable `jsonl` for streaming export of raw scan results or offline `MftStream`
+records. Enable only `serde` for the separate versioned DTOs. Both are optional.
+The [export guide and schema](docs/export.md) describe exact identifiers,
+timestamps, OS name encodings, metadata completeness, and known parser limits.
+
+```text
+cargo run --example raw_mft_export --features jsonl -- file extracted.MFT 1024
+```
+
 ## Development
 
 ```text

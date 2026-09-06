@@ -35,6 +35,9 @@ log = "0.4"
 rustc-hash = "2"
 thiserror = "2"
 zerocopy = { version = "0.8.48", features = ["derive"] }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62"
@@ -51,6 +54,9 @@ features = [
 
 [dev-dependencies]
 criterion = "0.8.2"
+serde_json = "1"
+schemars = "1"
+jsonschema = { version = "0.33", default-features = false }
 
 [[example]]
 name = "raw_mft_read"
@@ -91,6 +97,12 @@ debug = true
 
 [features]
 windows-examples = []
+serde = ["dep:serde", "dep:chrono"]
+jsonl = ["serde", "dep:serde_json"]
+
+[[example]]
+name = "raw_mft_export"
+required-features = ["jsonl"]
 
 [[bench]]
 name = "path_resolver"

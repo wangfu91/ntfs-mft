@@ -8,6 +8,8 @@
 compile_error!("ntfs-mft supports only Windows and Linux targets");
 mod display;
 pub mod errors;
+#[cfg(feature = "serde")]
+pub mod export;
 mod file_attributes;
 mod path;
 #[cfg(windows)]

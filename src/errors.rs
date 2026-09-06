@@ -6,6 +6,10 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MftError {
+    /// Serialization of an export item failed.
+    #[cfg(feature = "jsonl")]
+    #[error("Export serialization error: {0}")]
+    Export(#[from] serde_json::Error),
     /// The process lacks the Administrator privileges required to open a volume.
     #[error("This operation requires Administrator privileges")]
     NotElevated,
