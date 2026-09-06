@@ -54,6 +54,17 @@ pub struct Volume {
 }
 
 impl Volume {
+    /// Reopen the same source read-only with an independent OS file cursor.
+    pub(crate) fn reopen(&self) -> Result<Self, MftError> {
+        match &self.source {
+            #[cfg(windows)]
+            VolumeSource::DriveLetter(letter) => Self::from_drive_letter(*letter),
+            VolumeSource::MountPoint(path) => Self::from_mount_point(path),
+            #[cfg(target_os = "linux")]
+            VolumeSource::DevicePath(path) => Self::from_device_path(path),
+        }
+    }
+
     /// Creates a new `Volume` instance with the given drive letter.
     ///
     /// # Examples

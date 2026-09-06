@@ -65,6 +65,12 @@ attribute-list references. Always retain `metadata`, `diagnostics`, and
 An MFT-only stream cannot supply non-resident attribute payloads or arbitrary
 file contents. See [the offline API contract](docs/offline-mft.md).
 
+For direct volume input without exporting first, pass `raw.byte_reader()?` to
+`MftStream::from_reader`, where `raw` is an existing `RawMft`. The adapter handles
+fragmented extents and exposes logical `$MFT::$DATA` bytes through `Read + Seek`.
+Use `raw.file_record_size()` for the parser options. Raw-volume permissions and
+live-scan consistency limitations still apply.
+
 ## Scope and limitations
 
 - NTFS only; ReFS is rejected. USN journal APIs and Windows FSCTL enumeration

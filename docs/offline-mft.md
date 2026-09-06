@@ -5,6 +5,47 @@
 support owned and borrowed buffers. No volume discovery, boot sector, device
 handle, cluster size, or Administrator privileges are required.
 
+## Reading directly from a volume
+
+`RawMft::byte_reader()` supplies a `MftByteReader` implementing `Read + Seek`.
+It maps the volume's fragmented `$MFT::$DATA` to logical byte offsets, so the
+same parser works without an intermediate extracted file:
+
+```rust,no_run
+use ntfs_mft::{MftResult, MftStream, MftStreamOptions, Volume};
+
+fn main() -> MftResult<()> {
+    let volume = Volume::from_drive_letter('C')?; // Windows; needs Administrator
+    let raw = volume.raw_mft()?;
+    let options = MftStreamOptions::new(raw.file_record_size() as usize)?
+        .resolve_extensions(true);
+    let mut parser = MftStream::from_reader(raw.byte_reader()?, options)?;
+    for result in parser.iter_records().take(100) {
+        println!("{}", result?.entry);
+    }
+    Ok(())
+}
+```
+
+On Linux, open `Volume` using a device path or mount point instead. The adapter
+reopens that volume source read-only and owns an independent handle, so it can
+outlive the original `RawMft` and `Volume`. Construction can fail if the source
+cannot be reopened. Do not change the mounted source during construction.
+
+Reads preserve original USA bytes, including when a record crosses extents.
+Sparse ranges and the uninitialized tail read as zero. EOF and `SeekFrom::End`
+use the `$DATA` logical length, not allocated extent capacity; `RawMft`'s existing
+capacity-based `record_count()` is unchanged. Seeks beyond EOF are allowed and
+subsequent reads return zero bytes. Negative/overflowing seeks fail without
+changing the logical cursor. Reads may stop at an extent boundary; `read_exact`
+and normal buffered consumers handle these standard short reads.
+
+Compressed/encrypted `$MFT` streams and inconsistent size/mapping bounds are
+rejected. Geometry is captured at construction. A live scan is not a filesystem
+snapshot and does not follow subsequent MFT growth; use a stable source for
+consistent results. The adapter exposes only `$MFT::$DATA`: external payloads
+remain unavailable to `MftStream`, even though the backing source is a volume.
+
 ## Input and addressing
 
 - Supply the logical contents of an extracted `$MFT`, retaining all record slots.
