@@ -103,6 +103,7 @@ jsonl = ["serde", "dep:serde_json"]
 [[example]]
 name = "raw_mft_export"
 required-features = ["jsonl"]
+test = true
 
 [[bench]]
 name = "path_resolver"

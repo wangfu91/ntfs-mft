@@ -37,13 +37,18 @@ cargo run --example raw_mft_export --features jsonl -- volume /dev/nvme0n1p3
 ```
 
 Redirect stdout to save JSONL. Progress and top-level failures go to stderr. Input
-files open read-only. Only volume mode needs device permissions (Administrator
+files open read-only. Windows volume arguments accept only an ASCII drive letter
+with an optional colon (for example, `C` or `C:`); paths and words are rejected
+before device access. Only volume mode needs device permissions (Administrator
 on Windows). Offline mode resolves one level of resident extension lists. Volume
 mode starts at record zero, includes unused records, and collects ADS, run summaries,
 and DOS aliases. The scanner may skip non-FILE slots. Output contains only items
 the iterator yields, not an inventory of every physical slot. The example returns
-nonzero for top-level or item errors; partial metadata is a record with diagnostics,
-not an item error. Consult those diagnostics even when the process succeeds.
+nonzero for top-level or item errors and for terminal extension I/O diagnostics.
+The latter can stop the offline iterator after an otherwise successful record;
+the example retains that record and counts the interrupted scan as a failure.
+Other partial metadata remains a record with diagnostics, not an item error.
+Consult those diagnostics even when the process succeeds.
 
 ## Wire contract
 
