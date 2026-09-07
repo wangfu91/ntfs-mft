@@ -362,7 +362,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Rich> {
                     &|_| Vec::new(),
                     &|entries, entry| {
                         entries.push(entry);
-                        Ok(())
+                        Ok::<_, MftError>(())
                     },
                 )?;
                 map(RawMftChunkBatch { chunk, entries })
@@ -397,3 +397,5 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Rich> {
         )
     }
 }
+
+mod callbacks;

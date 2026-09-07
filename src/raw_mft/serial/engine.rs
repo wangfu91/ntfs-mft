@@ -149,15 +149,16 @@ where
 /// extension records (`base_reference != 0`) are passed raw (un-fixed-up) to
 /// `on_ext` so the caller can cache them for deferred `$ATTRIBUTE_LIST`
 /// enrichment without a second disk read.
-pub(in crate::raw_mft) fn for_each_record_capturing<OnBase, OnExt>(
+pub(in crate::raw_mft) fn for_each_record_capturing<OnBase, OnExt, E>(
     mft: &RawMft<'_>,
     state: &mut SerialParseState,
     reader: &mut VolumeReader,
     mut on_base: OnBase,
     mut on_ext: OnExt,
-) -> Result<(), MftError>
+) -> Result<(), E>
 where
-    OnBase: FnMut(&FileRecord<'_>) -> Result<(), MftError>,
+    E: From<MftError>,
+    OnBase: FnMut(&FileRecord<'_>) -> Result<(), E>,
     OnExt: FnMut(u64, &[u8]),
 {
     while state.next_record < state.end_record {
@@ -174,7 +175,7 @@ where
         {
             Ok(Some(offset)) => offset,
             Ok(None) => continue,
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         };
 
         let buf = reader

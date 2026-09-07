@@ -218,3 +218,18 @@ is `NotCollected` in diagnostic metadata, rather than evidence of absence.
 Ordinary empty fields still do not establish absence. For JSONL output, use
 `JsonlWriter::write_diagnostic` to retain the record's evidence; `write_entry`
 only exports the fast raw entry representation.
+
+## Application callback errors
+
+Both projections provide `try_for_each_batch`, `try_map_chunks_for_each`, and
+`try_fold_chunks`. Lean scans also provide `try_fold_records_cached_enrich`.
+These are terminal operations returning `Result<_, ScanError<E>>`:
+`Scanner(MftError)` preserves scanner failures and `Consumer(E)` preserves the
+application error. `E` must be `Send` because worker callbacks can fail.
+Annotate a callback's return type when inference cannot determine `E`.
+
+The original callback methods remain convenient when every callback uses
+`MftError`. Returning a callback error stops further result delivery, but
+already-running worker callbacks may finish before the call returns. No
+rollback of prior callback side effects is implied. Mapping and folding run
+on workers; ordered visitation runs on the calling thread.

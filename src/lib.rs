@@ -19,7 +19,7 @@ pub mod raw_mft;
 mod time;
 pub mod types;
 pub mod volume;
-pub use errors::MftError;
+pub use errors::{MftError, ScanError};
 pub use raw_mft::*;
 pub use time::Filetime;
 pub use types::{Fid, FileAttributes, Usn};

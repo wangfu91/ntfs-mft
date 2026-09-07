@@ -47,7 +47,7 @@ pub(in crate::raw_mft) enum ParallelVolumeSource {
 /// The work closure must be [`Sync`] because one shared closure reference is
 /// called by multiple worker threads. `T` must be [`Send`] because worker
 /// results cross thread boundaries before they are visited in chunk order.
-pub(super) fn run_parallel_chunks_in_order<T, Work, Visit>(
+pub(super) fn run_parallel_chunks_in_order<T, E, Work, Visit>(
     mft: &RawMft<'_>,
     chunks: Vec<RawMftWorkChunk>,
     options: RawMftScanOptions,
@@ -55,18 +55,19 @@ pub(super) fn run_parallel_chunks_in_order<T, Work, Visit>(
     scheduling: ChunkScheduling,
     work_chunk: Work,
     mut visit: Visit,
-) -> Result<(), MftError>
+) -> Result<(), E>
 where
+    E: From<MftError> + Send,
     for<'m> Work: Fn(
             &RawMft<'m>,
             RawMftWorkChunk,
             &RawMftScanOptions,
             &mut VolumeReader,
             &mut VolumeReader,
-        ) -> Result<T, MftError>
+        ) -> Result<T, E>
         + Sync,
     T: Send,
-    Visit: FnMut(T) -> Result<(), MftError>,
+    Visit: FnMut(T) -> Result<(), E>,
 {
     if chunks.is_empty() {
         return Ok(());
@@ -90,8 +91,8 @@ where
     let extent_map = Arc::clone(&mft.extent_map);
     let bitmap = Arc::clone(&mft.bitmap);
 
-    thread::scope(|scope| -> Result<(), MftError> {
-        let (tx, rx) = mpsc::channel::<Result<(usize, T), MftError>>();
+    thread::scope(|scope| -> Result<(), E> {
+        let (tx, rx) = mpsc::channel::<Result<(usize, T), E>>();
         let mut handles = Vec::with_capacity(worker_count);
         for worker_index in 0..worker_count {
             let next_index = &next_index;
@@ -107,7 +108,7 @@ where
                 let volume = match open_parallel_volume(&source) {
                     Ok(volume) => volume,
                     Err(error) => {
-                        let _ = tx.send(Err(error));
+                        let _ = tx.send(Err(error.into()));
                         return;
                     }
                 };
@@ -121,7 +122,7 @@ where
                     match worker_mft.buffered_readers_for_options(&options) {
                         Ok(readers) => readers,
                         Err(error) => {
-                            let _ = tx.send(Err(error));
+                            let _ = tx.send(Err(error.into()));
                             return;
                         }
                     };
@@ -168,7 +169,7 @@ where
 
         for handle in handles {
             if let Err(payload) = handle.join() {
-                return Err(worker_panicked(payload));
+                return Err(worker_panicked(payload).into());
             }
         }
 
@@ -198,13 +199,14 @@ pub(crate) fn available_parallelism_error(error: io::Error) -> MftError {
 
 /// Drain worker results, buffering out-of-order completions until they can be
 /// yielded in original chunk order.
-fn drain_parallel_results_in_order<T, Visit>(
-    rx: mpsc::Receiver<Result<(usize, T), MftError>>,
+fn drain_parallel_results_in_order<T, E, Visit>(
+    rx: mpsc::Receiver<Result<(usize, T), E>>,
     chunk_count: usize,
     visit: &mut Visit,
-) -> Result<(), MftError>
+) -> Result<(), E>
 where
-    Visit: FnMut(T) -> Result<(), MftError>,
+    E: From<MftError>,
+    Visit: FnMut(T) -> Result<(), E>,
 {
     let mut next_expected = 0usize;
     let mut pending = Vec::with_capacity(chunk_count);
@@ -223,7 +225,7 @@ where
                 }
             }
             Ok(Err(error)) => return Err(error),
-            Err(_) => return Err(channel_closed()),
+            Err(_) => return Err(channel_closed().into()),
         }
     }
 

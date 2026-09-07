@@ -471,3 +471,122 @@ fn diagnostic_scan_marks_attribute_lists_unverified_and_stops_on_io() -> MftResu
     assert!(!iter.report().reached_end);
     Ok(())
 }
+
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("database rejected row {row}")]
+struct ApplicationError {
+    row: u64,
+}
+
+#[test]
+fn callback_errors_keep_their_type_on_workers_and_the_calling_thread() -> MftResult<()> {
+    use crate::ScanError;
+    let volume = volume()?;
+    let raw = mft(&volume);
+    for workers in [1, 3] {
+        for scheduling in [
+            RawMftParallelScheduling::Dynamic,
+            RawMftParallelScheduling::Contiguous,
+        ] {
+            let config = raw
+                .parallel()
+                .chunk_plan(plan())
+                .workers(NonZeroUsize::new(workers).unwrap())
+                .scheduling(scheduling);
+            let rich = config.clone().rich().scan_options(
+                RawMftScanOptions::builder()
+                    .start_record(0)
+                    .include_unused_records(true)
+                    .build(),
+            );
+            let lean = config.lean().scan_options(
+                RawMftLeanScanOptions::builder()
+                    .start_record(0)
+                    .include_unused_records(true)
+                    .build(),
+            );
+            let mut visits = 0;
+            let result = rich.clone().try_for_each_batch(|_| {
+                visits += 1;
+                Err(ApplicationError { row: 42 })
+            });
+            assert!(matches!(
+                result,
+                Err(ScanError::Consumer(ApplicationError { row: 42 }))
+            ));
+            assert_eq!(visits, 1);
+            let result = lean.clone().try_map_chunks_for_each(
+                |_| Err::<(), _>(ApplicationError { row: 43 }),
+                |_| Ok(()),
+            );
+            assert!(matches!(
+                result,
+                Err(ScanError::Consumer(ApplicationError { row: 43 }))
+            ));
+            let result =
+                rich.try_fold_chunks(|_| (), |_, _| Err(ApplicationError { row: 44 }), |_| Ok(()));
+            assert!(matches!(
+                result,
+                Err(ScanError::Consumer(ApplicationError { row: 44 }))
+            ));
+            let result = lean.clone().try_fold_chunks(
+                |_| (),
+                |_, _| Err(ApplicationError { row: 45 }),
+                |_| Ok(()),
+            );
+            assert!(matches!(
+                result,
+                Err(ScanError::Consumer(ApplicationError { row: 45 }))
+            ));
+            let result = lean.try_fold_records_cached_enrich(
+                || (),
+                |_, _| Err(ApplicationError { row: 46 }),
+                |_| Ok(()),
+            );
+            assert!(matches!(
+                result,
+                Err(ScanError::Consumer(ApplicationError { row: 46 }))
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn typed_callbacks_distinguish_scanner_errors_and_preserve_success_order() -> MftResult<()> {
+    use crate::ScanError;
+    let volume = volume()?;
+    let mut raw = mft(&volume);
+    let mut records = Vec::new();
+    let scan = raw.parallel().lean().chunk_plan(plan()).scan_options(
+        RawMftLeanScanOptions::builder()
+            .start_record(0)
+            .include_unused_records(true)
+            .build(),
+    );
+    let result = scan.try_for_each_batch(|batch| -> Result<(), ApplicationError> {
+        records.extend(batch.entries.into_iter().map(|e| e.record_number));
+        Ok(())
+    });
+    assert!(result.is_ok());
+    assert_eq!(records, (0..32).collect::<Vec<_>>());
+    raw.extent_map = Arc::new(ExtentMap::from_runs(
+        &[DataRun::Data {
+            lcn: 0,
+            clusters: 64,
+        }],
+        1024,
+        1024,
+    ));
+    let result = raw
+        .parallel()
+        .rich()
+        .scan_options(
+            RawMftScanOptions::builder()
+                .include_unused_records(true)
+                .build(),
+        )
+        .try_for_each_batch(|_| Ok::<_, ApplicationError>(()));
+    assert!(matches!(result, Err(ScanError::Scanner(MftError::Io(_)))));
+    Ok(())
+}
