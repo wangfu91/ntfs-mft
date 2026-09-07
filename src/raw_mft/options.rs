@@ -101,6 +101,11 @@ impl Default for RawMftEntryOptions {
 }
 
 impl RawMftEntryOptions {
+    /// Configure reusable metadata materialization choices independently of a scan.
+    pub fn builder() -> RawMftEntryOptionsBuilder {
+        RawMftEntryOptionsBuilder::default()
+    }
+
     /// Whether named alternate data streams are collected.
     #[must_use]
     pub const fn collect_alternate_data_streams(&self) -> bool {
@@ -117,6 +122,39 @@ impl RawMftEntryOptions {
     #[must_use]
     pub const fn collect_dos_file_name_links(&self) -> bool {
         self.collect_dos_file_name_links
+    }
+}
+
+/// Builder for reusable rich-entry metadata choices.
+#[derive(Debug, Clone, Default)]
+#[must_use]
+pub struct RawMftEntryOptionsBuilder {
+    inner: RawMftEntryOptions,
+}
+
+impl RawMftEntryOptionsBuilder {
+    /// Whether named alternate data streams are collected.
+    pub fn collect_alternate_data_streams(mut self, value: bool) -> Self {
+        self.inner.collect_alternate_data_streams = value;
+        self
+    }
+
+    /// Whether unnamed non-resident data computes a run summary.
+    pub fn collect_data_run_summary(mut self, value: bool) -> Self {
+        self.inner.collect_data_run_summary = value;
+        self
+    }
+
+    /// Whether shadowed DOS 8.3 links are retained.
+    pub fn collect_dos_file_name_links(mut self, value: bool) -> Self {
+        self.inner.collect_dos_file_name_links = value;
+        self
+    }
+
+    /// Finalize the reusable policy.
+    #[must_use]
+    pub fn build(self) -> RawMftEntryOptions {
+        self.inner
     }
 }
 
@@ -427,6 +465,31 @@ mod range_tests {
                 .range()
                 .start_record(),
             0
+        );
+    }
+}
+
+#[cfg(test)]
+mod entry_options_tests {
+    use super::*;
+
+    #[test]
+    fn standalone_entry_policy_preserves_defaults_and_reuses_in_scan() {
+        assert_eq!(
+            RawMftEntryOptions::builder().build(),
+            RawMftEntryOptions::default()
+        );
+        let entry = RawMftEntryOptions::builder()
+            .collect_alternate_data_streams(false)
+            .collect_data_run_summary(false)
+            .collect_dos_file_name_links(false)
+            .build();
+        assert!(!entry.collect_alternate_data_streams());
+        assert!(!entry.collect_data_run_summary());
+        assert!(!entry.collect_dos_file_name_links());
+        assert_eq!(
+            RawMftScanOptions::builder().entry(entry).build().entry(),
+            entry
         );
     }
 }

@@ -82,7 +82,7 @@ pub use offline::{
 /// Shared metadata presence vocabulary for raw diagnostic and offline records.
 pub use offline::{OfflineFieldState as MftFieldState, OfflineMetadata as MftMetadata};
 pub use options::{
-    RawMftEntryOptions, RawMftLeanScanOptions, RawMftLeanScanOptionsBuilder, RawMftReadBuffers,
+    RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions, RawMftLeanScanOptionsBuilder, RawMftReadBuffers,
     RawMftRecordRange, RawMftScanOptions, RawMftScanOptionsBuilder,
 };
 pub use parallel::RawMftParallelScheduling;
