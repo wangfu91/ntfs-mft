@@ -35,7 +35,7 @@ impl RawMft<'_> {
     /// # #[cfg(windows)] {
     /// let volume = Volume::from_drive_letter('C')?;
     /// let raw = volume.raw_mft()?;
-    /// let options = MftStreamOptions::new(raw.file_record_size() as usize)?
+    /// let options = MftStreamOptions::new(raw.file_record_size())?
     ///     .resolve_extensions(true);
     /// let mut stream = MftStream::from_reader(raw.byte_reader()?, options)?;
     /// for record in stream.iter_records().take(100) {

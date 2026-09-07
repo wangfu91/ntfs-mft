@@ -189,6 +189,21 @@ impl MftStream<BufReader<File>> {
     }
 }
 
+impl MftStream<super::MftByteReader> {
+    /// Parse a volume's logical MFT using its discovered record size.
+    ///
+    /// The stream owns an independent handle and can outlive `raw` and its
+    /// volume. Extension resolution is disabled by default, as with
+    /// [`MftStreamOptions::new`]. For custom options, use [`Self::from_reader`]
+    /// with [`super::RawMft::byte_reader`]. A live volume is not a snapshot.
+    pub fn from_raw_mft(raw: &super::RawMft<'_>) -> MftResult<Self> {
+        Self::from_reader(
+            raw.byte_reader()?,
+            MftStreamOptions::new(raw.file_record_size())?,
+        )
+    }
+}
+
 impl<R: Read + Seek> MftStream<R> {
     /// Create a parser, rejecting incomplete trailing records.
     /// Empty input is valid. FILE headers are validated when their slots are read.

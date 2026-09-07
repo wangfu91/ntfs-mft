@@ -142,8 +142,8 @@ impl<'a> RawMft<'a> {
     /// File record size in bytes.
     #[must_use]
     #[inline]
-    pub fn file_record_size(&self) -> u64 {
-        self.boot.file_record_size
+    pub fn file_record_size(&self) -> usize {
+        self.boot.file_record_size as usize
     }
 
     /// Create a [`RawMftPathResolver`] for entries produced by this raw `$MFT` reader.

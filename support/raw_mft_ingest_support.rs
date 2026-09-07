@@ -191,7 +191,7 @@ pub struct BenchWorkloadShape {
     /// Number of logical chunks planned for the current config.
     pub planned_chunks: usize,
     /// NTFS file-record size in bytes.
-    pub file_record_size: u64,
+    pub file_record_size: usize,
     /// NTFS cluster size in bytes.
     pub cluster_size: u64,
 }

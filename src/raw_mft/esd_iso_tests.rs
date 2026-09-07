@@ -193,3 +193,18 @@ fn captured_known_files_match_independently_decoded_text_fixture() -> MftResult<
     }
     Ok(())
 }
+
+#[test]
+fn stream_from_raw_infers_geometry_and_owns_its_handle() -> MftResult<()> {
+    let volume = source(true).open()?;
+    let raw = volume.raw_mft()?;
+    let root = raw.read_record(5)?.unwrap();
+    let mut stream = crate::MftStream::from_raw_mft(&raw)?;
+    assert_eq!(stream.file_record_size(), raw.file_record_size());
+    drop(raw);
+    drop(volume);
+    let parsed = stream.read_record(5)?;
+    assert_eq!(parsed.entry.file_reference, root.file_reference);
+    assert_eq!(parsed.entry.file_name, root.file_name);
+    Ok(())
+}
