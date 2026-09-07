@@ -7,21 +7,15 @@ use crate::raw_mft::{
 };
 
 /// Inclusive/exclusive logical record range for a raw `$MFT` scan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The default is `0..`; the scan options separately default to `24..`.
+/// Standard Rust ranges, including inclusive ranges, convert into this type.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RawMftRecordRange {
     /// First record number to include.
     pub(crate) start_record: u64,
     /// Exclusive end record number; `None` means up to `RawMft::record_count()`.
     pub(crate) end_record: Option<u64>,
-}
-
-impl Default for RawMftRecordRange {
-    fn default() -> Self {
-        Self {
-            start_record: FIRST_NORMAL_RECORD,
-            end_record: None,
-        }
-    }
 }
 
 impl RawMftRecordRange {
@@ -131,7 +125,7 @@ impl RawMftEntryOptions {
 /// Use [`RawMftScanOptions::builder`] for the fluent builder API.
 /// Serial iteration and [`super::RawMftParallelScan`] use the same range and
 /// unused-record selection. Parallel scans also apply selection during planning.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RawMftScanOptions {
     /// Read-buffer sizing.
     pub(crate) buffers: RawMftReadBuffers,
@@ -141,6 +135,17 @@ pub struct RawMftScanOptions {
     pub(crate) entry: RawMftEntryOptions,
     /// Whether raw `$MFT` scans should include records marked unused in the `$MFT` `$BITMAP`.
     pub(crate) include_unused_records: bool,
+}
+
+impl Default for RawMftScanOptions {
+    fn default() -> Self {
+        Self {
+            buffers: RawMftReadBuffers::default(),
+            range: RawMftRecordRange::new(FIRST_NORMAL_RECORD, None),
+            entry: RawMftEntryOptions::default(),
+            include_unused_records: false,
+        }
+    }
 }
 
 impl RawMftScanOptions {
@@ -202,8 +207,8 @@ impl RawMftScanOptionsBuilder {
     }
 
     /// Set the logical scan range.
-    pub fn range(mut self, v: RawMftRecordRange) -> Self {
-        self.inner.range = v;
+    pub fn range(mut self, v: impl Into<RawMftRecordRange>) -> Self {
+        self.inner.range = v.into();
         self
     }
 
@@ -318,7 +323,7 @@ impl RawMftLeanScanOptionsBuilder {
         self
     }
     /// Set the logical record range.
-    pub fn range(mut self, value: RawMftRecordRange) -> Self {
+    pub fn range(mut self, value: impl Into<RawMftRecordRange>) -> Self {
         self.inner = self.inner.range(value);
         self
     }
@@ -345,5 +350,83 @@ impl RawMftLeanScanOptionsBuilder {
     /// Finalize lean scan options.
     pub fn build(self) -> RawMftLeanScanOptions {
         self.inner.build().into_lean()
+    }
+}
+
+impl From<std::ops::Range<u64>> for RawMftRecordRange {
+    fn from(range: std::ops::Range<u64>) -> Self {
+        Self::new(range.start, Some(range.end))
+    }
+}
+impl From<std::ops::RangeFrom<u64>> for RawMftRecordRange {
+    fn from(range: std::ops::RangeFrom<u64>) -> Self {
+        Self::new(range.start, None)
+    }
+}
+impl From<std::ops::RangeTo<u64>> for RawMftRecordRange {
+    fn from(range: std::ops::RangeTo<u64>) -> Self {
+        Self::new(0, Some(range.end))
+    }
+}
+impl From<std::ops::RangeFull> for RawMftRecordRange {
+    fn from(_: std::ops::RangeFull) -> Self {
+        Self::default()
+    }
+}
+impl From<std::ops::RangeInclusive<u64>> for RawMftRecordRange {
+    fn from(range: std::ops::RangeInclusive<u64>) -> Self {
+        if range.is_empty() {
+            Self::new(*range.start(), Some(*range.start()))
+        } else {
+            Self::new(*range.start(), range.end().checked_add(1))
+        }
+    }
+}
+impl From<std::ops::RangeToInclusive<u64>> for RawMftRecordRange {
+    fn from(range: std::ops::RangeToInclusive<u64>) -> Self {
+        Self::new(0, range.end.checked_add(1))
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+    #[test]
+    fn standard_ranges_keep_boundaries_and_scan_defaults() {
+        for (range, start, end) in [
+            ((100..200).into(), 100, Some(200)),
+            ((24..).into(), 24, None),
+            ((..).into(), 0, None),
+            ((..10).into(), 0, Some(10)),
+            ((2..=4).into(), 2, Some(5)),
+            ((..=4).into(), 0, Some(5)),
+            ((..=u64::MAX).into(), 0, None),
+        ] {
+            let range: RawMftRecordRange = range;
+            assert_eq!((range.start_record(), range.end_record()), (start, end));
+        }
+        let mut exhausted = 3..=3;
+        assert_eq!(exhausted.next(), Some(3));
+        let range = RawMftRecordRange::from(exhausted);
+        assert_eq!(range.start_record(), range.end_record().unwrap());
+        assert_eq!(RawMftRecordRange::default().start_record(), 0);
+        assert_eq!(RawMftScanOptions::default().range().start_record(), 24);
+        assert_eq!(RawMftLeanScanOptions::default().range().start_record(), 24);
+        assert_eq!(
+            RawMftScanOptions::builder()
+                .range(100..200)
+                .build()
+                .range()
+                .end_record(),
+            Some(200)
+        );
+        assert_eq!(
+            RawMftLeanScanOptions::builder()
+                .range(..)
+                .build()
+                .range()
+                .start_record(),
+            0
+        );
     }
 }

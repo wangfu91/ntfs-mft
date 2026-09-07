@@ -249,3 +249,11 @@ The old `base_record_reference` field was already a truncated record number;
 it is now named `base_record_number` to state that meaning. Its zero value does
 not distinguish a base record from an extension of record zero. The versioned
 export DTO retains its existing `base_record_number` wire representation.
+
+## Standard record ranges
+
+Rich and lean option builders accept `.range(100..200)`, `.range(24..)`,
+`.range(..)`, and inclusive forms such as `.range(..=100)`. A standalone
+`RawMftRecordRange::default()` now means `0..`; scan-option defaults still mean
+`24..`, preserving the ordinary scan policy. Empty ranges remain empty, and an
+inclusive `u64::MAX` upper bound becomes an unbounded end clipped to the MFT.
