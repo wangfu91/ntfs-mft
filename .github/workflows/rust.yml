@@ -1,5 +1,16 @@
 name: Rust
 on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # sccache cannot cache incremental Rust compilation.
+  CARGO_INCREMENTAL: "0"
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
 jobs:
   test:
     strategy:
@@ -10,11 +21,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: true
-      - run: cargo build
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test
-      - run: cargo test --features serde
-      - run: cargo test --features jsonl
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+      - name: Cache Cargo dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          # The differential harness is a separate Cargo project.
+          # Keep target artifacts as well: sccache cannot cache Clippy metadata.
+          workspaces: |
+            . -> target
+            differential-tests -> target
+      - run: cargo build --locked
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --locked
+      - run: cargo test --locked --features serde
+      - run: cargo test --locked --features jsonl
       - run: cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
       - run: cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets --all-features -- -D warnings
-      - run: cargo package
+      - run: cargo package --locked
+      - name: Show sccache statistics
+        if: always()
+        run: sccache --show-stats
