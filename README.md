@@ -8,6 +8,9 @@ names, sizes, hard links, alternate data streams, and file attributes. It includ
 serial and parallel scans, snapshot path resolution, and experimental historical
 path reconstruction.
 
+See [Choosing an MFT API](docs/api-guide.md) for scan defaults, metadata choices,
+error behavior, and migration examples.
+
 ## Local use
 
 ```toml
@@ -63,11 +66,11 @@ attribute-list references. Always retain `metadata`, `diagnostics`, and
 An MFT-only stream cannot supply non-resident attribute payloads or arbitrary
 file contents. See [the offline API contract](docs/offline-mft.md).
 
-For direct volume input without exporting first, pass `raw.byte_reader()?` to
-`MftStream::from_reader`, where `raw` is an existing `RawMft`. The adapter handles
-fragmented extents and exposes logical `$MFT::$DATA` bytes through `Read + Seek`.
-Use `raw.file_record_size()` for the parser options. Raw-volume permissions and
-live-scan consistency limitations still apply.
+For direct volume input, use `MftStream::from_raw_mft(&raw)` with an existing
+`RawMft`. It discovers the record size and opens an independent handle. For custom
+parser options, pass `raw.byte_reader()?` to `MftStream::from_reader` and use
+`raw.file_record_size()`. The adapter handles fragmented extents through
+`Read + Seek`. Raw-volume permissions and live-scan consistency limits still apply.
 
 ## Scope and limitations
 
@@ -87,7 +90,7 @@ live-scan consistency limitations still apply.
 Enable `jsonl` for streaming export of raw scan results or offline `MftStream`
 records. Enable only `serde` for the separate versioned DTOs. Both are optional.
 The [export guide and schema](docs/export.md) describe exact identifiers,
-timestamps, OS name encodings, metadata completeness, and known parser limits.
+timestamps, lossless NTFS names, native path encodings, metadata completeness, and known parser limits.
 
 ```text
 cargo run --example raw_mft_export --features jsonl -- file extracted.MFT 1024

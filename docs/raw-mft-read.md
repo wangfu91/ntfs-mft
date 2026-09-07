@@ -5,6 +5,9 @@ FSCTL enumeration. ReFS is rejected with `MftError::UnsupportedFilesystem`.
 All volume access is read-only; see [Windows](windows-raw-volume-access.md) and
 [macOS](macos-raw-volume-access.md) access requirements.
 
+For public entry points and their different contracts, start with
+[Choosing an MFT API](api-guide.md).
+
 ## Discovery and I/O
 
 `RawMft::new` reads the boot sector and FILE record zero, decodes the unnamed
