@@ -12,6 +12,7 @@ pub mod errors;
 pub mod export;
 mod file_attributes;
 mod path;
+pub use path::{MftPathIndex, MftPathError, MftPathQuality, MftPathResolution};
 #[cfg(windows)]
 mod privilege;
 pub mod raw_mft;

@@ -6,6 +6,9 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MftError {
+    /// Indexed path construction failed.
+    #[error("Path index error: {0}")]
+    PathIndex(#[from] crate::MftPathError),
     /// Serialization of an export item failed.
     #[cfg(feature = "jsonl")]
     #[error("Export serialization error: {0}")]

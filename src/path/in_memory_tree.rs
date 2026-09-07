@@ -1,184 +1,209 @@
-//! In-memory directory tree built from a raw `$MFT` scan.
-//!
-//! [`InMemoryDirTree`] is a pre-built, read-only map from 48-bit MFT record
-//! numbers to `(parent, UTF-16 name)` pairs. Once constructed, resolving a
-//! file path to the root is a pure pointer-chase with no syscalls.
-
-use crate::{Fid, raw_mft::RawMft};
+//! Volume-independent path indexing with explicit identity and quality checks.
+use crate::{Fid, RawMftBatchEntry, RawMftEntry};
 use rustc_hash::{FxHashMap, FxHashSet};
-#[cfg(windows)]
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::{ffi::OsString, path::PathBuf};
+use std::{
+    ffi::{OsStr, OsString},
+    path::{Component, Path, PathBuf},
+};
 
-/// NTFS root directory MFT record number (`$Root`).
-const NTFS_ROOT_RECORD_NUMBER: u64 = 5;
+/// Why a path could not be reconstructed exactly.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum MftPathError {
+    /// A required record was not indexed.
+    #[error("missing indexed reference {0}")]
+    MissingReference(Fid),
+    /// A slot contains a different generation of a file.
+    #[error("reference {requested} was replaced by {indexed}")]
+    SequenceMismatch {
+        /// Reference requested by the record or caller.
+        requested: Fid,
+        /// Reference currently indexed at that slot.
+        indexed: Fid,
+    },
+    /// Parent links form a cycle.
+    #[error("cycle at reference {0}")]
+    Cycle(Fid),
+    /// The parent walk exceeded its defensive bound.
+    #[error("path exceeds 256 parent steps")]
+    DepthLimit,
+    /// The supplied reference is not an NTFS reference.
+    #[error("not an NTFS reference: {0}")]
+    UnsupportedReference(Fid),
+    /// A leaf name would be interpreted as a path instead of one component.
+    #[error("invalid path component")]
+    InvalidName,
+}
 
-/// Directory entry in the in-memory tree. Stores the parent file
-/// reference number (full 64-bit, not masked) and the leaf name as raw
-/// UTF-16 units so we don't pay an `OsString` allocation per entry.
+/// Trust level of a best-effort indexed path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MftPathQuality {
+    /// All references, including the root, matched their indexed sequence numbers.
+    Exact,
+    /// A complete chain required at least one record-number-only match.
+    RecordFallback,
+    /// The chain could not reach the indexed root.
+    Partial,
+}
+
+/// An indexed relative path and evidence about its reconstruction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MftPathResolution {
+    /// Observed path components in root-to-leaf order. For partial results this
+    /// is only a suffix, not a path relative to the volume root.
+    pub path: PathBuf,
+    /// Whether the chain is exact, fell back to a reused slot, or is incomplete.
+    pub quality: MftPathQuality,
+    /// Whether any step ignored a mismatched sequence, including partial walks.
+    pub used_record_fallback: bool,
+    /// Reason the walk stopped, when incomplete.
+    pub error: Option<MftPathError>,
+}
+
 #[derive(Debug, Clone)]
-struct DirEntry {
-    /// Full parent file reference for this path component.
+struct Node {
+    reference: Fid,
     parent: Fid,
-    /// UTF-16 leaf name stored without allocating an `OsString`.
-    name: Box<[u16]>,
+    name: OsString,
 }
 
-/// Pre-built in-memory directory tree keyed by 48-bit MFT record number.
+/// Reusable path index built from caller-supplied rich, lean or offline records.
 ///
-/// Built in a single pass over the raw `$MFT`. Resolving a path is then
-/// a pointer chase up to the root with no syscalls and no `PathBuf`
-/// allocations until the final assembly.
-#[derive(Debug, Default, Clone)]
-pub(crate) struct InMemoryDirTree {
-    /// Map from 48-bit NTFS record number to its parent/name pair.
-    entries: FxHashMap<u64, DirEntry>,
+/// Insert the root (record 5) and all needed parent records. Paths are relative
+/// to that root, and use host path separators. This index performs no I/O and
+/// does not create an atomic snapshot. Replacing a slot replaces its previous
+/// generation. Memory is proportional to indexed names and records.
+#[derive(Debug, Clone, Default)]
+pub struct MftPathIndex {
+    entries: FxHashMap<u64, Node>,
 }
 
-impl InMemoryDirTree {
-    /// Build the internal path index from a raw `$MFT` reader.
-    ///
-    /// This is kept private so callers go through `RawMft::path_resolver`
-    /// instead of depending on the index representation directly.
-    fn build_from_raw_mft(raw_mft: &RawMft<'_>) -> crate::MftResult<Self> {
-        let record_count = raw_mft.record_count() as usize;
-        let estimated_used_records = if record_count < 2_048 {
-            record_count
-        } else {
-            record_count / 2
-        };
-        let mut entries =
-            FxHashMap::with_capacity_and_hasher(estimated_used_records, Default::default());
-        for r in raw_mft.try_iter()? {
-            let entry = match r {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            if !entry.is_used {
-                continue;
-            }
-            if entry.file_name.is_empty() {
-                continue;
-            }
-            let Some(key) = entry.file_reference.record_number() else {
-                continue;
-            };
-            // Encode the file name as raw UTF-16 once and store it.
-            #[cfg(windows)]
-            let units: Vec<u16> = entry.file_name.encode_wide().collect();
-            #[cfg(not(windows))]
-            let units: Vec<u16> = entry.file_name.to_string_lossy().encode_utf16().collect();
-            entries.insert(
-                key,
-                DirEntry {
-                    parent: entry.parent_reference,
-                    name: units.into_boxed_slice(),
-                },
-            );
-        }
-        entries.shrink_to_fit();
-        Ok(InMemoryDirTree { entries })
+impl MftPathIndex {
+    /// Create an empty index without scanning a volume.
+    pub fn new() -> Self {
+        Self::default()
     }
-
-    /// Number of entries currently stored.
-    #[cfg(all(test, windows))]
-    #[allow(dead_code)]
-    #[must_use]
-    #[inline]
+    /// Number of indexed records.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
-
-    /// Returns `true` if the tree has no entries.
-    #[cfg(all(test, windows))]
-    #[must_use]
-    #[inline]
+    /// Whether the index has no records.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
-
-    /// Insert a directory entry (testing / advanced use).
-    #[cfg(all(test, windows))]
-    #[doc(hidden)]
-    #[allow(clippy::expect_used)]
-    pub(crate) fn insert(&mut self, fid: u64, parent: u64, name: &[u16]) {
+    /// Insert a rich record, including `OfflineMftRecord::entry`. Nameless
+    /// records are ignored. Caller decides whether unused records belong here.
+    pub fn insert(&mut self, entry: &RawMftEntry) -> Result<bool, MftPathError> {
+        self.insert_reference(
+            entry.file_reference,
+            entry.parent_reference,
+            &entry.file_name,
+        )
+    }
+    /// Insert a lean record during an existing parallel scan.
+    pub fn insert_lean(&mut self, entry: &RawMftBatchEntry) -> Result<bool, MftPathError> {
+        self.insert_reference(
+            entry.file_reference,
+            entry.parent_reference,
+            &entry.file_name,
+        )
+    }
+    /// Insert a named record. Returns false for an empty name. The supplied name
+    /// must be one normal path component, except the root's conventional `.`.
+    pub fn insert_reference(
+        &mut self,
+        reference: Fid,
+        parent: Fid,
+        name: &OsStr,
+    ) -> Result<bool, MftPathError> {
+        let number = reference
+            .record_number()
+            .ok_or(MftPathError::UnsupportedReference(reference))?;
+        parent
+            .record_number()
+            .ok_or(MftPathError::UnsupportedReference(parent))?;
+        if name.is_empty() {
+            return Ok(false);
+        }
+        let mut components = Path::new(name).components();
+        if !(number == 5 && name == OsStr::new("."))
+            && !(matches!(components.next(), Some(Component::Normal(_)))
+                && components.next().is_none()
+                && !name.to_string_lossy().contains(['/', '\\', '\0']))
+        {
+            return Err(MftPathError::InvalidName);
+        }
         self.entries.insert(
-            Fid::new(fid)
-                .record_number()
-                .expect("standard fid must expose record number"),
-            DirEntry {
-                parent: Fid::new(parent),
-                name: name.to_vec().into_boxed_slice(),
+            number,
+            Node {
+                reference,
+                parent,
+                name: name.to_owned(),
             },
         );
+        Ok(true)
+    }
+    /// Reconstruct a root-relative path, checking every full reference.
+    pub fn resolve_strict(&self, reference: Fid) -> Result<PathBuf, MftPathError> {
+        let result = self.walk(reference, false);
+        match result.error {
+            Some(error) => Err(error),
+            None => Ok(result.path),
+        }
+    }
+    /// Reconstruct as much as possible, explicitly allowing record-number
+    /// fallback. Partial paths are suffixes and must not be treated as rooted.
+    pub fn resolve_best_effort(&self, reference: Fid) -> MftPathResolution {
+        self.walk(reference, true)
     }
 
-    /// Walks parents up to the root and returns the resolved path
-    /// (without drive prefix). Returns `None` if the chain breaks or a
-    /// cycle is detected.
-    #[cfg(all(test, windows))]
-    #[must_use]
-    pub fn resolve(&self, fid: Fid) -> Option<PathBuf> {
-        self.resolve_with_optional_drive(fid, None)
-    }
-
-    /// Walks parents and prepends `<drive>:\` to the resolved path.
-    #[cfg(all(test, windows))]
-    #[must_use]
-    pub fn resolve_with_drive_letter(&self, fid: Fid, drive: char) -> Option<PathBuf> {
-        self.resolve_with_optional_drive(fid, Some(drive))
-    }
-
-    /// Resolve a path and optionally prepend a drive-letter prefix.
-    pub(crate) fn resolve_with_optional_drive(
-        &self,
-        fid: Fid,
-        drive: Option<char>,
-    ) -> Option<PathBuf> {
-        // Maximum walk depth: comfortably above practical NTFS path depths
-        // while still bounding malformed parent chains.
-        const MAX_STEPS: usize = 256;
-
-        let mut chain: Vec<&[u16]> = Vec::with_capacity(32);
-        let mut current = fid.record_number()?;
-        let mut visited = FxHashSet::default();
-        let mut steps = 0usize;
-        loop {
-            if steps >= MAX_STEPS || !visited.insert(current) {
-                return None;
-            }
-            steps += 1;
-
-            let entry = self.entries.get(&current)?;
-            chain.push(&entry.name);
-
-            let parent = entry.parent.record_number()?;
-            // Stop at the NTFS root (`$Root`) or on a self-parenting record.
-            if parent == current || parent == NTFS_ROOT_RECORD_NUMBER {
+    fn walk(&self, mut reference: Fid, allow_fallback: bool) -> MftPathResolution {
+        let mut names = Vec::new();
+        let mut seen = FxHashSet::default();
+        let mut fallback = false;
+        let mut failure = Some(MftPathError::DepthLimit);
+        for _ in 0..256 {
+            let Some(number) = reference.record_number() else {
+                failure = Some(MftPathError::UnsupportedReference(reference));
+                break;
+            };
+            if !seen.insert(number) {
+                failure = Some(MftPathError::Cycle(reference));
                 break;
             }
-            current = parent;
+            let Some(node) = self.entries.get(&number) else {
+                failure = Some(MftPathError::MissingReference(reference));
+                break;
+            };
+            if node.reference != reference {
+                if !allow_fallback {
+                    failure = Some(MftPathError::SequenceMismatch {
+                        requested: reference,
+                        indexed: node.reference,
+                    });
+                    break;
+                }
+                fallback = true;
+            }
+            if number == 5 && node.parent == node.reference {
+                failure = None;
+                break;
+            }
+            names.push(node.name.as_os_str());
+            reference = node.parent;
         }
-
-        let mut path = PathBuf::new();
-        if let Some(drive) = drive {
-            let drive = drive.to_ascii_uppercase();
-            path.push(format!("{drive}:\\"));
+        let path = names.into_iter().rev().collect();
+        MftPathResolution {
+            path,
+            quality: if failure.is_some() {
+                MftPathQuality::Partial
+            } else if fallback {
+                MftPathQuality::RecordFallback
+            } else {
+                MftPathQuality::Exact
+            },
+            used_record_fallback: fallback,
+            error: failure,
         }
-        for units in chain.iter().rev() {
-            #[cfg(windows)]
-            path.push(OsString::from_wide(units));
-            #[cfg(not(windows))]
-            path.push(OsString::from(String::from_utf16_lossy(units)));
-        }
-        Some(path)
-    }
-}
-
-impl TryFrom<&RawMft<'_>> for InMemoryDirTree {
-    type Error = crate::MftError;
-
-    fn try_from(raw_mft: &RawMft<'_>) -> Result<Self, Self::Error> {
-        Self::build_from_raw_mft(raw_mft)
     }
 }

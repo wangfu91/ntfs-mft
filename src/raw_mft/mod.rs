@@ -144,8 +144,14 @@ impl<'a> RawMft<'a> {
 
     /// Create a [`RawMftPathResolver`] for entries produced by this raw `$MFT` reader.
     ///
-    /// The returned resolver uses a snapshot-local in-memory directory tree by
-    /// default. On Windows, call `RawMftPathResolver::with_live_fallback` if you
+    /// Construction scans all base records, including root record 5, and stores
+    /// their selected names in memory: O(records + names) space and a full scan
+    /// of I/O. Scan I/O errors are propagated; malformed records may still be
+    /// skipped by the raw scanner. This is not an atomic snapshot. Build a
+    /// [`crate::MftPathIndex`] during an existing scan and use
+    /// [`RawMftPathResolver::from_index`] to avoid a second pass.
+    ///
+    /// Default lookups verify sequence numbers at every step. On Windows, call `RawMftPathResolver::with_live_fallback` if you
     /// explicitly want best-effort current-volume fallback for snapshot misses.
     pub fn path_resolver(&self) -> crate::MftResult<RawMftPathResolver<'a>> {
         RawMftPathResolver::new(self)

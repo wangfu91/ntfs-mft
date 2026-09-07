@@ -591,3 +591,22 @@ fn impossible_stream_length_is_rejected_before_allocation() -> MftResult<()> {
     ));
     Ok(())
 }
+
+#[test]
+fn offline_records_build_a_volume_independent_path_index() -> MftResult<()> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/omerbenamram-mft/MFT");
+    let mut stream = MftStream::from_path(path, options()?)?;
+    let mut index = ntfs_mft::MftPathIndex::new();
+    for number in [5, 28, 29, 30] {
+        index.insert(&stream.read_record(number)?.entry)?;
+    }
+    let entry = stream.read_record(30)?.entry;
+    assert_eq!(
+        index.resolve_strict(entry.file_reference)?,
+        std::path::PathBuf::from("WINDOWS")
+            .join("system32")
+            .join("config")
+    );
+    Ok(())
+}

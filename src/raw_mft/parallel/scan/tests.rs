@@ -337,3 +337,20 @@ fn lean_and_rich_preserve_usage_for_deleted_records() -> MftResult<()> {
     );
     Ok(())
 }
+
+#[test]
+fn path_resolver_construction_propagates_scan_io_errors() -> MftResult<()> {
+    let volume = volume()?;
+    let mut raw = mft(&volume);
+    raw.extent_map = Arc::new(ExtentMap::from_runs(
+        &[DataRun::Data {
+            lcn: 0,
+            clusters: 64,
+        }],
+        1024,
+        1024,
+    ));
+    raw.bitmap = Arc::from([]);
+    assert!(matches!(raw.path_resolver(), Err(MftError::Io(_))));
+    Ok(())
+}
