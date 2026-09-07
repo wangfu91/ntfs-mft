@@ -115,7 +115,7 @@ fn captured_owned_stream_preserves_all_original_bytes() -> MftResult<()> {
 #[test]
 fn captured_record_inventory_matches_independent_decoder() -> MftResult<()> {
     let (mut files, mut other, mut dirs) = (0, 0, 0);
-    for (number, bytes) in MFT.chunks_exact(1024).enumerate() {
+    for (number, bytes) in MFT.as_chunks::<1024>().0.iter().enumerate() {
         let mut bytes = bytes.to_vec();
         if &bytes[..4] != b"FILE" {
             other += 1;
