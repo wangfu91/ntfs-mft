@@ -38,7 +38,7 @@ pub mod errors;
 pub mod export;
 mod file_attributes;
 mod path;
-pub use path::{MftPathIndex, MftPathError, MftPathQuality, MftPathResolution};
+pub use path::{MftPathError, MftPathIndex, MftPathQuality, MftPathResolution};
 #[cfg(windows)]
 mod privilege;
 pub mod raw_mft;
@@ -48,14 +48,15 @@ pub mod volume;
 pub use errors::{MftError, ScanError};
 pub use raw_mft::*;
 pub use time::Filetime;
-pub use types::{NtfsFileReference, FileReferenceError, FileAttributes, Usn};
+pub use types::{FileAttributes, FileReferenceError, NtfsFileReference, Usn};
 pub use volume::Volume;
 /// Result of an NTFS MFT operation.
 pub type MftResult<T> = std::result::Result<T, MftError>;
 /// Common imports for raw MFT scanning.
 pub mod prelude {
     pub use crate::{
-        NtfsFileReference, FileAttributes, Filetime, MftError, MftResult, MftStream, MftStreamOptions, RawMft,
-        NtfsName, RawMftEntry, RawMftPathResolver, RawMftScanOptions, Usn, Volume,
+        FileAttributes, Filetime, MftError, MftResult, MftStream, MftStreamOptions,
+        NtfsFileReference, NtfsName, RawMft, RawMftEntry, RawMftPathResolver, RawMftScanOptions,
+        Usn, Volume,
     };
 }

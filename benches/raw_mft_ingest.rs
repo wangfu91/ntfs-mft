@@ -237,10 +237,7 @@ fn push_unique_case(cases: &mut Vec<SummaryCase>, case: SummaryCase) {
     }
 }
 
-fn median_elapsed<F, E>(
-    run_count: NonZeroUsize,
-    mut f: F,
-) -> Result<Duration, E>
+fn median_elapsed<F, E>(run_count: NonZeroUsize, mut f: F) -> Result<Duration, E>
 where
     F: FnMut() -> Result<ingest_support::BenchSummary, E>,
 {

@@ -1,6 +1,6 @@
 //! Public offline API tests: no volume handles or elevated privileges.
 use ntfs_mft::{
-    MftError, MftResult, MftStream, MftStreamOptions, MftFieldState as State, MftIssue,
+    MftError, MftFieldState as State, MftIssue, MftResult, MftStream, MftStreamOptions,
 };
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 

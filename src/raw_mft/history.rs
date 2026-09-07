@@ -13,7 +13,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{NtfsName, NtfsFileReference, raw_mft::RawMftEntry, volume::Volume};
+use crate::{NtfsFileReference, NtfsName, raw_mft::RawMftEntry, volume::Volume};
 
 /// NTFS record number reserved for the volume root directory.
 const NTFS_ROOT_RECORD_NUMBER: u64 = 5;
@@ -188,7 +188,11 @@ impl HistoricalPathIndex {
         volume: &Volume,
         entry: &RawMftEntry,
     ) -> HistoricalPathResolution {
-        self.resolve_best_effort(volume, entry.file_reference, entry.file_name.to_os_string().as_os_str())
+        self.resolve_best_effort(
+            volume,
+            entry.file_reference,
+            entry.file_name.to_os_string().as_os_str(),
+        )
     }
 
     /// Walk the parent chain for a file reference with optional record-number fallback.

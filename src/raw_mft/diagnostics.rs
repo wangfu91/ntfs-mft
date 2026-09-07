@@ -1,5 +1,5 @@
 //! Opt-in raw scan diagnostics. Successful iteration is not a completeness guarantee.
-use crate::{MftError, MftMetadata, MftDiagnostic, RawMftEntry};
+use crate::{MftDiagnostic, MftError, MftMetadata, RawMftEntry};
 
 /// One recoverable record-level failure observed during a raw scan.
 #[derive(Debug)]

@@ -17,15 +17,15 @@ fn options_defaults_are_sensible() {
 }
 
 #[test]
-fn raw_mft_entry_display_is_compact() {
+fn raw_mft_entry_display_is_compact() -> Result<(), crate::types::FileReferenceError> {
     use crate::{FileAttributes, Filetime, NtfsFileReference};
 
     let entry = RawMftEntry {
         collection_options: crate::RawMftEntryOptions::default(),
         record_number: 42,
         sequence_number: 1,
-        file_reference: NtfsFileReference::from_parts(42, 1),
-        parent_reference: NtfsFileReference::from_parts(5, 1),
+        file_reference: NtfsFileReference::try_from_parts(42, 1)?,
+        parent_reference: NtfsFileReference::try_from_parts(5, 1)?,
         base_record_number: 0,
         hard_link_count: 2,
         flags: 0,
@@ -62,6 +62,7 @@ fn raw_mft_entry_display_is_compact() {
     assert!(text.contains("links=2"));
     assert!(text.contains("size=1234"));
     assert!(text.contains("\"file.txt\""));
+    Ok(())
 }
 
 mod integration_tests {

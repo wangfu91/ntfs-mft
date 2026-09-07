@@ -1,8 +1,7 @@
 //! Export an extracted MFT or raw volume as JSONL. Diagnostics go to stderr.
 use ntfs_mft::export::JsonlWriter;
 use ntfs_mft::{
-    MftError, MftResult, MftStream, MftStreamOptions, MftIssue, MftStreamRecord,
-    RawMftScanOptions,
+    MftError, MftIssue, MftResult, MftStream, MftStreamOptions, MftStreamRecord, RawMftScanOptions,
 };
 use std::{
     env,

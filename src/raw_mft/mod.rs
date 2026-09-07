@@ -39,8 +39,8 @@ mod byte_reader;
 mod chunk_plan;
 mod diagnostics;
 mod metadata;
-pub use metadata::{MftFieldState, MftMetadata, MftDiagnostic, MftIssue, MftExternalPayload};
 pub use diagnostics::{RawMftDiagnosticRecord, RawMftScanDiagnostic, RawMftScanReport};
+pub use metadata::{MftDiagnostic, MftExternalPayload, MftFieldState, MftIssue, MftMetadata};
 // Enabled only by the non-publishable differential test package's build script.
 #[cfg(all(test, ntfs_mft_differential))]
 #[path = "../../differential-tests/tests/mod.rs"]
@@ -77,12 +77,11 @@ pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawM
 pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
 pub use layout::data_run::{DataRun as DataRunInfo, DataRunSummary};
-pub use offline::{
-    MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord,
-};
+pub use offline::{MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord};
 pub use options::{
-    RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions, RawMftLeanScanOptionsBuilder, RawMftReadBuffers,
-    RawMftRecordRange, RawMftScanOptions, RawMftScanOptionsBuilder,
+    RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions,
+    RawMftLeanScanOptionsBuilder, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
+    RawMftScanOptionsBuilder,
 };
 pub use parallel::RawMftParallelScheduling;
 pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};

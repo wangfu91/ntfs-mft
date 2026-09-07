@@ -136,8 +136,8 @@ pub fn print_serial_config(config: &SerialConfig) {
     #[cfg(windows)]
     let source = config.drive.to_string();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let source =
-        env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
+    let source = env::var("NTFS_MFT_TEST_VOLUME")
+        .unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
     eprintln!(
         "raw_mft serial read config: volume={} start_record={} end_record={} max_records={} ads={} runs={} dos={} unused={}",
         source,

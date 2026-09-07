@@ -71,10 +71,7 @@ impl BenchConfig {
     fn from_env() -> Self {
         Self {
             drive: pick_drive(),
-            worker_count: parse_env_nonzero_usize(
-                "NTFS_MFT_BENCH_WORKERS",
-                default_worker_count(),
-            ),
+            worker_count: parse_env_nonzero_usize("NTFS_MFT_BENCH_WORKERS", default_worker_count()),
             main_buffer_bytes: parse_env_nonzero_usize(
                 "NTFS_MFT_BENCH_BUFFER_BYTES",
                 nonzero_usize(DEFAULT_MAIN_BUFFER_BYTES),
@@ -222,8 +219,8 @@ pub fn print_bench_config(config: &BenchConfig) {
     #[cfg(windows)]
     let source = config.drive.to_string();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let source =
-        env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
+    let source = env::var("NTFS_MFT_TEST_VOLUME")
+        .unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
     eprintln!(
         "raw_mft_ingest bench config: volume={} workers={} chunk_records={} main_buffer={} attr_buffer={} start_record={} end_record={}",
         source,
@@ -307,7 +304,8 @@ pub fn run_parallel_ingest(
             records: &mut records,
             children_by_parent: &mut children_by_parent,
         };
-        mft.parallel().lean()
+        mft.parallel()
+            .lean()
             .chunks(chunks)
             .scan_options(iter_options.into_lean())
             .workers(config.worker_count)
