@@ -54,20 +54,31 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v> {
         }
     }
 
-    /// Use a custom chunk planning policy when explicit chunks are not provided.
+    /// Set partition sizing and switch back to automatic chunk planning.
+    /// Selection always comes from [`Self::scan_options`].
     pub fn chunk_plan(mut self, options: RawMftChunkPlanOptions) -> Self {
         self.chunk_plan = options;
         self.chunks = None;
         self
     }
 
-    /// Use explicit chunks instead of planning them from this scan.
+    /// Use explicit candidate chunks instead of automatic planning.
+    ///
+    /// Chunks are intersected with the scan range and volume bounds; empty
+    /// intersections are discarded. Supplied order is preserved. Overlapping
+    /// intersections are rejected with [`MftError::InvalidOptions`] before any
+    /// records are scanned. Unused records are filtered using the scan options.
+    /// Omitted chunks are never recreated.
     pub fn chunks(mut self, chunks: Vec<RawMftWorkChunk>) -> Self {
         self.chunks = Some(chunks);
         self
     }
 
-    /// Use custom raw-MFT scan options for each chunk.
+    /// Set record selection and parsing options for the entire scan.
+    ///
+    /// The range and unused-record policy apply to both automatic planning and
+    /// execution, regardless of the order of builder calls. Explicit chunks
+    /// further restrict the selected range.
     pub fn scan_options(mut self, options: RawMftScanOptions) -> Self {
         self.scan_options = options;
         self
@@ -89,7 +100,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v> {
     pub fn collect_batches(self) -> Result<Vec<RawMftChunkBatch>, MftError> {
         let worker_count = self.resolved_worker_count()?;
         self.mft.read_chunks(
-            self.resolved_chunks(),
+            self.resolved_chunks()?,
             self.scan_options,
             worker_count,
             self.scheduling.into(),
@@ -103,7 +114,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v> {
     {
         let worker_count = self.resolved_worker_count()?;
         self.mft.for_each_chunk(
-            self.resolved_chunks(),
+            self.resolved_chunks()?,
             self.scan_options,
             worker_count,
             self.scheduling.into(),
@@ -120,7 +131,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v> {
     {
         let worker_count = self.resolved_worker_count()?;
         self.mft.for_each_mapped_chunk(
-            self.resolved_chunks(),
+            self.resolved_chunks()?,
             self.scan_options,
             worker_count,
             self.scheduling.into(),
@@ -144,7 +155,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v> {
     {
         let worker_count = self.resolved_worker_count()?;
         self.mft.for_each_folded_chunk(
-            self.resolved_chunks(),
+            self.resolved_chunks()?,
             self.scan_options,
             worker_count,
             self.scheduling.into(),
@@ -176,7 +187,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v> {
     {
         let worker_count = self.resolved_worker_count()?;
         self.mft.fold_records_cached_enrich(
-            self.resolved_chunks(),
+            self.resolved_chunks()?,
             self.scan_options,
             worker_count,
             init,
@@ -186,10 +197,43 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v> {
     }
 
     /// Resolve the work chunks for this scan, either from explicit chunks or by planning them from the chunk plan options.
-    fn resolved_chunks(&self) -> Vec<RawMftWorkChunk> {
-        self.chunks
-            .clone()
-            .unwrap_or_else(|| self.mft.plan_chunks_with_options(self.chunk_plan.clone()))
+    fn resolved_chunks(&self) -> Result<Vec<RawMftWorkChunk>, MftError> {
+        match &self.chunks {
+            Some(chunks) => {
+                let range = self.scan_options.range();
+                let end = range
+                    .end_record()
+                    .unwrap_or(self.mft.record_count())
+                    .min(self.mft.record_count());
+                let chunks: Vec<_> = chunks
+                    .iter()
+                    .filter_map(|chunk| {
+                        let start_record = chunk.start_record.max(range.start_record());
+                        let end_record = chunk.end_record.min(end);
+                        (start_record < end_record).then_some(RawMftWorkChunk {
+                            start_record,
+                            end_record,
+                        })
+                    })
+                    .collect();
+                // Validate a sorted copy, retaining caller order for execution.
+                // Overlapping reads could also reapply USA fixups in reused buffers.
+                let mut ordered = chunks.clone();
+                ordered.sort_unstable_by_key(|chunk| chunk.start_record);
+                if ordered
+                    .windows(2)
+                    .any(|pair| pair[0].end_record > pair[1].start_record)
+                {
+                    return Err(MftError::InvalidOptions(
+                        "explicit chunks overlap within the scan range",
+                    ));
+                }
+                Ok(chunks)
+            }
+            None => Ok(self
+                .mft
+                .plan_chunks_with_options(self.chunk_plan.clone(), &self.scan_options)),
+        }
     }
 
     /// Resolve the worker count for this scan, either from an explicit value or from `thread::available_parallelism()`.
@@ -208,3 +252,6 @@ impl<'v> RawMft<'v> {
         RawMftParallelScan::new(self)
     }
 }
+
+#[cfg(test)]
+mod tests;

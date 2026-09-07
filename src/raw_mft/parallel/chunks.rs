@@ -22,16 +22,23 @@ impl<'a> RawMft<'a> {
     /// Build deterministic logical work chunks for raw `$MFT` parsing.
     #[must_use]
     pub fn plan_chunks(&self) -> Vec<RawMftWorkChunk> {
-        self.plan_chunks_with_options(RawMftChunkPlanOptions::default())
+        self.plan_chunks_with_options(
+            RawMftChunkPlanOptions::default(),
+            &RawMftScanOptions::default(),
+        )
     }
 
-    /// Build logical work chunks with custom planning options.
+    /// Build logical work chunks using scan selection and custom partition sizing.
+    ///
+    /// Pass the same scan options to execution. A precomputed plan cannot recover
+    /// ranges or unused bands omitted by the options used to create it.
     #[must_use]
     pub fn plan_chunks_with_options(
         &self,
         options: RawMftChunkPlanOptions,
+        scan_options: &RawMftScanOptions,
     ) -> Vec<RawMftWorkChunk> {
-        let range = options.range();
+        let range = scan_options.range();
         let end_record = range
             .end_record()
             .unwrap_or(self.record_count())
@@ -40,12 +47,15 @@ impl<'a> RawMft<'a> {
             range.start_record(),
             end_record,
             options.max_records_per_chunk(),
-            options.include_unused_records(),
+            scan_options.include_unused_records(),
             |record_number| self.bitmap_used(record_number),
         )
     }
 
     /// Parse one logical work chunk into lean batch entries.
+    ///
+    /// This low-level operation uses the chunk range directly, ignoring the
+    /// range in `options`. For automatic range intersection use [`Self::parallel`].
     pub fn read_chunk(
         &self,
         chunk: RawMftWorkChunk,
@@ -56,6 +66,9 @@ impl<'a> RawMft<'a> {
     }
 
     /// Parse one logical work chunk and fold lean batch entries into a caller-owned accumulator.
+    ///
+    /// As with [`Self::read_chunk`], the chunk supplies the range; the range in
+    /// `options` is ignored.
     pub fn fold_chunk<T, Init, Fold>(
         &self,
         chunk: RawMftWorkChunk,

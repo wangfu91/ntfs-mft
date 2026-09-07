@@ -51,13 +51,17 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
     let Some(max_records_per_chunk) = NonZeroU64::new(1024) else {
         return Err("max_records_per_chunk must be non-zero".into());
     };
-    let chunk_options = RawMftChunkPlanOptions::builder()
+    let options = RawMftScanOptions::builder()
         .start_record(24)
         .end_record(Some(50_000))
+        .collect_alternate_data_streams(false)
+        .collect_data_run_summary(false)
+        .build();
+    let chunk_options = RawMftChunkPlanOptions::builder()
         .max_records_per_chunk(max_records_per_chunk)
         .build();
     let chunks: Vec<_> = raw_mft
-        .plan_chunks_with_options(chunk_options)
+        .plan_chunks_with_options(chunk_options, &options)
         .into_iter()
         .take(8)
         .collect();
@@ -66,10 +70,6 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
         return Ok(());
     }
 
-    let options = RawMftScanOptions::builder()
-        .collect_alternate_data_streams(false)
-        .collect_data_run_summary(false)
-        .build();
     let serial_entries: Vec<_> = chunks
         .iter()
         .map(|chunk| {

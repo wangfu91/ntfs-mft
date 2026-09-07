@@ -2,8 +2,6 @@
 
 use std::num::NonZeroU64;
 
-use crate::raw_mft::{layout::record::FIRST_NORMAL_RECORD, options::RawMftRecordRange};
-
 /// A deterministic logical record range for raw `$MFT` parsing work. [start_record, end_record)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RawMftWorkChunk {
@@ -21,14 +19,11 @@ impl RawMftWorkChunk {
     }
 }
 
-/// Options controlling logical work-chunk planning for raw `$MFT` parsing.
+/// Partition sizing for raw `$MFT` parsing.
+///
+/// Record ranges and unused-record selection belong to [`super::RawMftScanOptions`].
 #[derive(Debug, Clone)]
 pub struct RawMftChunkPlanOptions {
-    /// Whether fully unused logical chunk bands should be retained instead of
-    /// being dropped via the `$MFT` bitmap.
-    pub(crate) include_unused_records: bool,
-    /// Logical record range to consider.
-    pub(crate) range: RawMftRecordRange,
     /// Maximum logical records per chunk.
     pub(crate) max_records_per_chunk: NonZeroU64,
 }
@@ -36,8 +31,6 @@ pub struct RawMftChunkPlanOptions {
 impl Default for RawMftChunkPlanOptions {
     fn default() -> Self {
         Self {
-            include_unused_records: false,
-            range: RawMftRecordRange::new(FIRST_NORMAL_RECORD, None),
             max_records_per_chunk: NonZeroU64::new(16 * 1024).unwrap_or(NonZeroU64::MIN),
         }
     }
@@ -47,18 +40,6 @@ impl RawMftChunkPlanOptions {
     /// Returns a fluent builder for [`RawMftChunkPlanOptions`].
     pub fn builder() -> RawMftChunkPlanOptionsBuilder {
         RawMftChunkPlanOptionsBuilder::default()
-    }
-
-    /// Whether fully unused logical chunk bands are retained in the plan.
-    #[must_use]
-    pub const fn include_unused_records(&self) -> bool {
-        self.include_unused_records
-    }
-
-    /// Logical record range to consider.
-    #[must_use]
-    pub const fn range(&self) -> RawMftRecordRange {
-        self.range
     }
 
     /// Maximum logical records per chunk.
@@ -76,30 +57,6 @@ pub struct RawMftChunkPlanOptionsBuilder {
 }
 
 impl RawMftChunkPlanOptionsBuilder {
-    /// Whether fully unused logical chunk bands should be retained in the plan.
-    pub fn include_unused_records(mut self, v: bool) -> Self {
-        self.inner.include_unused_records = v;
-        self
-    }
-
-    /// Set the logical record range to consider.
-    pub fn range(mut self, v: RawMftRecordRange) -> Self {
-        self.inner.range = v;
-        self
-    }
-
-    /// Set the inclusive first record number to consider.
-    pub fn start_record(mut self, v: u64) -> Self {
-        self.inner.range.start_record = v;
-        self
-    }
-
-    /// Set the exclusive end record number to consider.
-    pub fn end_record(mut self, v: Option<u64>) -> Self {
-        self.inner.range.end_record = v;
-        self
-    }
-
     /// Set the maximum logical records per chunk.
     pub fn max_records_per_chunk(mut self, v: NonZeroU64) -> Self {
         self.inner.max_records_per_chunk = v;
@@ -324,31 +281,16 @@ mod tests {
     }
 
     #[test]
-    fn chunk_plan_builder_round_trips_values() {
-        use crate::raw_mft::{RawMftChunkPlanOptions, RawMftRecordRange};
-
-        let options = RawMftChunkPlanOptions::builder()
-            .include_unused_records(true)
-            .range(RawMftRecordRange::new(24, Some(1024)))
+    fn chunk_plan_builder_round_trips_size() {
+        let options = super::RawMftChunkPlanOptions::builder()
             .max_records_per_chunk(NonZeroU64::new(2048).expect("non-zero"))
             .build();
-
-        assert!(options.include_unused_records());
-        assert_eq!(options.range().start_record(), 24);
-        assert_eq!(options.range().end_record(), Some(1024));
+        assert_eq!(options.max_records_per_chunk().get(), 2048);
         assert_eq!(
-            options.max_records_per_chunk(),
-            NonZeroU64::new(2048).expect("non-zero")
+            super::RawMftChunkPlanOptions::default()
+                .max_records_per_chunk()
+                .get(),
+            16384
         );
-    }
-
-    #[test]
-    fn chunk_plan_default_excludes_unused_from_first_normal_record() {
-        use crate::raw_mft::RawMftChunkPlanOptions;
-
-        let options = RawMftChunkPlanOptions::default();
-        assert!(!options.include_unused_records());
-        assert_eq!(options.range().start_record(), 24);
-        assert_eq!(options.range().end_record(), None);
     }
 }

@@ -57,9 +57,9 @@ fn captured_serial_matches_both_parallel_schedulers() -> MftResult<()> {
     assert_eq!(serial.iter().filter(|e| e.is_directory).count(), 107);
     let chunks = raw.plan_chunks_with_options(
         RawMftChunkPlanOptions::builder()
-            .start_record(0)
             .max_records_per_chunk(NonZeroU64::new(16).unwrap())
             .build(),
+        &options,
     );
     assert!(chunks.len() > 1);
     for scheduling in [

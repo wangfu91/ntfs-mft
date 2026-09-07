@@ -120,9 +120,6 @@ impl BenchConfig {
     /// Build chunk-planning options for the parallel ingest path.
     fn chunk_plan_options(&self) -> RawMftChunkPlanOptions {
         RawMftChunkPlanOptions::builder()
-            .include_unused_records(false)
-            .start_record(self.start_record)
-            .end_record(self.end_record)
             .max_records_per_chunk(self.chunk_records)
             .build()
     }
@@ -286,7 +283,7 @@ pub fn workload_shape(mft: &RawMft<'_>, config: &BenchConfig) -> BenchWorkloadSh
     BenchWorkloadShape {
         record_count: mft.record_count(),
         planned_chunks: mft
-            .plan_chunks_with_options(config.chunk_plan_options())
+            .plan_chunks_with_options(config.chunk_plan_options(), &config.iter_options())
             .len(),
         file_record_size: mft.file_record_size(),
         cluster_size: mft.cluster_size(),
@@ -298,8 +295,8 @@ pub fn run_parallel_ingest(
     mft: &RawMft<'_>,
     config: &BenchConfig,
 ) -> Result<BenchSummary, MftError> {
-    let chunks = mft.plan_chunks_with_options(config.chunk_plan_options());
     let iter_options = config.iter_options();
+    let chunks = mft.plan_chunks_with_options(config.chunk_plan_options(), &iter_options);
     let record_table_len = record_count_hint(mft, config);
     let mut records = Vec::with_capacity(record_table_len);
     records.resize_with(record_table_len, || None);

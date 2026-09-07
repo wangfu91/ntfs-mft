@@ -66,11 +66,59 @@ concurrent changes can also invalidate parent relationships during a live scan.
 
 ## Chunk planning
 
-`RawMftChunkPlanOptions` defaults to record 24 through `record_count()`, unused
-records excluded, and at most 16,384 logical records per chunk. The planner keeps
-dense bounded bands and omits only bands with no used records. Including unused
-records retains every band. Planning and scanning have separate filtering
-options; configure both for the intended workload.
+`RawMftScanOptions` is the single source of record selection for automatic
+parallel planning and scanning. Its defaults select record 24 through
+`record_count()` and exclude unused records. `RawMftChunkPlanOptions` controls
+only partition size, defaulting to at most 16,384 logical records per chunk.
+The planner keeps dense bounded bands and omits bands with no used records
+unless the scan options include unused records.
+
+```rust,no_run
+use ntfs_mft::{MftResult, RawMft, RawMftChunkPlanOptions, RawMftScanOptions};
+use std::num::NonZeroU64;
+
+fn scan(raw: &RawMft<'_>) -> MftResult<()> {
+    let options = RawMftScanOptions::builder()
+        .start_record(0)
+        .end_record(Some(1000))
+        .include_unused_records(true)
+        .build();
+    raw.parallel()
+        .scan_options(options)
+        .chunk_plan(RawMftChunkPlanOptions::builder()
+            .max_records_per_chunk(NonZeroU64::new(256).unwrap())
+            .build())
+        .for_each_batch(|batch| {
+            println!("{} entries", batch.entries.len());
+            Ok(())
+        })
+}
+```
+
+Builder order does not change selection. Explicit `.chunks(...)` are candidate
+ranges: execution intersects each with the scan range and volume bounds, drops
+empty intersections, and preserves supplied order. Overlapping intersections
+are rejected with `MftError::InvalidOptions` before scanning; adjacent ranges
+are valid. Returned batch ranges and fold initializer ranges
+are the clipped ranges. Unused-record filtering still uses the scan options.
+Omitted chunks are never recreated, even when unused records are enabled.
+Calling `.chunk_plan(...)` switches back to automatic planning.
+
+For manual planning, call `raw.plan_chunks_with_options(chunk_options, &scan_options)`
+and pass the same scan options to parallel execution. Prefer automatic planning
+when the selection may change. The low-level `read_chunk` and `fold_chunk`
+methods take their range directly from the supplied chunk; their scan-option
+range is not applied.
+
+### Migrating selection from chunk-plan options
+
+Move `range`, `start_record`, `end_record`, and `include_unused_records` from
+`RawMftChunkPlanOptions::builder()` to `RawMftScanOptions::builder()` and pass
+the resulting options to `.scan_options(...)`. These selection methods and
+getters have been removed from chunk-plan options. Manual planning now also
+requires a borrowed scan-options argument. Explicit parallel chunks no longer
+override the scan range: set `start_record(0)` when including system records.
+Overlapping effective chunks now return an error; provide disjoint ranges.
 
 ## Parallel execution
 

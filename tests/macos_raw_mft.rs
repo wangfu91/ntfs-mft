@@ -36,9 +36,9 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
     assert!(!serial.is_empty());
     let chunks = raw.plan_chunks_with_options(
         RawMftChunkPlanOptions::builder()
-            .end_record(Some(4096))
             .max_records_per_chunk(NonZeroU64::new(16).unwrap())
             .build(),
+        &options,
     );
     assert!(
         chunks.len() > 1,

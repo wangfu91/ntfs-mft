@@ -129,6 +129,8 @@ impl RawMftEntryOptions {
 /// Options controlling raw `$MFT` scan behavior.
 ///
 /// Use [`RawMftScanOptions::builder`] for the fluent builder API.
+/// Serial iteration and [`super::RawMftParallelScan`] use the same range and
+/// unused-record selection. Parallel scans also apply selection during planning.
 #[derive(Debug, Clone, Default)]
 pub struct RawMftScanOptions {
     /// Read-buffer sizing.
