@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     println!(
         "  volume:                   {}",
-        std::env::var("USN_TEST_VOLUME").unwrap_or_else(|_| "<default mount>".to_owned())
+        std::env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<default mount>".to_owned())
     );
     println!("  worker_count:             {}", config.worker_count);
     println!("  max_records_per_chunk:    {}", config.chunk_records);

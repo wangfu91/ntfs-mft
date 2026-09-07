@@ -12,25 +12,22 @@
 //!
 //! The filesystem is live, so a small mismatch rate is tolerated.
 
+use ntfs_mft::{MftError, RawMft, Volume as RawVolume};
 use std::collections::HashSet;
-use ntfs_mft::{RawMft, MftError, Volume as RawVolume};
 
-use usn_journal_rs::{
-    errors::UsnError,
-    mft::{Mft, MftIterOptions, UsnRecordVersion},
-    path::PathResolver,
-    volume::Volume,
+use ntfs_mft_integration_tests::windows::{
+    Mft, MftIterOptions, PathResolver, UsnRecordVersion, Volume,
 };
 
 struct SampledMftEntry {
-    fid: usn_journal_rs::Fid,
-    parent_fid: usn_journal_rs::Fid,
+    fid: ntfs_mft::Fid,
+    parent_fid: ntfs_mft::Fid,
     is_dir: bool,
     file_name: std::ffi::OsString,
 }
 
 fn pick_drive() -> char {
-    std::env::var("USN_TEST_DRIVE")
+    std::env::var("NTFS_MFT_TEST_DRIVE")
         .ok()
         .and_then(|s| s.chars().next())
         .map(|c| c.to_ascii_uppercase())
@@ -42,7 +39,7 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
     let drive = pick_drive();
     let volume = match Volume::from_drive_letter(drive) {
         Ok(v) => v,
-        Err(UsnError::NotElevated) => {
+        Err(MftError::NotElevated) => {
             eprintln!("raw_mft_mft_consistency: skipping (requires admin privileges)");
             return;
         }
@@ -260,13 +257,13 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
 ///
 /// Skips automatically when:
 ///  - the process is not elevated, or
-///  - `C:` (or the drive set by `USN_TEST_DRIVE`) is not NTFS.
+///  - `C:` (or the drive set by `NTFS_MFT_TEST_DRIVE`) is not NTFS.
 #[test]
 fn raw_mft_and_mft_api_record_parity_standard_ids() {
     let drive = pick_drive();
     let volume = match Volume::from_drive_letter(drive) {
         Ok(v) => v,
-        Err(UsnError::NotElevated) => {
+        Err(MftError::NotElevated) => {
             eprintln!("raw_mft_record_parity: skipping (requires admin privileges)");
             return;
         }

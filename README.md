@@ -71,8 +71,8 @@ live-scan consistency limitations still apply.
 
 ## Scope and limitations
 
-- NTFS only; ReFS is rejected. USN journal APIs and Windows FSCTL enumeration
-  remain in [usn-journal-rs](https://github.com/wangfu91/usn-journal-rs).
+- NTFS only; ReFS is rejected. For USN journal APIs check [usn-journal-rs](https://crates.io/crates/usn-journal-rs).
+  Windows FSCTL enumeration is used only by local parity-test helpers.
 - Windows raw volume access requires Administrator privileges and a launch context
   permitting raw-volume I/O; see [MSIX runtime requirements](docs/windows-raw-volume-access.md).
   Linux and macOS require read permission for the backing device (typically root
@@ -111,27 +111,15 @@ cargo bench --features windows-examples --bench path_resolver
 
 On Linux and macOS, pass an NTFS mount point or `/dev/...` device instead of `C`.
 Device tests skip when privileges or a suitable volume are unavailable.
-See [cross-repository tests](integration-tests/README.md),
-[offline parser differential tests](differential-tests/README.md),
-[implementation](docs/raw-mft-read.md), and [extraction provenance](docs/EXTRACTION.md).
+Tests and benchmarks use `NTFS_MFT_TEST_DRIVE` on Windows and
+`NTFS_MFT_TEST_VOLUME` on Linux/macOS. ReFS rejection tests use
+`NTFS_MFT_REFS_TEST_DRIVE`. Benchmark tuning uses `NTFS_MFT_BENCH_*` and
+`NTFS_MFT_SERIAL_*`.
+
+See [Windows API parity tests](integration-tests/README.md),
+[offline parser differential tests](differential-tests/README.md), and
+[implementation](docs/raw-mft-read.md).
 
 ## License
 
 MIT; see [LICENSE](LICENSE).
-
-## Test fixture attribution
-
-Our offline correctness tests use the unmodified samples/MFT fixture from
-[omerbenamram/mft](https://github.com/omerbenamram/mft), copyright (c) 2019
-Omer Ben-Amram. Upstream offers MIT/Apache-2.0 licensing; this copy uses the MIT
-option and retains the [upstream license](tests/fixtures/omerbenamram-mft/LICENSE-MIT).
-See [fixture provenance](tests/fixtures/omerbenamram-mft/README.md) for the pinned
-commit, checksum, and coverage. Fixture tests require no device or elevation.
-
-I extracted the [ESD-ISO fixture](tests/fixtures/esd-iso/README.md) from my Windows
-installation USB. Its boot sector, MFT, and fragmented MFT bitmap cover offline
-bootstrapping and serial/parallel scans.
-
-Both fixtures use Git LFS. Install Git LFS, then run `git lfs install` and
-`git lfs pull` after cloning and before building or testing. CI checks out LFS
-objects automatically.

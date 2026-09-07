@@ -6,7 +6,7 @@ use std::io::{Read, Seek, SeekFrom};
 fn volume_byte_reader_feeds_iterator_and_owns_independent_handle() -> MftResult<()> {
     #[cfg(windows)]
     let opened = {
-        let drive = std::env::var("USN_TEST_DRIVE")
+        let drive = std::env::var("NTFS_MFT_TEST_DRIVE")
             .ok()
             .and_then(|s| s.chars().next())
             .unwrap_or('C');
@@ -15,8 +15,8 @@ fn volume_byte_reader_feeds_iterator_and_owns_independent_handle() -> MftResult<
     };
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let opened = {
-        let Ok(path) = std::env::var("USN_TEST_VOLUME") else {
-            eprintln!("SKIP: set USN_TEST_VOLUME to an NTFS device or mount point");
+        let Ok(path) = std::env::var("NTFS_MFT_TEST_VOLUME") else {
+            eprintln!("SKIP: set NTFS_MFT_TEST_VOLUME to an NTFS device or mount point");
             return Ok(());
         };
         if path.starts_with("/dev/") {

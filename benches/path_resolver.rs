@@ -16,9 +16,9 @@ mod windows_bench {
     /// Number of random entries to collect and resolve.
     const NUM_TEST_ENTRIES: usize = 1000;
 
-    /// Read the drive letter to benchmark from `USN_TEST_DRIVE`.
+    /// Read the drive letter to benchmark from `NTFS_MFT_TEST_DRIVE`.
     fn pick_drive() -> char {
-        env::var("USN_TEST_DRIVE")
+        env::var("NTFS_MFT_TEST_DRIVE")
             .ok()
             .and_then(|s| s.chars().next())
             .map(|c| c.to_ascii_uppercase())

@@ -45,14 +45,14 @@ impl SerialConfig {
     pub fn from_env() -> Self {
         Self {
             drive: pick_drive(),
-            start_record: parse_env_u64("USN_RAW_MFT_SERIAL_START_RECORD")
+            start_record: parse_env_u64("NTFS_MFT_SERIAL_START_RECORD")
                 .unwrap_or(FIRST_NORMAL_RECORD),
-            end_record: parse_env_u64("USN_RAW_MFT_SERIAL_END_RECORD"),
-            max_records: parse_env_usize("USN_RAW_MFT_SERIAL_MAX_RECORDS"),
-            collect_alternate_data_streams: parse_env_bool("USN_RAW_MFT_SERIAL_COLLECT_ADS", true),
-            collect_data_run_summary: parse_env_bool("USN_RAW_MFT_SERIAL_COLLECT_RUNS", true),
-            collect_dos_file_name_links: parse_env_bool("USN_RAW_MFT_SERIAL_COLLECT_DOS", true),
-            include_unused_records: parse_env_bool("USN_RAW_MFT_SERIAL_INCLUDE_UNUSED", false),
+            end_record: parse_env_u64("NTFS_MFT_SERIAL_END_RECORD"),
+            max_records: parse_env_usize("NTFS_MFT_SERIAL_MAX_RECORDS"),
+            collect_alternate_data_streams: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_ADS", true),
+            collect_data_run_summary: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_RUNS", true),
+            collect_dos_file_name_links: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_DOS", true),
+            include_unused_records: parse_env_bool("NTFS_MFT_SERIAL_INCLUDE_UNUSED", false),
         }
     }
 
@@ -89,9 +89,9 @@ pub struct SerialSummary {
     pub size_checksum: u64,
 }
 
-/// Read the drive letter to benchmark from `USN_TEST_DRIVE`.
+/// Read the drive letter to benchmark from `NTFS_MFT_TEST_DRIVE`.
 pub fn pick_drive() -> char {
-    env::var("USN_TEST_DRIVE")
+    env::var("NTFS_MFT_TEST_DRIVE")
         .ok()
         .and_then(|value| value.chars().next())
         .map(|c| c.to_ascii_uppercase())
@@ -105,10 +105,10 @@ pub fn open_volume(drive: char) -> Option<Volume> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let result = {
         let _ = drive;
-        let source = match env::var("USN_TEST_VOLUME") {
+        let source = match env::var("NTFS_MFT_TEST_VOLUME") {
             Ok(source) => source,
             Err(_) => {
-                eprintln!("skipping bench: set USN_TEST_VOLUME to an NTFS mount or device");
+                eprintln!("skipping bench: set NTFS_MFT_TEST_VOLUME to an NTFS mount or device");
                 return None;
             }
         };
@@ -137,7 +137,7 @@ pub fn print_serial_config(config: &SerialConfig) {
     let source = config.drive.to_string();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let source =
-        env::var("USN_TEST_VOLUME").unwrap_or_else(|_| "<unset: set USN_TEST_VOLUME>".to_owned());
+        env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
     eprintln!(
         "raw_mft serial read config: volume={} start_record={} end_record={} max_records={} ads={} runs={} dos={} unused={}",
         source,

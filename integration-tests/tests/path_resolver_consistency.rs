@@ -15,30 +15,28 @@
 //!
 //! Skips gracefully on non-elevated runs.
 
-use ntfs_mft::{RawMft, RawMftEntry, MftError, Volume as RawVolume};
-use usn_journal_rs::{
-    FileAttributes, Usn,
-    errors::UsnError,
-    mft::MftEntry,
-    path::PathResolver,
-    volume::Volume,
+use ntfs_mft::Fid;
+use ntfs_mft::{MftError, RawMft, RawMftEntry, Volume as RawVolume};
+use ntfs_mft_integration_tests::{
+    MftEntry,
+    windows::{PathResolver, Volume},
 };
 
 fn as_live_entry(entry: &RawMftEntry) -> MftEntry {
     MftEntry {
-        usn: Usn::new(0),
-        fid: usn_journal_rs::Fid::new(entry.file_reference.as_u64().expect("NTFS reference")),
-        parent_fid: usn_journal_rs::Fid::new(entry.parent_reference.as_u64().expect("NTFS parent")),
+        fid: Fid::new(entry.file_reference.as_u64().expect("NTFS reference")),
+        parent_fid: Fid::new(entry.parent_reference.as_u64().expect("NTFS parent")),
         file_name: entry.file_name.clone(),
-        file_attributes: FileAttributes::from_bits_retain(entry.si_file_attributes.bits()),
+        file_attributes: entry.si_file_attributes,
     }
 }
 
 #[test]
 fn all_three_resolvers_agree() {
-    let volume = match Volume::from_drive_letter('C') {
+    let drive = ntfs_mft_integration_tests::windows::pick_drive();
+    let volume = match Volume::from_drive_letter(drive) {
         Ok(v) => v,
-        Err(UsnError::NotElevated) => {
+        Err(MftError::NotElevated) => {
             eprintln!("path_resolver_consistency: skipping (requires admin privileges)");
             return;
         }
@@ -48,7 +46,7 @@ fn all_three_resolvers_agree() {
         }
     };
 
-    let raw_volume = RawVolume::from_drive_letter('C').expect("open raw volume");
+    let raw_volume = RawVolume::from_drive_letter(drive).expect("open raw volume");
     let raw_mft = match RawMft::new(&raw_volume) {
         Ok(m) => m,
         Err(MftError::UnsupportedFilesystem(_)) => {
