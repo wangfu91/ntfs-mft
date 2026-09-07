@@ -12,6 +12,32 @@ For public entry points and their different contracts, start with
 
 ## Discovery and I/O
 
+### What the MFT contains
+
+The Master File Table is NTFS's record table for files and directories, including
+the filesystem's own metadata files. Each file or directory has at least one
+record; attributes that do not fit can occupy extension records. NTFS reserves
+the first 16 record numbers for system use. `$MFTMirr` duplicates an initial
+portion of the MFT for recovery, rather than the entire table.
+
+A record is commonly 1 KiB, but its size comes from the volume's boot geometry.
+The record header describes its identity, flags, update sequence array, and
+attribute area. Attributes then describe the file:
+
+| Component | Purpose |
+| --- | --- |
+| FILE record header | Record identity, sequence number, layout, and fixup information |
+| `$STANDARD_INFORMATION` | Timestamps, flags, and other standard metadata |
+| `$FILE_NAME` | A name, namespace, parent reference, and duplicated metadata; hard links can add names |
+| Security information | A security descriptor or an identifier referring to shared security metadata |
+| `$DATA` | File contents or a runlist locating nonresident content; named streams represent alternate data streams |
+| Other attributes | Directory indexes, attribute lists, reparse information, and other NTFS metadata |
+
+Headers and attributes have format-dependent, variable sizes; they are not fixed
+42-byte or 70-byte blocks. Small attribute values, including complete small-file
+contents, can reside inside the MFT record itself. This means an extracted MFT
+can contain file contents as well as names and timestamps.
+
 `RawMft::new` reads the boot sector and FILE record zero, decodes the unnamed
 `$MFT::$DATA` runlist into an `ExtentMap`, and loads `$MFT::$BITMAP` into memory.
 Boot geometry supplies sector size, cluster size, record size, and MFT location.

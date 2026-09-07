@@ -23,7 +23,17 @@ logical byte stream from either source: a file-backed stream is an offline MFT
 scan; `MftStream::from_raw_mft()` still reads a live volume. Source and parsing
 policy are separate. A live volume scan is not an atomic filesystem snapshot.
 
-## Local use
+## Installation
+
+Requires Rust 1.88 or newer. For the crates.io release:
+
+```toml
+[dependencies]
+ntfs-mft = "0.1"
+```
+
+Version 0.1.0 is being prepared for its first publication. Until it is available
+on crates.io, clone this repository and use a local path dependency:
 
 ```toml
 [dependencies]
@@ -110,8 +120,13 @@ cargo run --example raw_mft_export --features jsonl -- file extracted.MFT 1024
 
 ## Development
 
+Install [Git LFS](https://git-lfs.com/) before cloning, then run `git lfs pull`
+from the repository root. Tests and packaging need the actual fixture bytes;
+Git LFS pointer files are not usable fixtures.
+
 ```text
 cargo build
+cargo fmt --all -- --check
 cargo test
 cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
 cargo clippy --all-targets --all-features -- -D warnings
@@ -134,6 +149,10 @@ Tests and benchmarks use `NTFS_MFT_TEST_DRIVE` on Windows and
 See [Windows API parity tests](integration-tests/README.md),
 [offline parser differential tests](differential-tests/README.md), and
 [implementation](docs/raw-mft-read.md).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, validation, and fixture
+requirements, and the [Code of Conduct](CODE_OF_CONDUCT.md) for community
+expectations. Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 
 ## License
 
