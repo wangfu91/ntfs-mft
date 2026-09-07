@@ -1,16 +1,19 @@
-//! Read-only volume access for NTFS/ReFS on Windows and raw NTFS on Linux.
+//! Read-only volume access for NTFS/ReFS on Windows and raw NTFS on Linux and macOS.
 
 use crate::errors::MftError;
 #[cfg(windows)]
 use crate::privilege;
 #[cfg(windows)]
 use log::{debug, warn};
-use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::fs::{File, OpenOptions};
 #[cfg(target_os = "linux")]
-use std::{
-    fs::{File, OpenOptions},
-    io::{BufRead, BufReader},
-};
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos::device_for_mount_point;
 #[cfg(windows)]
 use windows::{
     Win32::{
@@ -31,8 +34,8 @@ pub(crate) enum VolumeSource {
     DriveLetter(char),
     /// Volume was opened via a mount point path.
     MountPoint(PathBuf),
-    /// Volume was opened directly through a Linux block-device path.
-    #[cfg(target_os = "linux")]
+    /// Volume was opened directly through a Unix device path.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     DevicePath(PathBuf),
 }
 
@@ -46,9 +49,12 @@ pub struct Volume {
     /// duplicate, or transfer ownership of it.
     #[cfg(windows)]
     pub(crate) handle: HANDLE,
-    /// Read-only Linux device file.
-    #[cfg(target_os = "linux")]
+    /// Read-only Unix device file.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) file: File,
+    /// Logical device-block alignment required by macOS raw reads.
+    #[cfg(target_os = "macos")]
+    pub(crate) io_alignment: u64,
     /// Source path used to open the volume.
     source: VolumeSource,
 }
@@ -60,7 +66,7 @@ impl Volume {
             #[cfg(windows)]
             VolumeSource::DriveLetter(letter) => Self::from_drive_letter(*letter),
             VolumeSource::MountPoint(path) => Self::from_mount_point(path),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             VolumeSource::DevicePath(path) => Self::from_device_path(path),
         }
     }
@@ -112,24 +118,39 @@ impl Volume {
         })
     }
 
-    /// Opens the block device backing a Linux NTFS mount, read-only.
-    #[cfg(target_os = "linux")]
+    /// Opens the device backing an NTFS mount on Linux or macOS, read-only.
+    ///
+    /// The path must name the mount root, not a child directory. On macOS, the
+    /// native `ntfs` filesystem type is required and the backing BSD disk is
+    /// opened through its raw character interface. OS access errors are returned
+    /// as [`MftError::Io`].
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn from_mount_point<P: AsRef<Path>>(mount_point: P) -> Result<Self, MftError> {
         let mount_point = mount_point.as_ref().canonicalize()?;
         let device = device_for_mount_point(&mount_point)?;
         let file = open_read_only(&device)?;
         Ok(Self {
+            #[cfg(target_os = "macos")]
+            io_alignment: macos::device_alignment(&file)?,
             file,
             source: VolumeSource::MountPoint(mount_point),
         })
     }
 
-    /// Opens a Linux NTFS block device read-only.
-    #[cfg(target_os = "linux")]
+    /// Opens an NTFS device or partition image on Linux or macOS read-only.
+    ///
+    /// Byte zero must be the NTFS boot sector, not a whole-disk partition table.
+    /// On macOS, `/dev/diskNsM` is opened through its `/dev/rdiskNsM` raw
+    /// character interface so mounted partitions remain readable. Either path
+    /// is accepted; [`Self::device_path`] retains the caller-supplied path.
+    /// Filesystem validation happens when constructing [`crate::RawMft`].
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn from_device_path<P: AsRef<Path>>(device_path: P) -> Result<Self, MftError> {
         let path = device_path.as_ref().to_path_buf();
         let file = open_read_only(&path)?;
         Ok(Self {
+            #[cfg(target_os = "macos")]
+            io_alignment: macos::device_alignment(&file)?,
             file,
             source: VolumeSource::DevicePath(path),
         })
@@ -156,8 +177,8 @@ impl Volume {
         }
     }
 
-    /// Returns the Linux block-device path when opened directly.
-    #[cfg(target_os = "linux")]
+    /// Returns the Unix device path when opened directly.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[must_use]
     pub fn device_path(&self) -> Option<&Path> {
         match &self.source {
@@ -283,8 +304,12 @@ fn get_volume_handle_from_mount_point(mount_point: &Path) -> Result<HANDLE, MftE
     Ok(volume_handle)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn open_read_only(path: &Path) -> Result<File, MftError> {
+    #[cfg(target_os = "macos")]
+    let raw_path = macos::raw_device_path(path);
+    #[cfg(target_os = "macos")]
+    let path = raw_path.as_deref().unwrap_or(path);
     OpenOptions::new()
         .read(true)
         .open(path)

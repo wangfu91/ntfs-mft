@@ -121,7 +121,7 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
         use std::os::windows::ffi::OsStringExt;
         OsString::from_wide(&[0x61, 0xd800, 0x0a, 0x22])
     };
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let name = {
         use std::os::unix::ffi::OsStringExt;
         OsString::from_vec(vec![b'a', 0xff, b'\n', b'"'])
@@ -134,7 +134,7 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
         decoded.raw,
         NameUnits::WindowsUtf16(vec![0x61, 0xd800, 0x0a, 0x22])
     );
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     assert_eq!(
         decoded.raw,
         NameUnits::UnixBytes(vec![b'a', 0xff, b'\n', b'"'])

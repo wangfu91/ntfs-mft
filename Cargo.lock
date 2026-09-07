@@ -598,6 +598,7 @@ dependencies = [
  "criterion",
  "injectorpp",
  "jsonschema",
+ "libc",
  "log",
  "rustc-hash",
  "schemars",

@@ -25,7 +25,7 @@
 //! ```
 //!
 //! On Windows, set `USN_TEST_DRIVE` to choose the drive letter (default `C`).
-//! On Linux, set `USN_TEST_VOLUME` to an NTFS mount or device path. All benches
+//! On Linux and macOS, set `USN_TEST_VOLUME` to an NTFS mount or device path. All benches
 //! skip gracefully when the source isn't NTFS or cannot be read.
 //! Set `USN_RAW_MFT_SERIAL_MAX_RECORDS` to cap the per-run record count for
 //! faster optimization-loop iterations.

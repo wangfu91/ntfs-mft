@@ -1,6 +1,6 @@
 # ntfs-mft
 
-Read-only raw NTFS Master File Table parsing and scanning for Windows and Linux.
+Read-only raw NTFS Master File Table parsing and scanning for Windows, Linux, and macOS.
 
 This library reads the boot sector and fragmented `$MFT` streams directly,
 validates FILE records and update sequence arrays, and exposes timestamps,
@@ -23,6 +23,8 @@ fn main() -> MftResult<()> {
     let volume = Volume::from_drive_letter('C')?;
     #[cfg(target_os = "linux")]
     let volume = Volume::from_mount_point("/media/user/windows")?;
+    #[cfg(target_os = "macos")]
+    let volume = Volume::from_mount_point("/Volumes/ESD-ISO")?;
     let mft = volume.raw_mft()?;
     for entry in mft.try_iter()?.take(20) {
         println!("{}", entry?.file_name.to_string_lossy());
@@ -77,8 +79,9 @@ live-scan consistency limitations still apply.
   remain in [usn-journal-rs](https://github.com/wangfu91/usn-journal-rs).
 - Windows raw volume access requires Administrator privileges and a launch context
   permitting raw-volume I/O; see [MSIX runtime requirements](docs/windows-raw-volume-access.md).
-  Linux requires
-  read permission for the backing block device. All device opens are read-only.
+  Linux and macOS require read permission for the backing device (typically root
+  on macOS); see [macOS access and validation](docs/macos-raw-volume-access.md).
+  All device opens are read-only.
 - A live scan is not an atomic filesystem snapshot; concurrent changes can affect results.
 - Attribute-list enrichment is one level deep. Historical paths are best effort.
 - Snapshot paths are the default; Windows live fallback is explicitly opt-in.
@@ -110,7 +113,7 @@ cargo bench --bench raw_mft_ingest
 cargo bench --features windows-examples --bench path_resolver
 ```
 
-On Linux, pass an NTFS mount point or `/dev/...` device instead of `C`.
+On Linux and macOS, pass an NTFS mount point or `/dev/...` device instead of `C`.
 Device tests skip when privileges or a suitable volume are unavailable.
 See [cross-repository tests](integration-tests/README.md),
 [offline parser differential tests](differential-tests/README.md),

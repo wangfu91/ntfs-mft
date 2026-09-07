@@ -26,7 +26,7 @@
 //!
 //! For low-noise runs, keep worker count / chunk size fixed, close disk-heavy
 //! background work, and benchmark the same drive state repeatedly.
-//! On Linux, set `USN_TEST_VOLUME` to an NTFS mount or device path.
+//! On Linux and macOS, set `USN_TEST_VOLUME` to an NTFS mount or device path.
 
 use std::{
     num::NonZeroUsize,

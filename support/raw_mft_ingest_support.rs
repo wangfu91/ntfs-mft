@@ -225,7 +225,7 @@ pub fn bench_config() -> &'static BenchConfig {
 pub fn print_bench_config(config: &BenchConfig) {
     #[cfg(windows)]
     let source = config.drive.to_string();
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let source =
         env::var("USN_TEST_VOLUME").unwrap_or_else(|_| "<unset: set USN_TEST_VOLUME>".to_owned());
     eprintln!(
@@ -358,7 +358,7 @@ pub fn run_serial_ingest(mft: &RawMft<'_>, config: &BenchConfig) -> Result<Bench
 pub fn open_volume(drive: char) -> Option<Volume> {
     #[cfg(windows)]
     let result = Volume::from_drive_letter(drive);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let result = {
         let _ = drive;
         let source = match env::var("USN_TEST_VOLUME") {

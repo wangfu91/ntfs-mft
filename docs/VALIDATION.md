@@ -1,4 +1,36 @@
-# Split validation (2026-09-06)
+# Validation
+
+## macOS support (2026-09-07)
+
+Host: Apple Silicon, macOS 27.0 build 26A5425a, Rust 1.97.1.
+
+- Default, serde-only, and all-feature tests passed, including the full offline MFT fixture.
+  The all-feature library suite contains 150 passing unit tests; live tests skip
+  without an explicitly selected volume.
+- Strict Clippy passed for all targets/features in the root and differential harness.
+- The differential harness passed all 154 library tests, including 11 comparisons
+  against the pinned upstream parser.
+- All-feature library checks passed for Intel macOS, Linux x86_64, and Windows
+  x86_64 MSVC. These are compile checks, not runtime tests on those platforms.
+- All-feature rustdoc passed with warnings denied; formatting and diff checks passed.
+- `cargo package --allow-dirty --offline` packaged and rebuilt the source locally.
+- The user ran the compiled read-only hardware test with `sudo` in Terminal:
+  `/Volumes/ESD-ISO` successfully resolved to the raw device for `/dev/disk6s1`.
+  It validated 1,100 serial records, 69 chunks under both parallel schedulers
+  with four workers, root-record rereading, independent cursors, and MFT stream
+  ownership after dropping the original volume. An earlier explicit
+  `/dev/rdisk6s1` run also passed. The volume remained mounted read-only.
+- The device reports 512-byte logical blocks and 4,096-byte NTFS clusters.
+  A deterministic fixture test covers simulated 4 KiB device alignment,
+  bootstrap reads, and records crossing block boundaries; physical 4Kn media
+  and older macOS releases have not been tested here.
+
+The initial buffered-device open failed with `EBUSY` even under `sudo`. The
+final macOS backend selects `/dev/rdisk...` and queries `DKIOCGETBLOCKSIZE`
+instead. Hardware validation did not unmount the volume, write to it, or change
+device permissions. The CI matrix includes a native macOS runner.
+
+## Split validation (2026-09-06)
 
 Validated with Rust 1.98.1 on Windows.
 

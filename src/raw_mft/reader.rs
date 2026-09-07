@@ -218,6 +218,9 @@ mod tests {
         #[cfg(target_os = "linux")]
         let volume =
             crate::volume::Volume::from_device_path("/dev/zero").expect("open test byte source");
+        #[cfg(target_os = "macos")]
+        let volume = crate::volume::Volume::from_device_path(std::env::current_exe().unwrap())
+            .expect("open test byte source");
         VolumeReader::new(&volume, 512).expect("test reader construction should succeed")
     }
 
