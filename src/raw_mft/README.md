@@ -84,6 +84,7 @@ Useful environment variables:
 
 - `USN_RAW_MFT_BENCH_DRIVE=C`
 - `USN_TEST_VOLUME=/media/user/windows` (Linux mount or device source)
+- `USN_TEST_VOLUME=/Volumes/ESD-ISO` (macOS mount or `/dev/diskNsM` source)
 - `USN_RAW_MFT_BENCH_WORKERS=10`
 - `USN_RAW_MFT_BENCH_WORKERS_LIST=1,2,4,8,11`
 - `USN_RAW_MFT_BENCH_SCHEDULING=dynamic`

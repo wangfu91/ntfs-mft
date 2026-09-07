@@ -30,7 +30,7 @@
 //! * NTFS only — ReFS volumes return [`crate::errors::MftError::UnsupportedFilesystem`].
 //! * `$ATTRIBUTE_LIST` enrichment is intentionally one level deep; extension
 //!   records are loaded when needed but are not recursively enriched.
-//! * Windows requires Administrator privileges; Linux requires read permission
+//! * Windows requires Administrator privileges; Linux and macOS require read permission
 //!   for the backing block device. All opens are read-only.
 
 mod attr_list;

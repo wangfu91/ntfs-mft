@@ -20,8 +20,8 @@ The relevant code lives in:
 ## Scope and constraints
 
 - `RawMft` is NTFS-only. ReFS returns `MftError::UnsupportedFilesystem` during `RawMft::new`.
-- Windows requires Administrator privileges for the raw volume handle. Linux
-  requires read permission for the backing block device and opens it read-only.
+- Windows requires Administrator privileges for the raw volume handle. Linux and macOS
+  require read permission for the backing block device and open it read-only.
 - The raw reader is not using `FSCTL_ENUM_USN_DATA`. It reads the `$MFT` file itself, interprets NTFS on-disk structures, and yields richer metadata than the FSCTL-based `Mft` API.
 
 ## High-level pipeline
@@ -59,7 +59,8 @@ Screenshot from: [YouTube](https://www.youtube.com/watch?v=PQbGTP0bR9o&t=229s)
 `src/volume.rs` owns the platform volume source and remembers how it was opened:
 
 - Windows drive letter or mount point;
-- Linux mount point resolved through `/proc/self/mountinfo`, or direct device path.
+- Linux mount point resolved through `/proc/self/mountinfo`, or direct device path;
+- macOS mount point resolved through `statfs`, or direct device path.
 
 That source information matters for parallel reads because each worker thread
 reopens its own read-only handle/file instead of sharing one mutable reader.
@@ -92,7 +93,7 @@ The important detail is that the reader does not assume the `$MFT` is contiguous
 `src/raw_mft/io.rs` provides the shared buffered reader over a platform volume.
 
 Windows uses `SetFilePointerEx` / `ReadFile` and respects sector-aligned refill
-boundaries. Linux uses positional `FileExt::read_at` on independently cloned
+boundaries. Linux and macOS use positional `FileExt::read_at` on independently cloned
 read-only descriptors. `VolumeReader` exposes the same byte-oriented interface by:
 
 - aligning internal refill offsets to sector boundaries,
@@ -387,7 +388,7 @@ Instead the parallel path extracts a reusable source from the original `Volume`:
 
 - `DriveLetter(char)`, or
 - `MountPoint(PathBuf)`, or
-- Linux `DevicePath(PathBuf)`.
+- Linux/macOS `DevicePath(PathBuf)`.
 
 Each worker then calls `open_parallel_volume` and gets its own fresh read-only `Volume`.
 

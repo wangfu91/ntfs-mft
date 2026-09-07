@@ -82,12 +82,11 @@ validating caller-authored DTOs against NTFS invariants.
   platform `SystemTime` conversion is involved.
 - Names and supplied paths carry `display` plus `raw: { encoding, units }`.
   `windows_utf16` preserves u16 units, including unpaired surrogates. `unix_bytes`
-  preserves u8 OS bytes. These arrays can be decoded on either platform; native
-  path reconstruction is left to the caller. Display text is never authoritative.
-  `name_fidelity` explicitly distinguishes Windows preservation from Linux's
-  unavailable original UTF-16: the Linux parser may have replaced lone surrogates
-  before export. Export cannot undo that loss. Namespace codes likewise represent
-  the scanner's normalized enum, not unknown original bytes.
+  preserves u8 OS bytes. These arrays can be decoded on any supported platform;
+  native path reconstruction is left to the caller. Display text is never authoritative.
+  `name_fidelity` reports whether the original UTF-16 is preserved. On Linux
+  and macOS, the parser may have replaced lone surrogates before export. Export
+  cannot undo that loss. Namespace codes likewise represent the scanner's normalized enum, not unknown original bytes.
 - `selected_name` is separate from retained `links`; each link keeps its parent
   sequence and namespace. Preserve array order. Header hard-link count can differ
   from array length because of DOS aliases, collection options, or incomplete

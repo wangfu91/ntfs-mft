@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("raw_mft parallel ingest profile");
     #[cfg(windows)]
     println!("  drive:                    {}:", config.drive);
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     println!(
         "  volume:                   {}",
         std::env::var("USN_TEST_VOLUME").unwrap_or_else(|_| "<default mount>".to_owned())

@@ -13,7 +13,7 @@ fn volume_byte_reader_feeds_iterator_and_owns_independent_handle() -> MftResult<
         eprintln!("Testing Windows volume {drive}:");
         Volume::from_drive_letter(drive)
     };
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let opened = {
         let Ok(path) = std::env::var("USN_TEST_VOLUME") else {
             eprintln!("SKIP: set USN_TEST_VOLUME to an NTFS device or mount point");

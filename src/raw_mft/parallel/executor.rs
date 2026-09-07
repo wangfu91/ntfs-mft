@@ -35,8 +35,8 @@ pub(in crate::raw_mft) enum ParallelVolumeSource {
     DriveLetter(char),
     /// Reopen by mount-point path.
     MountPoint(PathBuf),
-    /// Reopen a Linux block device directly.
-    #[cfg(target_os = "linux")]
+    /// Reopen a Unix device directly.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     DevicePath(PathBuf),
 }
 
@@ -241,7 +241,7 @@ pub(in crate::raw_mft) fn reusable_parallel_volume_source(
             .mount_point()
             .map(|path| ParallelVolumeSource::MountPoint(path.to_path_buf()))
     });
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let source = source.or_else(|| {
         volume
             .device_path()
@@ -262,7 +262,7 @@ pub(in crate::raw_mft) fn open_parallel_volume(
         #[cfg(windows)]
         ParallelVolumeSource::DriveLetter(drive_letter) => Volume::from_drive_letter(*drive_letter),
         ParallelVolumeSource::MountPoint(path) => Volume::from_mount_point(path),
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         ParallelVolumeSource::DevicePath(path) => Volume::from_device_path(path),
     }
 }

@@ -1,11 +1,11 @@
 #![deny(missing_docs)]
-//! Read-only raw NTFS Master File Table scanning on Windows and Linux.
+//! Read-only raw NTFS Master File Table scanning on Windows, Linux, and macOS.
 //!
 //! Open a [`Volume`] and construct a [`RawMft`] to iterate metadata records.
 //! See [`raw_mft`] for scan options, parallel iteration, and limitations.
 //! For an extracted `$MFT` file or memory buffer, use [`MftStream`] without a volume.
-#[cfg(not(any(windows, target_os = "linux")))]
-compile_error!("ntfs-mft supports only Windows and Linux targets");
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+compile_error!("ntfs-mft supports only Windows, Linux, and macOS targets");
 mod display;
 pub mod errors;
 #[cfg(feature = "serde")]

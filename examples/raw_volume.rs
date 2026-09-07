@@ -10,7 +10,7 @@ pub fn open_raw_volume(source: Option<String>) -> Result<(Volume, String), MftEr
             .to_ascii_uppercase();
         Ok((Volume::from_drive_letter(drive)?, format!("{drive}:")))
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let source = source.ok_or_else(|| {
             MftError::InvalidMountPoint("pass an NTFS mount point or device path".into())

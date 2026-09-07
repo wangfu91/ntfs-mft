@@ -1,4 +1,4 @@
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::path::Path;
 use std::{env, error::Error};
 
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let drive = source.and_then(|value| value.chars().next()).unwrap_or('C');
         Volume::from_drive_letter(drive)?
     };
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let volume = {
         let source = source
             .ok_or("usage: raw_mft_read <NTFS mount point or device path> [record limit|all]")?;

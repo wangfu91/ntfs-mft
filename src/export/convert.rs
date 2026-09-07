@@ -13,7 +13,7 @@ impl ExportName {
             use std::os::windows::ffi::OsStrExt;
             NameUnits::WindowsUtf16(name.encode_wide().collect())
         };
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         let raw = {
             use std::os::unix::ffi::OsStrExt;
             NameUnits::UnixBytes(name.as_bytes().to_vec())

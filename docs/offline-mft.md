@@ -27,7 +27,7 @@ fn main() -> MftResult<()> {
 }
 ```
 
-On Linux, open `Volume` using a device path or mount point instead. The adapter
+On Linux and macOS, open `Volume` using a device path or mount point instead. The adapter
 reopens that volume source read-only and owns an independent handle, so it can
 outlive the original `RawMft` and `Volume`. Construction can fail if the source
 cannot be reopened. Do not change the mounted source during construction.

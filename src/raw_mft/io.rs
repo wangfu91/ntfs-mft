@@ -1,4 +1,4 @@
-//! Sector-aligned reader over a raw NTFS volume `HANDLE`.
+//! Sector-aligned reader over a raw NTFS volume handle or Unix file.
 //!
 //! Raw volume reads via `ReadFile` must be sector-aligned in both offset
 //! and length on Windows. NTFS FILE records are typically 1 KiB while
@@ -21,7 +21,7 @@ use windows::Win32::{
 /// hundred FILE records.
 pub const DEFAULT_BUFFER_BYTES: usize = 256 * 1024;
 
-/// Reads from a raw volume `HANDLE` without taking ownership of it.
+/// Reads from a borrowed Windows volume handle or an owned Unix file clone.
 ///
 /// The reader maintains its own byte-level cursor; every read is broken
 /// into sector-aligned `ReadFile` calls under the hood, with the data
@@ -30,7 +30,7 @@ pub(crate) struct VolumeReader {
     /// Borrowed raw volume handle.
     #[cfg(windows)]
     handle: HANDLE,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     file: std::fs::File,
     /// Required sector alignment for I/O.
     sector_size: u64,
@@ -61,12 +61,16 @@ impl VolumeReader {
                 "sector_size must be a non-zero power of two",
             ));
         }
+        // The device may require larger reads than the NTFS sector size,
+        // including during bootstrap before the NTFS geometry is known.
+        #[cfg(target_os = "macos")]
+        let sector_size = sector_size.max(volume.io_alignment);
         let sectors = (buffer_bytes as u64 / sector_size).max(1);
         let cap = (sectors * sector_size) as usize;
         Ok(Self {
             #[cfg(windows)]
             handle: volume.handle,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             file: volume.file.try_clone()?,
             sector_size,
             position: 0,
@@ -97,9 +101,9 @@ impl VolumeReader {
     fn refill(&mut self, sector_pos: u64) -> io::Result<()> {
         #[cfg(windows)]
         self.raw_seek(sector_pos)?;
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         use std::os::unix::fs::FileExt;
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let bytes_read = self.file.read_at(&mut self.buf, sector_pos)?;
             if bytes_read == 0 {
@@ -167,7 +171,10 @@ impl VolumeReader {
         if !self.buf_contains(offset, len) {
             // If the requested range can't fit in the buffer at all,
             // grow the buffer to a sector-aligned size that holds it.
-            let needed = (len as u64)
+            let sector_pos = self.round_down(offset);
+            let needed = (offset - sector_pos)
+                .checked_add(len as u64)
+                .ok_or_else(|| io::Error::other("borrow buffer size overflow"))?
                 .div_ceil(self.sector_size)
                 .checked_mul(self.sector_size)
                 .ok_or_else(|| io::Error::other("borrow buffer size overflow"))?;
@@ -176,7 +183,6 @@ impl VolumeReader {
             if needed > self.buf.len() {
                 self.buf.resize(needed, 0);
             }
-            let sector_pos = self.round_down(offset);
             self.refill(sector_pos)?;
             if !self.buf_contains(offset, len) {
                 return Err(io::Error::new(
@@ -240,6 +246,73 @@ impl Seek for VolumeReader {
 mod tests {
     use super::*;
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn positional_readers_keep_independent_cursors_and_own_their_files() {
+        #[cfg(not(ntfs_mft_differential))]
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/omerbenamram-mft/MFT"
+        );
+        // The differential harness compiles this source from its own manifest.
+        #[cfg(ntfs_mft_differential)]
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/omerbenamram-mft/MFT"
+        );
+        let expected = std::fs::read(fixture).unwrap();
+        let volume = Volume::from_device_path(fixture).unwrap();
+        let mut first = VolumeReader::with_buffer_bytes(&volume, 512, 512).unwrap();
+        let mut second = VolumeReader::with_buffer_bytes(&volume, 512, 512).unwrap();
+        drop(volume);
+        let mut bytes = [0; 1024];
+        for offset in [4093, 5, 1025, 512] {
+            second.seek(SeekFrom::Start(offset + 8192)).unwrap();
+            second.read_exact(&mut bytes).unwrap();
+            assert_eq!(
+                &bytes,
+                &expected[offset as usize + 8192..offset as usize + 9216]
+            );
+            first.seek(SeekFrom::Start(offset)).unwrap();
+            first.read_exact(&mut bytes).unwrap();
+            assert_eq!(&bytes, &expected[offset as usize..offset as usize + 1024]);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn device_alignment_covers_bootstrap_and_cross_block_record_borrows() {
+        #[cfg(not(ntfs_mft_differential))]
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/omerbenamram-mft/MFT"
+        );
+        #[cfg(ntfs_mft_differential)]
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/omerbenamram-mft/MFT"
+        );
+        let expected = std::fs::read(fixture).unwrap();
+        let mut volume = Volume::from_device_path(fixture).unwrap();
+        // Simulate a 4 KiB device carrying 512-byte NTFS sectors. The fixture
+        // permits deterministic read verification without physical 4Kn media.
+        volume.io_alignment = 4096;
+        let mut reader = VolumeReader::with_buffer_bytes(&volume, 512, 512).unwrap();
+        assert_eq!(reader.sector_size, 4096);
+        assert_eq!(reader.buf.len(), 4096);
+        let mut boot = [0; 512];
+        reader.read_exact(&mut boot).unwrap();
+        assert_eq!(&boot, &expected[..512]);
+        assert_eq!(reader.borrow_at(4093, 1024).unwrap(), &expected[4093..5117]);
+        assert_eq!(reader.buf_pos, 0);
+        assert_eq!(reader.buf.len(), 8192);
+        assert_eq!(
+            reader.borrow_at(12285, 1024).unwrap(),
+            &expected[12285..13309]
+        );
+        assert_eq!(reader.buf_pos, 8192);
+    }
+
     fn reader() -> VolumeReader {
         #[cfg(windows)]
         let volume = crate::volume::Volume::mock(
@@ -249,6 +322,9 @@ mod tests {
         #[cfg(target_os = "linux")]
         let volume =
             crate::volume::Volume::from_device_path("/dev/zero").expect("open test byte source");
+        #[cfg(target_os = "macos")]
+        let volume = crate::volume::Volume::from_device_path(std::env::current_exe().unwrap())
+            .expect("open test byte source");
         VolumeReader::new(&volume, 512).expect("construct test reader")
     }
 
@@ -273,6 +349,9 @@ mod tests {
         #[cfg(target_os = "linux")]
         let volume =
             crate::volume::Volume::from_device_path("/dev/zero").expect("open test byte source");
+        #[cfg(target_os = "macos")]
+        let volume = crate::volume::Volume::from_device_path(std::env::current_exe().unwrap())
+            .expect("open test byte source");
         assert!(VolumeReader::new(&volume, 0).is_err());
         assert!(VolumeReader::new(&volume, 3).is_err());
         assert!(VolumeReader::new(&volume, 6).is_err());

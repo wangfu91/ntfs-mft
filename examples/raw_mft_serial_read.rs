@@ -3,7 +3,7 @@
 //! timestamps, real / allocated size, alternate data streams, sparse and
 //! compressed flags).
 //!
-//! On Windows, pass a drive letter from an elevated shell. On Linux, pass an
+//! On Windows, pass a drive letter from an elevated shell. On Linux and macOS, pass an
 //! NTFS mount or device path with read permission for its backing device:
 //!
 //! ```text

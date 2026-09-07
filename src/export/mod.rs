@@ -2,7 +2,7 @@
 //!
 //! Enable `serde` for DTOs, or `jsonl` for `JsonlWriter`. Decimal strings preserve
 //! large integers in JSON consumers. Names preserve the supplied OS representation;
-//! Linux parsing may already have replaced invalid NTFS UTF-16. See `docs/export.md`.
+//! Linux/macOS parsing may already have replaced invalid NTFS UTF-16. See `docs/export.md`.
 
 mod convert;
 #[cfg(feature = "jsonl")]

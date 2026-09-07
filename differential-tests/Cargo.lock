@@ -586,6 +586,7 @@ dependencies = [
  "chrono",
  "injectorpp",
  "jsonschema",
+ "libc",
  "log",
  "mft",
  "rustc-hash",
