@@ -594,3 +594,77 @@ fn typed_callbacks_distinguish_scanner_errors_and_preserve_success_order() -> Mf
     assert!(matches!(result, Err(ScanError::Scanner(MftError::Io(_)))));
     Ok(())
 }
+
+#[test]
+fn cached_enrichment_preserves_metadata_outside_selected_range() -> MftResult<()> {
+    let volume = volume_with(|bytes| {
+        let base = &mut bytes[2 * 1024..3 * 1024];
+        // Resident ATTRIBUTE_LIST pointing to a FILE_NAME in slot 26.
+        base[56..60].copy_from_slice(&0x20u32.to_le_bytes());
+        base[60..64].copy_from_slice(&56u32.to_le_bytes());
+        base[72..76].copy_from_slice(&32u32.to_le_bytes());
+        base[76..78].copy_from_slice(&24u16.to_le_bytes());
+        base[80..84].copy_from_slice(&0x30u32.to_le_bytes());
+        base[84..86].copy_from_slice(&32u16.to_le_bytes());
+        base[96..104].copy_from_slice(&((1u64 << 48) | 26).to_le_bytes());
+        base[112..116].copy_from_slice(&u32::MAX.to_le_bytes());
+        base[24..28].copy_from_slice(&116u32.to_le_bytes());
+        let extension = &mut bytes[26 * 1024..27 * 1024];
+        extension[32..40].copy_from_slice(&((1u64 << 48) | 2).to_le_bytes());
+        extension[56..60].copy_from_slice(&0x30u32.to_le_bytes());
+        extension[60..64].copy_from_slice(&96u32.to_le_bytes());
+        extension[72..76].copy_from_slice(&72u32.to_le_bytes());
+        extension[76..78].copy_from_slice(&24u16.to_le_bytes());
+        extension[80..88].copy_from_slice(&((1u64 << 48) | 5).to_le_bytes());
+        extension[144] = 3;
+        extension[145] = 1;
+        extension[146..152].copy_from_slice(&[b'e', 0, b'x', 0, b't', 0]);
+        extension[152..156].copy_from_slice(&u32::MAX.to_le_bytes());
+        extension[24..28].copy_from_slice(&156u32.to_le_bytes());
+    })?;
+    let raw = mft(&volume);
+    for workers in [1, 3] {
+        for selection in 0..3 {
+            let options = RawMftLeanScanOptions::builder()
+                .range(if selection == 0 { 2..3 } else { 0..32 })
+                .build();
+            let mut scan = raw
+                .parallel()
+                .chunk_plan(plan())
+                .lean()
+                .scan_options(options)
+                .workers(NonZeroUsize::new(workers).unwrap());
+            if selection == 1 {
+                scan = scan.chunks(vec![RawMftWorkChunk {
+                    start_record: 2,
+                    end_record: 3,
+                }]);
+            }
+            let inline: Vec<_> = scan
+                .clone()
+                .collect_batches()?
+                .into_iter()
+                .flat_map(|batch| batch.entries)
+                .collect();
+            assert_eq!(inline.len(), 1);
+            assert_eq!(inline[0].file_name, "ext");
+            let mut cached = Vec::new();
+            scan.try_fold_records_cached_enrich(
+                Vec::new,
+                |entries, entry| {
+                    entries.push(entry);
+                    Ok::<_, MftError>(())
+                },
+                |entries| {
+                    cached.extend(entries);
+                    Ok::<_, MftError>(())
+                },
+            )
+            .map_err(|error| match error {
+                crate::ScanError::Scanner(error) | crate::ScanError::Consumer(error) => error,
+            })?;
+            assert_eq!(cached, inline);
+        }
+    }
+    Ok(())
+}

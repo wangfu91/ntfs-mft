@@ -250,7 +250,7 @@ impl RawMft<'_> {
         Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E>,
     {
         let mut acc = init();
-        // Only needed for the rare non-resident `$ATTRIBUTE_LIST` payload.
+        // Read non-resident attribute lists and extensions outside the captured selection.
         let mut attr_reader = VolumeReader::with_buffer_bytes(
             self.volume(),
             self.boot.bytes_per_sector as u64,
@@ -264,7 +264,7 @@ impl RawMft<'_> {
                 deferred.attr_list,
                 deferred.base_number,
                 &mut attr_reader,
-                &self.boot,
+                self,
                 collect_dos,
                 ext_cache,
             );

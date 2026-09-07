@@ -228,6 +228,9 @@ only exports the fast raw entry representation.
 
 Both projections provide `try_for_each_batch`, `try_map_chunks_for_each`, and
 `try_fold_chunks`. Lean scans also provide `try_fold_records_cached_enrich`.
+That method uses captured extension records when available and reads missing
+extensions from the volume, including those outside the selected range or
+explicit chunks. These dependency reads do not add output records.
 These are terminal operations returning `Result<_, ScanError<E>>`:
 `Scanner(MftError)` preserves scanner failures and `Consumer(E)` preserves the
 application error. `E` must be `Send` because worker callbacks can fail.

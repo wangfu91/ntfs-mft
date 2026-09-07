@@ -164,7 +164,8 @@ impl RawMftParallelScan<'_, '_, Lean> {
     /// Execute deferred cached enrichment, preserving application callback
     /// errors. This always uses
     /// dynamic scheduling and visits worker accumulators followed by the
-    /// second-phase accumulator.
+    /// second-phase accumulator. Required extension records outside the selected
+    /// chunks are read on cache misses; they are not yielded as extra records.
     pub fn try_fold_records_cached_enrich<E, Init, Fold, T, V>(
         self,
         init: Init,
