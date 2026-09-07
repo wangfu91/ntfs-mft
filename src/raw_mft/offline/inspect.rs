@@ -25,7 +25,7 @@ impl RecordData {
 }
 
 #[derive(Default)]
-pub(super) struct Inspection {
+pub(in crate::raw_mft) struct Inspection {
     present: [bool; 5],
     incomplete: [bool; 5],
     pub diagnostics: Vec<OfflineDiagnostic>,
@@ -145,11 +145,17 @@ pub(super) fn inspect_record<'a>(
     record: &'a RecordData,
     inspection: &mut Inspection,
 ) -> Vec<NtfsAttribute<'a>> {
-    let view = record.view();
+    inspect_view(&record.view(), inspection)
+}
+
+pub(in crate::raw_mft) fn inspect_view<'a>(
+    view: &FileRecord<'a>,
+    inspection: &mut Inspection,
+) -> Vec<NtfsAttribute<'a>> {
     let (offset, used) = view.attrs_range();
     let mut attributes = Vec::new();
     let complete = for_each_attribute_checked(view.data, offset, used, |attr| {
-        if inspection.observe(record.number, attr) {
+        if inspection.observe(view.number, attr) {
             // NtfsAttribute deliberately does not expose Clone. Reborrow the
             // already-validated exact slice without copying any payload bytes.
             if let Some(attr) = NtfsAttribute::new(attr.data()) {
@@ -158,7 +164,7 @@ pub(super) fn inspect_record<'a>(
         }
     });
     if !complete {
-        inspection.issue(record.number, None, OfflineIssue::MalformedAttribute);
+        inspection.issue(view.number, None, OfflineIssue::MalformedAttribute);
     }
     attributes
 }

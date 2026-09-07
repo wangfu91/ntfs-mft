@@ -179,3 +179,42 @@ configuration intentionally, `.into_lean()` retains selection, buffers, and
 DOS-link policy while discarding rich-only collection choices. Cached enrichment
 remains a lean-only execution method. Rich parallel scans use the same inline
 materialization and enrichment implementation as rich serial scans.
+
+## Diagnostic raw scanning
+
+The fast raw APIs remain tolerant. For evidence about skipped records and
+metadata, use `raw.try_iter_diagnostic(options, diagnostic_limit)`. It yields
+`RawMftDiagnosticRecord` values with per-category `MftFieldState` evidence and
+metadata diagnostics. Base attributes receive the offline parser's validation;
+attribute-list enrichment is conservatively reported as unverified because the
+raw enrichment path does not inspect the complete extension attribute set.
+
+```rust,no_run
+use ntfs_mft::{RawMft, RawMftScanOptions, MftResult};
+fn inspect(raw: &RawMft<'_>) -> MftResult<()> {
+    let mut records = raw.try_iter_diagnostic(RawMftScanOptions::default(), 100)?;
+    for result in records.by_ref() {
+        let record = result?;
+        println!("{} {:?}", record.entry, record.metadata);
+    }
+    let report = records.into_report();
+    println!("{} yielded; {} invalid; reached end: {}",
+        report.yielded, report.invalid_records, report.reached_end);
+    Ok(())
+}
+```
+
+Recoverable parse failures consume a slot and scanning continues. A scan I/O
+error is returned once and stops the diagnostic iterator. The report distinguishes
+unused, sparse, non-FILE/header-invalid, extension, and parser-rejected slots.
+The diagnostic limit bounds retained parser errors, not their counts. Early
+stopping leaves `reached_end` false, and reaching the end does not imply complete
+metadata. Per-record metadata diagnostics are bounded by the physical record.
+Diagnostic scans are currently serial; ordinary rich/lean parallel scans retain
+the fast best-effort policy.
+
+Every rich entry now retains its `collection_options`. Disabled ADS collection
+is `NotCollected` in diagnostic metadata, rather than evidence of absence.
+Ordinary empty fields still do not establish absence. For JSONL output, use
+`JsonlWriter::write_diagnostic` to retain the record's evidence; `write_entry`
+only exports the fast raw entry representation.

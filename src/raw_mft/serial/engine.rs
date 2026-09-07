@@ -16,6 +16,8 @@ use crate::{
 
 /// Mutable state for one serial walk over logical raw-MFT record numbers.
 pub(in crate::raw_mft) struct SerialParseState {
+    pub(super) report: crate::RawMftScanReport,
+    pub(super) diagnostic_limit: Option<usize>,
     next_record: u64,
     end_record: u64,
     offset_cursor: ExtentLookupCursor,
@@ -41,6 +43,8 @@ impl SerialParseState {
         let total = mft.record_count();
         let end_record = end_record.min(total);
         Self {
+            report: crate::RawMftScanReport::default(),
+            diagnostic_limit: None,
             next_record: start_record.min(end_record),
             end_record,
             offset_cursor: ExtentLookupCursor::default(),
@@ -63,8 +67,14 @@ where
     while state.next_record < state.end_record {
         let record_number = state.next_record;
         state.next_record += 1;
+        if state.diagnostic_limit.is_some() {
+            state.report.visited += 1;
+        }
 
         if !state.include_unused_records && !mft.bitmap_used(record_number) {
+            if state.diagnostic_limit.is_some() {
+                state.report.skipped_unused += 1;
+            }
             continue;
         }
 
@@ -73,7 +83,12 @@ where
             .record_offset_with_cursor(record_number, &mut state.offset_cursor);
         let offset = match offset_result {
             Ok(Some(offset)) => offset,
-            Ok(None) => continue,
+            Ok(None) => {
+                if state.diagnostic_limit.is_some() {
+                    state.report.skipped_sparse += 1;
+                }
+                continue;
+            }
             Err(error) => return Err(error),
         };
 
@@ -83,6 +98,9 @@ where
 
         let is_valid = FileRecord::is_valid(buf);
         if !is_valid {
+            if state.diagnostic_limit.is_some() {
+                state.report.skipped_non_file += 1;
+            }
             continue;
         }
 
@@ -91,17 +109,38 @@ where
             Ok(record) => record,
             Err(error) => {
                 warn!("raw_mft: failed to parse record {record_number}: {error}");
+                if let Some(limit) = state.diagnostic_limit {
+                    state.report.invalid_records += 1;
+                    if state.report.diagnostics.len() < limit {
+                        state.report.diagnostics.push(crate::RawMftScanDiagnostic {
+                            record_number,
+                            error,
+                        });
+                    } else {
+                        state.report.omitted_diagnostics += 1;
+                    }
+                }
                 continue;
             }
         };
 
         if record.base_reference() != 0 {
+            if state.diagnostic_limit.is_some() {
+                state.report.skipped_extensions += 1;
+            }
             continue;
         }
 
-        return on_record(&record).map(Some);
+        let result = on_record(&record)?;
+        if state.diagnostic_limit.is_some() {
+            state.report.yielded += 1;
+        }
+        return Ok(Some(result));
     }
 
+    if state.diagnostic_limit.is_some() {
+        state.report.reached_end = true;
+    }
     Ok(None)
 }
 

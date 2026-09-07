@@ -9,6 +9,10 @@ use std::{num::NonZeroU64, sync::Arc};
 // An independent, synthetic volume: every slot is a valid base FILE record,
 // but only slots 2 and 26 are marked used. This leaves whole unused chunk bands.
 fn volume() -> MftResult<Volume> {
+    volume_with(|_| {})
+}
+
+fn volume_with(edit: impl FnOnce(&mut [u8])) -> MftResult<Volume> {
     let mut bytes = vec![0; 32 * 1024];
     for (number, record) in bytes.as_chunks_mut::<1024>().0.iter_mut().enumerate() {
         record[..4].copy_from_slice(b"FILE");
@@ -24,6 +28,7 @@ fn volume() -> MftResult<Volume> {
         record[510..512].copy_from_slice(&0xabcd_u16.to_le_bytes());
         record[1022..1024].copy_from_slice(&0xabcd_u16.to_le_bytes());
     }
+    edit(&mut bytes);
     Arc::new(CapturedVolume::new(vec![(0, bytes)])).open()
 }
 
@@ -352,5 +357,117 @@ fn path_resolver_construction_propagates_scan_io_errors() -> MftResult<()> {
     ));
     raw.bitmap = Arc::from([]);
     assert!(matches!(raw.path_resolver(), Err(MftError::Io(_))));
+    Ok(())
+}
+
+#[test]
+fn diagnostic_scan_counts_skips_bounds_errors_and_retains_metadata_evidence() -> MftResult<()> {
+    let volume = volume_with(|bytes| {
+        bytes[1024..1028].fill(0); // non-FILE
+        bytes[2 * 1024 + 510] = 0; // torn sector
+        bytes[3 * 1024 + 510] = 0; // second torn sector
+        bytes[4 * 1024 + 32..4 * 1024 + 40].copy_from_slice(&1u64.to_le_bytes()); // extension
+    })?;
+    let raw = mft(&volume);
+    let options = RawMftScanOptions::builder()
+        .start_record(0)
+        .end_record(Some(6))
+        .include_unused_records(true)
+        .collect_alternate_data_streams(false)
+        .build();
+    let mut iter = raw.try_iter_diagnostic(options, 1)?;
+    let first = iter.next().unwrap()?;
+    assert!(
+        !first
+            .entry
+            .collection_options
+            .collect_alternate_data_streams()
+    );
+    assert_eq!(
+        first.metadata.standard_information,
+        crate::OfflineFieldState::Absent
+    );
+    assert_eq!(
+        first.metadata.alternate_data_streams,
+        crate::OfflineFieldState::NotCollected
+    );
+    assert!(!iter.report().reached_end);
+    assert_eq!(
+        iter.by_ref()
+            .map(|r| r.map(|r| r.entry.record_number))
+            .collect::<MftResult<Vec<_>>>()?,
+        vec![5]
+    );
+    assert!(iter.next().is_none());
+    let report = iter.into_report();
+    assert_eq!(
+        (
+            report.visited,
+            report.yielded,
+            report.skipped_non_file,
+            report.skipped_extensions,
+            report.invalid_records
+        ),
+        (6, 2, 1, 1, 2)
+    );
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(report.diagnostics[0].record_number, 2);
+    assert!(matches!(
+        report.diagnostics[0].error,
+        MftError::FixupMismatch { .. }
+    ));
+    assert_eq!(report.omitted_diagnostics, 1);
+    assert!(report.reached_end);
+    #[cfg(feature = "serde")]
+    assert_eq!(
+        crate::export::ExportRecordV1::from_diagnostic(&first)
+            .metadata
+            .alternate_data_streams,
+        crate::export::FieldState::NotCollected
+    );
+    Ok(())
+}
+
+#[test]
+fn diagnostic_scan_marks_attribute_lists_unverified_and_stops_on_io() -> MftResult<()> {
+    let volume = volume_with(|bytes| {
+        // Empty resident ATTRIBUTE_LIST in slot zero.
+        bytes[56..60].copy_from_slice(&0x20u32.to_le_bytes());
+        bytes[60..64].copy_from_slice(&24u32.to_le_bytes());
+        bytes[76..78].copy_from_slice(&24u16.to_le_bytes());
+        bytes[80..84].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[24..28].copy_from_slice(&84u32.to_le_bytes());
+    })?;
+    let mut raw = mft(&volume);
+    raw.extent_map = Arc::new(ExtentMap::from_runs(
+        &[DataRun::Data {
+            lcn: 0,
+            clusters: 64,
+        }],
+        1024,
+        1024,
+    ));
+    let options = RawMftScanOptions::builder()
+        .start_record(0)
+        .include_unused_records(true)
+        .build();
+    let mut iter = raw.try_iter_diagnostic(options, 0)?;
+    let first = iter.next().unwrap()?;
+    assert_eq!(
+        first.metadata.standard_information,
+        crate::OfflineFieldState::Unknown
+    );
+    assert!(
+        first
+            .diagnostics
+            .iter()
+            .any(|d| matches!(d.issue, crate::OfflineIssue::EnrichmentNotVerified))
+    );
+    for _ in 1..32 {
+        assert!(iter.next().unwrap().is_ok());
+    }
+    assert!(matches!(iter.next(), Some(Err(MftError::Io(_)))));
+    assert!(iter.next().is_none());
+    assert!(!iter.report().reached_end);
     Ok(())
 }

@@ -85,6 +85,9 @@ pub struct RawMftLink {
 /// Comprehensive metadata for one MFT record.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawMftEntry {
+    /// Materialization choices that produced this entry. Empty collections do
+    /// not establish absence; use diagnostic or offline metadata for evidence.
+    pub collection_options: crate::RawMftEntryOptions,
     /// Record number in the `$MFT`.
     pub record_number: u64,
     /// Record sequence number.
@@ -226,6 +229,11 @@ impl RawMftEntryBuilder {
     fn new(record: &FileRecord<'_>, options: EntryBuildOptions) -> Self {
         Self {
             entry: RawMftEntry {
+                collection_options: crate::RawMftEntryOptions {
+                    collect_alternate_data_streams: options.collect_alternate_data_streams,
+                    collect_data_run_summary: options.collect_data_run_summary,
+                    collect_dos_file_name_links: options.collect_dos_file_name_links,
+                },
                 record_number: record.number,
                 sequence_number: record.sequence_value(),
                 file_reference: Fid::new(record.file_reference()),

@@ -308,6 +308,7 @@ mod tests {
         file_name: &str,
     ) -> RawMftEntry {
         RawMftEntry {
+            collection_options: crate::RawMftEntryOptions::default(),
             record_number,
             sequence_number,
             file_reference: standard_fid(record_number, sequence_number),

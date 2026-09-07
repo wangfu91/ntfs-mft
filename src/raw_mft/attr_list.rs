@@ -627,6 +627,7 @@ mod tests {
 
     fn complete_entry() -> RawMftEntry {
         RawMftEntry {
+            collection_options: crate::RawMftEntryOptions::default(),
             record_number: 10,
             sequence_number: 1,
             file_reference: Fid::new(10),

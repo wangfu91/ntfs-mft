@@ -1,6 +1,6 @@
 //! Offline, read-only parsing of a logical `$MFT` stream.
 
-mod inspect;
+pub(in crate::raw_mft) mod inspect;
 use super::{
     RawMftEntry,
     layout::{attribute::NtfsAttribute, record::FileRecord},
@@ -56,6 +56,8 @@ impl MftStreamOptions {
 /// This describes metadata, never the availability of arbitrary file contents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OfflineFieldState {
+    /// Collection was explicitly disabled for this metadata category.
+    NotCollected,
     /// At least one valid attribute was observed. `complete` is false when more
     /// metadata may be missing or a split stream could not be fully summarized.
     Present {
@@ -98,6 +100,9 @@ pub struct OfflineExternalPayload {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum OfflineIssue {
+    /// Raw scanning enriched selected fields but did not validate the complete
+    /// extension attribute set. Presence may still be observed in the base.
+    EnrichmentNotVerified,
     /// Attribute framing or a typed payload was malformed.
     MalformedAttribute,
     /// Extension lookup was disabled by the caller.

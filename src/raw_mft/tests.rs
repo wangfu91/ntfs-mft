@@ -21,6 +21,7 @@ fn raw_mft_entry_display_is_compact() {
     use crate::{Fid, FileAttributes, Filetime};
 
     let entry = RawMftEntry {
+        collection_options: crate::RawMftEntryOptions::default(),
         record_number: 42,
         sequence_number: 1,
         file_reference: Fid::from_parts(42, 1),

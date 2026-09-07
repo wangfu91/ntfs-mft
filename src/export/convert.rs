@@ -71,6 +71,7 @@ impl From<Filetime> for ExportTimestamp {
 impl From<OfflineFieldState> for FieldState {
     fn from(value: OfflineFieldState) -> Self {
         match value {
+            OfflineFieldState::NotCollected => Self::NotCollected,
             OfflineFieldState::Present { complete: true } => Self::Present,
             OfflineFieldState::Present { complete: false } => Self::Partial,
             OfflineFieldState::Absent => Self::Absent,
@@ -228,14 +229,48 @@ impl ExportRecordV1 {
         let mut dto = Self::from_entry(&record.entry, &ExportContext::default());
         dto.source = "offline_stream".into();
         dto.stream_offset = Some(record.stream_offset.to_string());
-        let m = record.metadata;
-        dto.metadata = ExportMetadata {
+        dto.apply_inspection(record.metadata, &record.diagnostics);
+        dto.external_payloads = record
+            .external_payloads
+            .iter()
+            .map(|p| ExportExternalPayload {
+                record_number: p.record_number.to_string(),
+                attribute_type: p.attribute_type,
+                attribute_id: p.attribute_id,
+            })
+            .collect();
+        dto
+    }
+    /// Preserve raw diagnostic metadata and collection policy without claiming
+    /// unverified extensions are complete.
+    pub fn from_diagnostic(record: &crate::RawMftDiagnosticRecord) -> Self {
+        let options = record.entry.collection_options;
+        let mut dto = Self::from_entry(
+            &record.entry,
+            &ExportContext {
+                entry_options: Some(options),
+            },
+        );
+        dto.apply_inspection(record.metadata, &record.diagnostics);
+        dto.metadata.dos_links_collected = Some(options.collect_dos_file_name_links());
+        if !options.collect_data_run_summary() {
+            dto.metadata.data_run_summary = FieldState::NotCollected;
+        }
+        dto
+    }
+    fn apply_inspection(
+        &mut self,
+        metadata: crate::OfflineMetadata,
+        diagnostics: &[crate::OfflineDiagnostic],
+    ) {
+        let m = metadata;
+        self.metadata = ExportMetadata {
             standard_information: m.standard_information.into(),
             file_names: m.file_names.into(),
             unnamed_data: m.unnamed_data.into(),
             alternate_data_streams: m.alternate_data_streams.into(),
             reparse_point: m.reparse_point.into(),
-            data_run_summary: if dto.data_runs.is_some() {
+            data_run_summary: if self.data_runs.is_some() {
                 m.unnamed_data.into()
             } else if m.unnamed_data == OfflineFieldState::Absent {
                 FieldState::Absent
@@ -244,11 +279,11 @@ impl ExportRecordV1 {
             },
             dos_links_collected: Some(true),
         };
-        dto.diagnostics = record
-            .diagnostics
+        self.diagnostics = diagnostics
             .iter()
             .map(|d| {
                 let (code, reference, error) = match &d.issue {
+                    OfflineIssue::EnrichmentNotVerified => ("enrichment_not_verified", None, None),
                     OfflineIssue::MalformedAttribute => ("malformed_attribute", None, None),
                     OfflineIssue::ExtensionsNotResolved => ("extensions_not_resolved", None, None),
                     OfflineIssue::ExternalPayloadUnavailable => {
@@ -276,15 +311,5 @@ impl ExportRecordV1 {
                 }
             })
             .collect();
-        dto.external_payloads = record
-            .external_payloads
-            .iter()
-            .map(|p| ExportExternalPayload {
-                record_number: p.record_number.to_string(),
-                attribute_type: p.attribute_type,
-                attribute_id: p.attribute_id,
-            })
-            .collect();
-        dto
     }
 }

@@ -3,4 +3,4 @@
 pub(in crate::raw_mft) mod engine;
 mod iter;
 
-pub use iter::RawMftIter;
+pub use iter::{RawMftDiagnosticIter, RawMftIter};

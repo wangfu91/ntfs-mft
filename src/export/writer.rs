@@ -41,6 +41,11 @@ impl<W: Write> JsonlWriter<W> {
         self.write_record(ExportRecordV1::from_entry(entry, context))
     }
 
+    /// Convert and write a raw record with diagnostic metadata evidence.
+    pub fn write_diagnostic(&mut self, record: &crate::RawMftDiagnosticRecord) -> MftResult<()> {
+        self.write_record(ExportRecordV1::from_diagnostic(record))
+    }
+
     /// Convert and write an offline record with presence states and diagnostics.
     pub fn write_offline(&mut self, record: &OfflineMftRecord) -> MftResult<()> {
         self.write_record(ExportRecordV1::from_offline(record))

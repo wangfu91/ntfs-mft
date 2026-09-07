@@ -86,7 +86,7 @@ impl RawMftReadBuffers {
 }
 
 /// Metadata materialization choices for raw `$MFT` entries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RawMftEntryOptions {
     /// When false, skip collecting named alternate data streams.
     pub(crate) collect_alternate_data_streams: bool,

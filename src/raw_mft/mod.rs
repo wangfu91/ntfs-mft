@@ -37,6 +37,8 @@ mod attr_list;
 mod bootstrap;
 mod byte_reader;
 mod chunk_plan;
+mod diagnostics;
+pub use diagnostics::{RawMftDiagnosticRecord, RawMftScanDiagnostic, RawMftScanReport};
 // Enabled only by the non-publishable differential test package's build script.
 #[cfg(all(test, ntfs_mft_differential))]
 #[path = "../../differential-tests/tests/mod.rs"]
@@ -77,6 +79,8 @@ pub use offline::{
     MftStream, MftStreamIter, MftStreamOptions, OfflineDiagnostic, OfflineExternalPayload,
     OfflineFieldState, OfflineIssue, OfflineMetadata, OfflineMftRecord,
 };
+/// Shared metadata presence vocabulary for raw diagnostic and offline records.
+pub use offline::{OfflineFieldState as MftFieldState, OfflineMetadata as MftMetadata};
 pub use options::{
     RawMftEntryOptions, RawMftLeanScanOptions, RawMftLeanScanOptionsBuilder, RawMftReadBuffers,
     RawMftRecordRange, RawMftScanOptions, RawMftScanOptionsBuilder,
@@ -84,7 +88,7 @@ pub use options::{
 pub use parallel::RawMftParallelScheduling;
 pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
 pub use path_resolver::RawMftPathResolver;
-pub use serial::RawMftIter;
+pub use serial::{RawMftDiagnosticIter, RawMftIter};
 
 /// Default I/O buffer size for raw `$MFT` iteration.
 #[allow(clippy::useless_nonzero_new_unchecked)]
