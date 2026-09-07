@@ -1,6 +1,9 @@
 name: Rust
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -34,6 +37,7 @@ jobs:
             differential-tests -> target
             integration-tests -> target
       - run: cargo build --locked
+      - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked
       - run: cargo test --locked --features serde
@@ -46,3 +50,19 @@ jobs:
       - name: Show sccache statistics
         if: always()
         run: sccache --show-stats
+
+  msrv:
+    name: Rust 1.88.0 (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # This job uses the exact MSRV toolchain without the stable job's wrapper.
+      RUSTC_WRAPPER: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - run: rustup toolchain install 1.88.0 --profile minimal
+      - run: cargo +1.88.0 test --locked --lib --all-features

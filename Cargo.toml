@@ -2,6 +2,7 @@
 name = "ntfs-mft"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 autoexamples = false
 exclude = ["integration-tests/**", "differential-tests/**"]
 description = "Read-only raw NTFS Master File Table parsing and serial/parallel scanning on Windows, Linux, and macOS."
