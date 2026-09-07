@@ -1,21 +1,16 @@
 # Windows raw-volume access and MSIX
 
-Live NTFS access requires both administrator privileges and an execution context
-that permits raw-volume I/O. Opening a volume handle successfully does not
-guarantee that Windows will allow reads through it.
+Live NTFS access requires administrator privileges and a launch context that
+permits raw-volume I/O. A successful handle open does not guarantee readable data.
 
-## MSIX runtime model
+## MSIX runtime
 
-An MSIX desktop app running as `packagedClassicApp` can retain a Windows
-filesystem isolation Silo. Its child processes can inherit that context, including
-children elevated through `sudo` or `RunAs`. Windows Container Isolation
-(`wcifs.sys`) can reject user-mode raw-volume reads in that context with
-`STATUS_NOT_SUPPORTED` (`0xC00000BB`), surfaced as Win32 error 50 or HRESULT
-`0x80070032`. This is an execution-environment restriction, not an MFT parser or
-extent-mapping defect.
+A `packagedClassicApp` can retain a filesystem isolation Silo that its children
+inherit, including processes elevated through `sudo` or `RunAs`. In that context,
+`wcifs.sys` can reject raw reads with `STATUS_NOT_SUPPORTED` (`0xC00000BB`),
+Win32 error 50, or HRESULT `0x80070032`.
 
-For an MSIX application that needs live raw-volume access, use the appropriate
-Win32 runtime declaration:
+For an MSIX app requiring raw-volume access, use the Win32 runtime declaration:
 
 ```xml
 <Application Id="App" Executable="YourApp.exe"
@@ -26,49 +21,29 @@ Win32 runtime declaration:
 ```
 
 Declare `xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"`
-on `Package` and include `uap10` in `IgnorableNamespaces`. This namespace requires
-Windows 10 version 2004 (build 19041) or later. Do not retain a conflicting
-`EntryPoint="Windows.FullTrustApplication"`: Microsoft defines that legacy
-declaration as equivalent to `packagedClassicApp` with `mediumIL`.
-`mediumIL` describes the trust model; it does not itself grant administrator
-privileges. Validate the complete package and elevation flow on supported systems.
+on `Package` and add `uap10` to `IgnorableNamespaces`. This requires Windows 10
+build 19041 or later. Remove a conflicting
+`EntryPoint="Windows.FullTrustApplication"`, which implies `packagedClassicApp`
+with `mediumIL`. `mediumIL` does not grant administrator privileges; validate the
+packaged app's elevation and actual read behavior.
 
 See Microsoft's [Application manifest reference](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/uapmanifestschema/element-f-application)
-and [packaged desktop app runtime models](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes).
-The `win32App` solution was also reported by the library user from their
-SpaceRover application; we did not modify or repackage Codex to test that change.
+and [desktop runtime models](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes).
 
-## Diagnosing a library failure
+## Diagnosis and evidence
 
-The restriction can surface in `Volume::raw_mft()` / `RawMft::new()` while reading
-the boot sector, before `MftByteReader` is constructed. Administrator checks,
-package-identity queries and a query of only the innermost Job are not sufficient
-preflight checks. Test an actual raw-volume read in the deployed launch context.
+Test an actual raw read in the deployed launch context, then compare it with an
+independently opened administrator terminal. Elevation, package identity, or an
+innermost-Job query alone cannot establish access. These error codes can also
+come from other drivers; neither MSIX packaging nor Job membership alone proves
+the cause. Exported MFT files use ordinary file I/O instead.
 
-The same error code can originate from other drivers or unsupported operations;
-it does not uniquely identify MSIX or `wcifs`. Likewise, being packaged as MSIX
-or belonging to an ordinary Job alone does not establish that reads will fail.
+In my Windows 11 investigation, Codex and its sudo-elevated child belonged to the
+package's outer Silo Job. Matching external probes succeeded. Minifilter tracing
+identified `wcifs!WcPreRead`; telemetry recorded `BlockedOperation`, and the driver
+branch returned `STATUS_NOT_SUPPORTED` for isolated raw reads. An ordinary Job
+in an independent administrator process did not reproduce the failure.
 
-An independently launched administrator terminal is a useful comparison.
-`MftStream` over an already exported ordinary MFT file or memory does not perform
-this raw-volume I/O; normal file permissions still apply.
-
-## Verified Windows 11 case
-
-On the investigated machine, Codex's installed MSIX manifest used
-`EntryPoint="Windows.FullTrustApplication"` without `RuntimeBehavior="win32App"`.
-The Windows Appinfo service held the package's outer Silo Job; both Codex and its
-sudo-elevated PowerShell child were verified members. An inner ordinary Job had
-initially hidden that relationship from a current-Job-only query.
-
-Process Monitor showed matching read parameters between successful external and
-failing Codex-launched probes. Minifilter tracing identified `wcifs!WcPreRead`,
-and Wcifs telemetry recorded `BlockedOperation` with `OperationType=2` and
-`OperationValue=3`. The installed driver's corresponding branch explicitly
-returns `STATUS_NOT_SUPPORTED` for isolated user-mode raw-volume reads.
-
-An independent administrator PowerShell, and an independent ordinary PowerShell
-using `sudo --inline`, both read the NTFS boot sector successfully. Adding an
-unrestricted Job to the independent administrator process also succeeded.
-Restoring default UAC notifications did not change the failing inherited-Silo
-case. No library workaround or system isolation change is needed for this finding.
+I resolved this in SpaceRover with `win32App`; Codex was not repackaged for that
+comparison. The failure occurred during MFT bootstrapping, before the byte-stream
+adapter. See the [live stream test](mft-stream-validation.md).

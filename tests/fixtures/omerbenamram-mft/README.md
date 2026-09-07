@@ -10,8 +10,6 @@ MFT is an unmodified copy of samples/MFT from
 - Upstream declares MIT/Apache-2.0 dual licensing. We use the MIT option;
   the upstream copyright and complete permission notice are in [LICENSE-MIT](LICENSE-MIT).
   No separate sample license notice was present in the pinned samples directory.
-- Copied from the user-supplied upstream checkout; its Git blob matches the pinned
-  upstream GitHub blob.
 
 The ordinary cargo test suite reads this file offline, without raw-device access
 or elevated privileges. Expected names, sizes, timestamps, parent references,
@@ -30,7 +28,5 @@ tests remain self-contained.
 
 ## Git LFS
 
-The MFT file is tracked with Git LFS; Git stores a pointer and LFS stores the
-unchanged binary. Run `git lfs install` and `git lfs pull` after cloning.
-Before packaging, ensure the working tree contains the full fixture rather than
-an LFS pointer. Cargo packages include the full fixture.
+Run `git lfs install` and `git lfs pull` after cloning. Building and packaging
+require the full fixture, not an LFS pointer.

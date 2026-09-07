@@ -1,0 +1,154 @@
+[
+  {
+    "record": 0,
+    "name": "$MFT",
+    "parent_reference": 1407374883553285,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 1310720
+  },
+  {
+    "record": 1,
+    "name": "$MFTMirr",
+    "parent_reference": 1407374883553285,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 4096
+  },
+  {
+    "record": 2,
+    "name": "$LogFile",
+    "parent_reference": 1407374883553285,
+    "sequence": 2,
+    "directory": false,
+    "data_size": 67108864
+  },
+  {
+    "record": 3,
+    "name": "$Volume",
+    "parent_reference": 1407374883553285,
+    "sequence": 3,
+    "directory": false,
+    "data_size": 0
+  },
+  {
+    "record": 4,
+    "name": "$AttrDef",
+    "parent_reference": 1407374883553285,
+    "sequence": 4,
+    "directory": false,
+    "data_size": 2560
+  },
+  {
+    "record": 5,
+    "name": ".",
+    "parent_reference": 1407374883553285,
+    "sequence": 5,
+    "directory": true,
+    "data_size": null
+  },
+  {
+    "record": 6,
+    "name": "$Bitmap",
+    "parent_reference": 1407374883553285,
+    "sequence": 6,
+    "directory": false,
+    "data_size": 1919168
+  },
+  {
+    "record": 7,
+    "name": "$Boot",
+    "parent_reference": 1407374883553285,
+    "sequence": 7,
+    "directory": false,
+    "data_size": 8192
+  },
+  {
+    "record": 8,
+    "name": "$BadClus",
+    "parent_reference": 1407374883553285,
+    "sequence": 8,
+    "directory": false,
+    "data_size": 0
+  },
+  {
+    "record": 9,
+    "name": "$Secure",
+    "parent_reference": 1407374883553285,
+    "sequence": 9,
+    "directory": false,
+    "data_size": null
+  },
+  {
+    "record": 10,
+    "name": "$UpCase",
+    "parent_reference": 1407374883553285,
+    "sequence": 10,
+    "directory": false,
+    "data_size": 131072
+  },
+  {
+    "record": 11,
+    "name": "$Extend",
+    "parent_reference": 1407374883553285,
+    "sequence": 11,
+    "directory": true,
+    "data_size": null
+  },
+  {
+    "record": 117,
+    "name": "sources",
+    "parent_reference": 1407374883553285,
+    "sequence": 1,
+    "directory": true,
+    "data_size": null
+  },
+  {
+    "record": 922,
+    "name": "boot.wim",
+    "parent_reference": 281474976710773,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 609554347
+  },
+  {
+    "record": 967,
+    "name": "install.esd",
+    "parent_reference": 281474976710773,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 6046508486
+  },
+  {
+    "record": 1011,
+    "name": "setup.exe",
+    "parent_reference": 281474976710773,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 341464
+  },
+  {
+    "record": 1117,
+    "name": "bootmgr",
+    "parent_reference": 1407374883553285,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 473364
+  },
+  {
+    "record": 1118,
+    "name": "bootmgr.efi",
+    "parent_reference": 1407374883553285,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 3069432
+  },
+  {
+    "record": 1119,
+    "name": "setup.exe",
+    "parent_reference": 1407374883553285,
+    "sequence": 1,
+    "directory": false,
+    "data_size": 99896
+  }
+]

@@ -36,11 +36,11 @@ fn main() -> MftResult<()> {
 ## Extracted MFT streams
 
 `MftStream` reads a standalone logical `$MFT` file using ordinary file permissions.
-It accepts any `Read + Seek` source, including borrowed memory:
+It also accepts `Read + Seek` sources through `from_reader`, including
+`Cursor<&[u8]>` for borrowed memory:
 
 ```rust,no_run
 use ntfs_mft::{MftResult, MftStream, MftStreamOptions};
-use std::io::Cursor;
 
 fn main() -> MftResult<()> {
     let options = MftStreamOptions::new(1024)?;
@@ -51,10 +51,6 @@ fn main() -> MftResult<()> {
             Err(error) => eprintln!("{error}"),
         }
     }
-    let bytes = std::fs::read("extracted.MFT")?;
-    let mut memory = MftStream::from_reader(Cursor::new(bytes.as_slice()), options)?;
-    let root = memory.read_record(5)?;
-    println!("{}", root.entry.file_name.to_string_lossy());
     Ok(())
 }
 ```
@@ -118,7 +114,6 @@ Device tests skip when privileges or a suitable volume are unavailable.
 See [cross-repository tests](integration-tests/README.md),
 [offline parser differential tests](differential-tests/README.md),
 [implementation](docs/raw-mft-read.md), and [extraction provenance](docs/EXTRACTION.md).
-Performance notes retain the original benchmark environment variable names.
 
 ## License
 
@@ -130,10 +125,13 @@ Our offline correctness tests use the unmodified samples/MFT fixture from
 [omerbenamram/mft](https://github.com/omerbenamram/mft), copyright (c) 2019
 Omer Ben-Amram. Upstream offers MIT/Apache-2.0 licensing; this copy uses the MIT
 option and retains the [upstream license](tests/fixtures/omerbenamram-mft/LICENSE-MIT).
-See [fixture provenance and test scope](tests/fixtures/omerbenamram-mft/README.md)
-for the pinned commit, checksum, and coverage. Run these tests with cargo test;
-no NTFS volume or Administrator privileges are needed for the fixture tests.
+See [fixture provenance](tests/fixtures/omerbenamram-mft/README.md) for the pinned
+commit, checksum, and coverage. Fixture tests require no device or elevation.
 
-The MFT fixture is stored with Git LFS. Install Git LFS, then run
-`git lfs install` and `git lfs pull` after cloning and before building or
-testing. CI checks out LFS objects automatically.
+I extracted the [ESD-ISO fixture](tests/fixtures/esd-iso/README.md) from my Windows
+installation USB. Its boot sector, MFT, and fragmented MFT bitmap cover offline
+bootstrapping and serial/parallel scans.
+
+Both fixtures use Git LFS. Install Git LFS, then run `git lfs install` and
+`git lfs pull` after cloning and before building or testing. CI checks out LFS
+objects automatically.

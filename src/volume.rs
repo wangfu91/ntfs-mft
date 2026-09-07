@@ -1,5 +1,8 @@
 //! Read-only volume access for NTFS/ReFS on Windows and raw NTFS on Linux and macOS.
 
+#[cfg(test)]
+pub(crate) mod captured;
+
 use crate::errors::MftError;
 #[cfg(windows)]
 use crate::privilege;
@@ -29,6 +32,8 @@ use windows::{
 /// Source used to open a [`Volume`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum VolumeSource {
+    #[cfg(test)]
+    Captured(std::sync::Arc<captured::CapturedVolume>),
     /// Volume was opened via a drive letter (e.g. `'C'`).
     #[cfg(windows)]
     DriveLetter(char),
@@ -60,9 +65,19 @@ pub struct Volume {
 }
 
 impl Volume {
+    #[cfg(test)]
+    pub(crate) fn captured(&self) -> Option<&std::sync::Arc<captured::CapturedVolume>> {
+        match &self.source {
+            VolumeSource::Captured(source) => Some(source),
+            _ => None,
+        }
+    }
+
     /// Reopen the same source read-only with an independent OS file cursor.
     pub(crate) fn reopen(&self) -> Result<Self, MftError> {
         match &self.source {
+            #[cfg(test)]
+            VolumeSource::Captured(source) => source.open(),
             #[cfg(windows)]
             VolumeSource::DriveLetter(letter) => Self::from_drive_letter(*letter),
             VolumeSource::MountPoint(path) => Self::from_mount_point(path),

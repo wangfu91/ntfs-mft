@@ -1,0 +1,110 @@
+{
+  "format_version": 1,
+  "source": "My ESD-ISO Windows installation USB",
+  "partition_start_on_disk": 1048576,
+  "ranges": [
+    {
+      "file": "boot.bin",
+      "partition_offset": 0,
+      "length": 512,
+      "sha256": "c580746f149bba0517c1e53cdac574e5077cf1cafaee39ac0dbfc027284d6417"
+    },
+    {
+      "file": "mft.bin",
+      "partition_offset": 3221225472,
+      "length": 1310720,
+      "sha256": "65552a0cc8ca925fb5ef7ab3e82e72a25e6d8dc2e92224253a19147705521fff"
+    },
+    {
+      "file": "mft-bitmap-0.bin",
+      "partition_offset": 3221221376,
+      "length": 4096,
+      "sha256": "8d851705b99bfc53c257a5bbb5dc3ce3b78663068c869c18fb4c834d17560e22"
+    },
+    {
+      "file": "mft-bitmap-1.bin",
+      "partition_offset": 151552,
+      "length": 8,
+      "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc"
+    }
+  ],
+  "inventory": {
+    "source": "/dev/rdisk6s1",
+    "device_block_size": 512,
+    "ntfs_sector_size": 512,
+    "cluster_size": 4096,
+    "record_size": 1024,
+    "total_sectors_field": 122826623,
+    "mft_lcn": 786432,
+    "boot_sector_sha256": "c580746f149bba0517c1e53cdac574e5077cf1cafaee39ac0dbfc027284d6417",
+    "mft_record_zero_streams": {
+      "0x80": {
+        "resident": false,
+        "data_size": 1310720,
+        "initialized_size": 1310720,
+        "allocated_size": 1310720,
+        "runs": [
+          {
+            "vcn": 0,
+            "lcn": 786432,
+            "clusters": 320,
+            "partition_offset": 3221225472,
+            "allocated_bytes": 1310720
+          }
+        ]
+      },
+      "0xb0": {
+        "resident": false,
+        "data_size": 4104,
+        "initialized_size": 4104,
+        "allocated_size": 8192,
+        "runs": [
+          {
+            "vcn": 0,
+            "lcn": 786431,
+            "clusters": 1,
+            "partition_offset": 3221221376,
+            "allocated_bytes": 4096
+          },
+          {
+            "vcn": 1,
+            "lcn": 37,
+            "clusters": 1,
+            "partition_offset": 151552,
+            "allocated_bytes": 4096
+          }
+        ]
+      }
+    },
+    "mft_sha256": "65552a0cc8ca925fb5ef7ab3e82e72a25e6d8dc2e92224253a19147705521fff",
+    "mft_inventory": {
+      "record_slots": 1280,
+      "counts": {
+        "FILE_slots": 1116,
+        "in_use_FILE_slots": 1116,
+        "extension_FILE_slots": 0,
+        "directory_FILE_slots": 107,
+        "resident_DATA_attributes": 43,
+        "resident_DATA_bytes": 12788,
+        "named_DATA_attributes": 7,
+        "non_FILE_slots": 164
+      },
+      "attribute_type_counts": {
+        "0x10": 1116,
+        "0x30": 1112,
+        "0x80": 1011,
+        "0xb0": 18,
+        "0x60": 1,
+        "0x70": 1,
+        "0x50": 6,
+        "0x90": 113,
+        "0xa0": 17,
+        "0x100": 2
+      },
+      "external_attribute_lists": []
+    },
+    "mft_bitmap_sha256": "9f4e1dcf6bbfc2157472c0b7f846c29e0b5a9666d6975a5bf4dc22fe3363cf3d",
+    "mft_bitmap_set_bits_in_record_range": 1116,
+    "status": "inventory_complete_for_base_mft_streams; external attribute list payloads have not been read"
+  }
+}

@@ -1,68 +1,46 @@
 # Parser differential tests
 
-The comparison implementation is `omerbenamram/mft` at immutable revision
-`dc36db7d3b83d68c0eecb75225c9955cfd7b2f2d`, with its default CLI features disabled.
-The existing attributed fixture and independent expected-value tests are unchanged.
-Neither parser is an oracle. The adapters consume each parser's results independently;
-byte-authored synthetic records supply separate expectations.
+The comparison parser is `omerbenamram/mft`, pinned to
+`dc36db7d3b83d68c0eecb75225c9955cfd7b2f2d` with CLI features disabled.
+Neither parser is an oracle: independent fixture expectations and byte-authored
+records provide separate checks.
 
-## Comparison contract
-
-Run from the repository root after restoring the fixture's Git LFS object:
-
-```text
+```sh
+git lfs pull
 cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
 cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets --all-features -- -D warnings
 ```
 
-After fetching dependencies once, add `--offline` to run without network access.
-The test filter runs only differential cases and never attempts device access.
-CI runs these commands on Windows and Linux. The fixture size assertion fails
-clearly if an LFS pointer is present; never silently skip a missing fixture.
+Run from the repository root; add `--offline` after fetching dependencies.
+The filter runs only differential tests, without device access. Missing LFS
+contents fail the size check. CI runs on Windows, Linux, and macOS.
 
-This package has `publish = false`, its own lockfile, and is excluded from the
-main Cargo package. The main manifest has no upstream comparison dependency;
-ordinary and packaged-source `cargo test` still run the independent fixture tests.
-Cargo removes Git-only dev-dependencies from published manifests, which is why
-the pinned comparison lives in a separate package instead of the main manifest.
+## Harness and comparison contract
 
-The harness compiles `../src/lib.rs` directly. Only its build script enables
-`ntfs_mft_differential`, loading this package's private tests into `raw_mft`.
-The main crate recognizes that cfg name for linting but does not enable it,
-including under `--all-features`. There is no exported parser or test API.
-The production dependency declaration block is mirrored and checked against the
-root manifest at build time; update it when root dependencies change. The separate
-lockfile can resolve different compatible transitive versions and must be reviewed
-when refreshed. No sibling task's unmerged implementation is needed.
+This unpublished package has its own lockfile and is excluded from the main
+Cargo package. It compiles `../src/lib.rs`; its build script alone enables
+`ntfs_mft_differential`. No comparison API or upstream dependency is exposed by
+the main crate. The build checks that production dependency declarations match
+the root manifest. Review transitive version changes when updating its lockfile.
 
-Each parser receives its own copy of the original, pre-USA-fixup bytes and the same
-record-slot number. No volume is opened. The seam is `(number: u64, bytes: &[u8])`;
-it needs no proposed offline API and imposes no public API changes on that task.
+Each parser receives a separate copy of the original USA-protected bytes and
+the same physical slot number. Comparisons retain:
 
-Compare header sequence, slot number, base reference (including sequence), link
-count, and the low four record flag bits retained by upstream. Compare every
-overlapping SI, FN and DATA attribute in physical order, including its offset and
-instance ID. This retains duplicate names, namespaces, parents and stream extents;
-there is no sorting, deduplication, primary-name selection, or extent merging in
-the low-level adapter. Non-overlapping attribute payloads are not compared, but
-their headers must still be traversable. No upstream attribute errors are discarded.
+- Header sequence, slot, full base reference, link count, and the low four flag
+  bits supported by upstream.
+- Every overlapping SI, FN, and DATA attribute in physical order, including
+  offsets, instance IDs, duplicate names, namespaces, and extents. Other payloads
+  are not compared, but their headers must remain traversable.
+- Exact UTF-16 name units and full parent/base references. A missing DATA name
+  view is empty only when its declared length is zero; malformed named views fail.
+- Separate SI/FN timestamps and DATA residency. Resident size is payload length;
+  nonresident sizes, initialized length, and VCN bounds come from the header.
+  Continuation size fields are compared as stored, not treated as stream totals.
 
-Names are exact UTF-16 units from the parsed views, not lossy display strings.
-For DATA, a missing name view is normalized to an empty name only when the
-declared name length is zero. A nonzero length with an invalid name range is an
-adapter error with record, attribute offset and instance context; resident and
-nonresident malformed-name cases cover this distinction.
-Parent and base references retain all 48 record bits and 16 sequence bits. SI and
-FN timestamps remain separate. DATA residency comes from the attribute form;
-resident size is payload length, while nonresident size, allocated length,
-initialized length and VCN bounds come from the nonresident header. There is no
-invented allocated-size field for resident DATA. A continuation extent is compared
-as stored, without treating its size fields as independently authoritative totals.
-
-The real fixture covers 13,068 FILE records, 13,064 SI attributes, 18,506 FN
-attributes and 12,089 DATA attributes, plus 20 zero slots. These inventory counts
-are regression coverage guards, not independent evidence of correct decoding.
-The existing `fixture_tests.rs` provides the independent fixture expectations.
+No failed attributes are discarded or names sorted, deduplicated, or ranked by
+these low-level comparisons. The corpus contains 13,068 FILE records, 13,064 SI,
+18,506 FN, and 12,089 DATA attributes, plus 20 zero slots. Counts guard coverage;
+`fixture_tests.rs` supplies independent expected metadata.
 
 ## Investigated differences
 
@@ -97,12 +75,22 @@ The existing `fixture_tests.rs` provides the independent fixture expectations.
   normal Windows-created name. Lone surrogates in FN are compared before either
   implementation converts them to display strings.
 
-For any new mismatch, retain the original bytes, identify record/attribute offset
-and instance, and inspect the relevant fields after USA restoration. Consult the
-format semantics and each implementation's documented contract before classifying
-it. Add a narrow, byte-explained regression; do not skip a record, drop failed
-attributes, or regenerate expected data from either implementation. Production
-parser fixes require separate scope approval.
+For a mismatch, retain the bytes and record/attribute location, inspect the
+restored fields and both parser contracts, then add a byte-explained regression.
+Do not skip records or regenerate expectations from either parser.
+
+## Stream coverage and limits
+
+The fragmented-stream test reverses every 512-byte fixture sector on a simulated
+device, forcing each 1,024-byte record across extents. It checks original bytes,
+the low-level comparisons, public `MftStream` metadata, all FILE/zero-slot
+outcomes, and backwards reads. Selected names must occur in upstream attributes;
+selection policy and platform string conversion remain implementation-specific.
+
+These comparisons do not validate bootstrapping, real-device I/O, live consistency,
+external payloads, runlist discovery, cross-record enrichment, paths, or volume
+scan scheduling. They are neither fuzzing nor performance evidence. See the
+[live stream test](../docs/mft-stream-validation.md) for separate device coverage.
 
 ## Semantics references
 
@@ -115,33 +103,3 @@ parser fixes require separate scope approval.
 * [Pinned upstream source](https://github.com/omerbenamram/mft/tree/dc36db7d3b83d68c0eecb75225c9955cfd7b2f2d/src):
   `utils.rs`, `entry.rs`, `ntfs.rs`, `attribute/header.rs`, and `utf16.rs` explain
   the implementation-specific behaviors above.
-
-## Limits
-
-The `stream::fragmented_stream_matches_pinned_parser_and_public_iterator` test
-also routes the entire fixture through the production `MappedReader` core used
-by `MftByteReader`. Every 512-byte sector is placed in reverse physical order,
-forcing every 1024-byte FILE record to cross extents. It checks exact original
-bytes, the existing full low-level comparison, and public `MftStream` iteration
-(headers, SI timestamps, selected FN tuple membership and unnamed DATA metadata).
-It asserts all 13,068 FILE outcomes and 20 zero-slot errors, plus backwards random
-reads. Primary-name ranking remains implementation-specific; the selected tuple
-must exist in upstream attributes. No timestamp normalization beyond the existing
-microsecond truncation is added. Raw UTF-16 comparisons remain in the low-level
-test; public OS strings follow the crate's platform conversion policy.
-
-This extension tests simulated extent reconstruction and the offline public API.
-It does not open a device or replace the separate user-reported C: smoke test in
-[`docs/mft-stream-validation.md`](../docs/mft-stream-validation.md).
-
-Agreement on a shared corpus does not establish parser correctness for every NTFS
-version, sector geometry or corrupt input. This is not a fuzzing campaign. It does
-not validate boot-sector discovery, live-volume consistency, raw-device I/O,
-external attribute payloads, on-disk runlist discovery, cross-record enrichment,
-path resolution, or raw serial/parallel scanning and scheduling.
-No performance claim is made. Windows/Linux display-string policies are not
-equated by comparing raw UTF-16 views.
-
-Integration conflicts should be limited to the development harness, dependency
-metadata and the test-module declaration. The offline API and export tasks should
-not depend on these test-only normalized types or assume sibling changes exist.

@@ -1,2 +1,4 @@
 tests/fixtures/omerbenamram-mft/MFT filter=lfs diff=lfs merge=lfs -text
 tests/fixtures/export-v1.jsonl text eol=lf
+
+tests/fixtures/esd-iso/*.bin filter=lfs diff=lfs merge=lfs -text

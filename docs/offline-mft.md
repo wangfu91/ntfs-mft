@@ -2,8 +2,7 @@
 
 `MftStream<R: Read + Seek>` owns a reader (or a borrowed reader such as `&mut R`).
 `from_path` uses a read-only buffered file. `Cursor<Vec<u8>>` and `Cursor<&[u8]>`
-support owned and borrowed buffers. No volume discovery, boot sector, device
-handle, cluster size, or Administrator privileges are required.
+support owned and borrowed buffers. No device access or elevated privileges are required.
 
 ## Reading directly from a volume
 
@@ -49,8 +48,7 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
 ## Input and addressing
 
 - Supply the logical contents of an extracted `$MFT`, retaining all record slots.
-  Offset zero must correspond to record zero. This is not a disk-image parser,
-  carving interface, arbitrary record concatenation format, or decompressor.
+  Offset zero must correspond to record zero. Disk images, carved or concatenated records, and compressed input are unsupported.
 - Supply original USA-protected bytes. Fixup happens on a private record buffer;
   the source is never changed. Already fixed-up records are unsupported.
 - `MftStreamOptions::new(size)` accepts powers of two from 512 through 65536.
@@ -104,8 +102,7 @@ LCNs are never interpreted as offsets into the extracted MFT.
 ## Extension records
 
 Default mode builds metadata from each physical record only. A base record with
-an attribute list reports `ExtensionsNotResolved`. This mode is useful for
-record-by-record differential comparisons.
+an attribute list reports `ExtensionsNotResolved`. Use this mode for physical-record comparisons.
 
 With `resolve_extensions(true)`, resident lists select attributes using type,
 instance ID, raw UTF-16 name and lowest VCN. Extension record sequence numbers
@@ -122,8 +119,7 @@ Non-resident lists cannot be resolved without the original volume.
 
 Split data streams are only partially represented: the first segment supplies
 sizes and its run summary, continuation segments do not overwrite them, and
-`SplitDataStream` marks data completeness false. This version does not aggregate
-all continuation runlists. Uncertainty is intentionally conservative.
+`SplitDataStream` marks data completeness false. Continuation runlists are not aggregated.
 
 ## Tests and downstream integration
 
@@ -135,10 +131,8 @@ fixture is hydrated before building; its expected checksum is documented beside 
 
 Differential tests can compare `.entry` in default physical-record mode against
 their independent parser. They should compare per-slot errors separately, and
-account for explicit rejection of malformed payloads. The existing private
-fixture parser and raw-volume APIs retain their behavior.
-
+account for explicit rejection of malformed payloads.
 Export consumers should preserve the metadata states and diagnostics, rather than
 converting unknown values to zero, empty strings or null without explanation.
-There are no serialization dependencies, output formats, path reconstruction,
-parallel offline scans, or assumed sibling-task interfaces in this change.
+See [JSONL export](export.md) for optional serialization. Offline parsing does
+not reconstruct paths or provide parallel scans.
