@@ -20,8 +20,8 @@ use ntfs_mft_integration_tests::windows::{
 };
 
 struct SampledMftEntry {
-    fid: ntfs_mft::Fid,
-    parent_fid: ntfs_mft::Fid,
+    fid: ntfs_mft_integration_tests::Fid,
+    parent_fid: ntfs_mft_integration_tests::Fid,
     is_dir: bool,
     file_name: std::ffi::OsString,
 }

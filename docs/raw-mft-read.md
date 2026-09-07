@@ -244,9 +244,8 @@ for file and parent references. `record_number()` returns `u64`, `sequence()`
 returns `u16`, and `get()` returns the packed `u64`, without optional branches.
 `try_from_parts(record_number, sequence)` rejects numbers above 48 bits instead
 of silently truncating them. `new(raw)` preserves all bits of an existing NTFS
-reference. Convert to legacy generic `Fid` with `.into()`, or back with
-`NtfsFileReference::try_from(fid)`; extended IDs are rejected even if their
-numeric value fits in 64 bits.
+reference. Production APIs use only `NtfsFileReference`; no generic or ReFS
+identifier type is exported.
 
 The old `base_record_reference` field was already a truncated record number;
 it is now named `base_record_number` to state that meaning. Its zero value does

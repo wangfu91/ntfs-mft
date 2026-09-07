@@ -5,7 +5,7 @@
 //! historical path index from all named base records.
 //!
 //! Resolution quality tags:
-//! - `exact`: every component matched the exact `Fid` stored in the record.
+//! - `exact`: every component matched the exact `NtfsFileReference` stored in the record.
 //! - `record-fallback`: at least one parent step had to ignore stale sequence
 //!   bits and use the current snapshot occupant of that record number.
 //! - `partial`: the chain broke before reaching the root, so the printed path

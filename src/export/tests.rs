@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    AdsInfo, Fid, FileAttributes, Filetime, MftError, MftStream, MftStreamOptions,
+    AdsInfo, FileAttributes, Filetime, MftError, MftStream, MftStreamOptions,
     OfflineDiagnostic, OfflineFieldState, OfflineIssue, RawMftLink, RawMftScanOptions,
 };
 use std::{ffi::OsString, io::Cursor};
@@ -80,10 +80,10 @@ fn references_timestamps_and_unknown_bits_roundtrip() -> Result<(), Box<dyn std:
     record.entry.si_created = Filetime::new(u64::MAX);
     let dto = ExportRecordV1::from_offline(&record);
     assert_eq!(dto.reference.raw, "18446744073709551615");
-    assert_eq!(dto.reference.sequence_number, Some(65535));
+    assert_eq!(dto.reference.sequence_number, 65535);
     assert_eq!(
-        dto.reference.record_number.as_deref(),
-        Some("281474976710655")
+        dto.reference.record_number.as_str(),
+        "281474976710655"
     );
     assert_eq!(dto.file_attributes, 0x8000_0001);
     assert_eq!(
@@ -96,10 +96,6 @@ fn references_timestamps_and_unknown_bits_roundtrip() -> Result<(), Box<dyn std:
     );
     assert_eq!(dto.standard_information_times.created.utc, None);
     assert_eq!(dto, serde_json::from_slice(&serde_json::to_vec(&dto)?)?);
-    let extended = ExportReference::from(Fid::from_u128(u128::MAX));
-    assert_eq!(extended.raw, u128::MAX.to_string());
-    assert_eq!(extended.bits, 128);
-    assert_eq!(extended.sequence_number, None);
     let cases = [
         (0, "1601-01-01T00:00:00.0000000Z"),
         (116444735999999999, "1969-12-31T23:59:59.9999999Z"),
@@ -178,7 +174,7 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
     assert_eq!(dto.links[0].name.raw, units);
     assert_eq!(dto.alternate_streams[0].name.as_ref().unwrap().raw, units);
     assert_eq!(dto.links.len(), 2);
-    assert_eq!(dto.links[0].parent.sequence_number, Some(7));
+    assert_eq!(dto.links[0].parent.sequence_number, 7);
     assert_eq!(dto.alternate_streams.len(), 2);
     assert_eq!(dto.alternate_streams[1].real_size, u64::MAX.to_string());
     assert_eq!(dto, serde_json::from_str(&serde_json::to_string(&dto)?)?);

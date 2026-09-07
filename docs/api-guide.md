@@ -84,8 +84,7 @@ and `to_string_lossy()` or `Display` for readable text. `to_os_string()` is
 lossless on Windows; Unix native paths replace unpaired surrogates.
 
 `NtfsFileReference::try_from_parts(record, sequence)` rejects record-number
-overflow. Its record and sequence accessors return values directly. Convert
-explicitly to generic `Fid` when a Windows API needs it. A record number alone
+overflow. Its record and sequence accessors return values directly. Windows live path lookup uses the same NTFS type. A record number alone
 is not durable identity because deleted slots can be reused.
 
 Build `MftPathIndex` during an existing scan to avoid an extra scan. Include root

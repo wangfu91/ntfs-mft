@@ -93,8 +93,8 @@ impl<'a> RawMftPathResolver<'a> {
             self.live_fallback.then(|| {
                 resolve_live_path(
                     self.volume,
-                    entry.file_reference.into(),
-                    entry.parent_reference.into(),
+                    entry.file_reference,
+                    entry.parent_reference,
                     entry.file_name.to_os_string().as_os_str(),
                     &self.buffer,
                 )

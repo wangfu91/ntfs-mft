@@ -12,13 +12,13 @@ use windows::Win32::{
     Storage::FileSystem::{self, FILE_FLAGS_AND_ATTRIBUTES, FILE_ID_DESCRIPTOR},
 };
 
-use crate::{Fid, volume::Volume};
+use crate::{NtfsFileReference, volume::Volume};
 
 /// Resolve a path without using the directory cache.
 pub(crate) fn resolve_path(
     volume: &Volume,
-    fid: Fid,
-    parent_fid: Fid,
+    fid: NtfsFileReference,
+    parent_fid: NtfsFileReference,
     file_name: &OsStr,
     buffer: &RefCell<Vec<u8>>,
 ) -> Option<PathBuf> {
@@ -31,29 +31,16 @@ pub(crate) fn resolve_path(
     None
 }
 
-/// Resolves a file ID to its full path on the specified NTFS/ReFS volume.
+/// Resolves a file ID to its full path on the specified NTFS volume.
 fn file_id_to_path(
     volume: &Volume,
-    file_id: Fid,
+    file_id: NtfsFileReference,
     buffer: &RefCell<Vec<u8>>,
 ) -> windows::core::Result<PathBuf> {
-    let (id, id_type) = match file_id {
-        Fid::Standard(id) => (
-            FileSystem::FILE_ID_DESCRIPTOR_0 {
-                FileId: i64::from_ne_bytes(id.to_ne_bytes()),
-            },
-            FileSystem::FileIdType,
-        ),
-        Fid::Extended(id) => (
-            FileSystem::FILE_ID_DESCRIPTOR_0 {
-                ExtendedFileId: FileSystem::FILE_ID_128 {
-                    Identifier: id.to_le_bytes(),
-                },
-            },
-            FileSystem::ExtendedFileIdType,
-        ),
+    let id = FileSystem::FILE_ID_DESCRIPTOR_0 {
+        FileId: i64::from_ne_bytes(file_id.get().to_ne_bytes()),
     };
-
+    let id_type = FileSystem::FileIdType;
     let file_id_desc = FILE_ID_DESCRIPTOR {
         Type: id_type,
         dwSize: size_of::<FileSystem::FILE_ID_DESCRIPTOR>() as u32,

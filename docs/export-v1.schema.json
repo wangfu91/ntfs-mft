@@ -519,15 +519,8 @@
       "type": "object"
     },
     "ExportReference": {
-      "description": "A full file identifier; NTFS record and sequence fields are absent for extended IDs.",
+      "description": "A full NTFS reference with its record and sequence fields.",
       "properties": {
-        "bits": {
-          "description": "Identifier width: 64 for NTFS or 128 for an extended caller-supplied ID.",
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
-          "type": "integer"
-        },
         "raw": {
           "description": "Full unsigned identifier as a decimal string.",
           "pattern": "^(0|[1-9][0-9]*)$",
@@ -536,25 +529,20 @@
         "record_number": {
           "description": "Lower 48 bits of a standard reference, as a decimal string.",
           "pattern": "^(0|[1-9][0-9]*)$",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "sequence_number": {
           "description": "Upper 16 bits of a standard reference.",
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
+          "type": "integer"
         }
       },
       "required": [
-        "bits",
-        "raw"
+        "raw",
+        "record_number",
+        "sequence_number"
       ],
       "type": "object"
     },

@@ -1,6 +1,7 @@
 //! Read-only FSCTL enumeration and live path resolution for parity tests.
 use crate::{MftEntry, parse_record};
-use ntfs_mft::{Fid, MftError};
+use ntfs_mft::MftError;
+use crate::Fid;
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},

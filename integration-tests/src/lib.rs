@@ -1,6 +1,8 @@
 //! Independent Windows parity-test support; never part of the published crate.
 
-use ntfs_mft::{Fid, FileAttributes};
+use ntfs_mft::FileAttributes;
+mod file_id;
+pub use file_id::Fid;
 
 #[cfg(windows)]
 pub mod windows;

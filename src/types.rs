@@ -76,193 +76,6 @@ impl fmt::Display for Usn {
     }
 }
 
-/// File identifier returned by the USN journal and MFT enumeration APIs.
-///
-/// NTFS uses a 64-bit file reference number, where the lower 48 bits are
-/// the record number into the `$MFT` and the upper 16 bits are a sequence
-/// number used for collision detection. ReFS uses 128-bit file IDs in
-/// `USN_RECORD_V3`.
-#[must_use]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Fid {
-    /// Standard NTFS 64-bit file reference number.
-    Standard(u64),
-    /// ReFS / USN v3 128-bit file identifier.
-    Extended(u128),
-}
-
-impl Default for Fid {
-    #[inline]
-    fn default() -> Self {
-        Self::Standard(0)
-    }
-}
-
-impl Fid {
-    /// Mask for the lower 48 bits (record number) of a standard NTFS file reference.
-    const RECORD_NUMBER_MASK: u64 = (1u64 << 48) - 1;
-    /// Mask for the upper 16 bits (sequence number) of a standard NTFS file reference.
-    const SEQUENCE_MASK: u64 = 0xFFFF;
-    /// Bit offset of the sequence number within a standard NTFS file reference.
-    const SEQUENCE_SHIFT: u32 = 48;
-
-    /// Construct a standard 64-bit NTFS file reference number.
-    #[inline]
-    pub const fn new(v: u64) -> Self {
-        Self::Standard(v)
-    }
-
-    /// Construct a 128-bit file identifier.
-    #[inline]
-    pub const fn from_u128(v: u128) -> Self {
-        Self::Extended(v)
-    }
-
-    /// Construct a 128-bit file identifier from raw little-endian bytes.
-    #[inline]
-    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
-        Self::Extended(u128::from_le_bytes(bytes))
-    }
-
-    /// Construct a standard NTFS file reference from its 48-bit record number
-    /// and 16-bit sequence number — the inverse of [`Self::record_number`] and
-    /// [`Self::sequence`].
-    ///
-    /// The record number is masked to its low 48 bits.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use ntfs_mft::Fid;
-    ///
-    /// let fid = Fid::from_parts(0x2a, 0xabcd);
-    /// assert_eq!(fid.record_number(), Some(0x2a));
-    /// assert_eq!(fid.sequence(), Some(0xabcd));
-    /// ```
-    #[inline]
-    pub const fn from_parts(record_number: u64, sequence: u16) -> Self {
-        Self::Standard(
-            ((sequence as u64) << Self::SEQUENCE_SHIFT)
-                | (record_number & Self::RECORD_NUMBER_MASK),
-        )
-    }
-
-    /// Returns `true` if this is a standard NTFS 64-bit file reference.
-    #[inline]
-    pub const fn is_standard(self) -> bool {
-        matches!(self, Self::Standard(_))
-    }
-
-    /// Returns `true` if this is a 128-bit file identifier.
-    #[inline]
-    pub const fn is_extended(self) -> bool {
-        matches!(self, Self::Extended(_))
-    }
-
-    /// Return the raw 64-bit representation when this is a standard NTFS ID.
-    #[inline]
-    pub const fn as_u64(self) -> Option<u64> {
-        match self {
-            Self::Standard(v) => Some(v),
-            Self::Extended(_) => None,
-        }
-    }
-
-    /// Return the raw 128-bit representation.
-    ///
-    /// Standard 64-bit IDs are zero-extended.
-    #[inline]
-    pub const fn as_u128(self) -> u128 {
-        match self {
-            Self::Standard(v) => v as u128,
-            Self::Extended(v) => v,
-        }
-    }
-
-    /// Return the raw little-endian bytes of this identifier.
-    #[inline]
-    pub const fn as_bytes(self) -> [u8; 16] {
-        self.as_u128().to_le_bytes()
-    }
-
-    /// Lower 48 bits of a standard NTFS ID — the record number into `$MFT`.
-    ///
-    /// Returns `None` for 128-bit file IDs because the concept is NTFS-specific.
-    #[inline]
-    pub const fn record_number(self) -> Option<u64> {
-        match self {
-            Self::Standard(v) => Some(v & Self::RECORD_NUMBER_MASK),
-            Self::Extended(_) => None,
-        }
-    }
-
-    /// Upper 16 bits of a standard NTFS ID — sequence number for collision detection.
-    ///
-    /// Returns `None` for 128-bit file IDs because the concept is NTFS-specific.
-    #[inline]
-    pub const fn sequence(self) -> Option<u16> {
-        match self {
-            Self::Standard(v) => Some(((v >> Self::SEQUENCE_SHIFT) & Self::SEQUENCE_MASK) as u16),
-            Self::Extended(_) => None,
-        }
-    }
-}
-
-impl From<u64> for Fid {
-    #[inline]
-    fn from(v: u64) -> Self {
-        Self::Standard(v)
-    }
-}
-
-impl From<u128> for Fid {
-    #[inline]
-    fn from(v: u128) -> Self {
-        Self::Extended(v)
-    }
-}
-
-impl TryFrom<Fid> for u64 {
-    type Error = &'static str;
-
-    #[inline]
-    fn try_from(v: Fid) -> Result<Self, Self::Error> {
-        v.as_u64()
-            .ok_or("128-bit file identifiers cannot be represented as u64")
-    }
-}
-
-impl fmt::Display for Fid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Standard(v) => write!(f, "0x{v:x}"),
-            Self::Extended(v) => write!(f, "0x{v:x}"),
-        }
-    }
-}
-
-impl fmt::LowerHex for Fid {
-    /// Bare lowercase hex of the underlying identifier. Honors the `#` flag for
-    /// the `0x` prefix, so `format!("{:#x}", fid)` matches the `Display` form.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Standard(v) => fmt::LowerHex::fmt(v, f),
-            Self::Extended(v) => fmt::LowerHex::fmt(v, f),
-        }
-    }
-}
-
-impl fmt::UpperHex for Fid {
-    /// Bare uppercase hex of the underlying identifier. Honors the `#` flag for
-    /// the `0X` prefix.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Standard(v) => fmt::UpperHex::fmt(v, f),
-            Self::Extended(v) => fmt::UpperHex::fmt(v, f),
-        }
-    }
-}
-
 bitflags::bitflags! {
     /// Strongly-typed view over an NTFS file-attribute bitmask
     /// (the value stored in `USN_RECORD_V2::FileAttributes`,
@@ -425,21 +238,6 @@ mod tests {
     }
 
     #[test]
-    fn fid_hex_formatting_composes_with_specifiers() {
-        let fid = Fid::new(0xDEAD);
-        // Display keeps the 0x prefix.
-        assert_eq!(format!("{fid}"), "0xdead");
-        // Bare LowerHex / UpperHex, with the `#` flag adding the prefix.
-        assert_eq!(format!("{fid:x}"), "dead");
-        assert_eq!(format!("{fid:X}"), "DEAD");
-        assert_eq!(format!("{fid:#x}"), "0xdead");
-        assert_eq!(format!("{fid:#X}"), "0xDEAD");
-
-        let ext = Fid::from_u128(0x1234_5678_9abc_def0);
-        assert_eq!(format!("{ext:x}"), "123456789abcdef0");
-    }
-
-    #[test]
     fn file_attributes_display_is_none_for_zero_bits() {
         assert_eq!(format!("{}", FileAttributes::empty()), "NONE");
     }
@@ -448,84 +246,6 @@ mod tests {
     fn file_attributes_display_uses_hex_for_unknown_bits() {
         let attrs = FileAttributes::from_bits_retain(0x8000_0000);
         assert_eq!(format!("{attrs}"), "0x80000000");
-    }
-
-    #[test]
-    fn fid_record_and_sequence() {
-        let raw: u64 = (0xABCDu64 << 48) | 0x0000_0000_0000_002A;
-        let fid = Fid::new(raw);
-        assert_eq!(fid.record_number(), Some(0x2A));
-        assert_eq!(fid.sequence(), Some(0xABCD));
-        assert_eq!(fid.as_u64(), Some(raw));
-    }
-
-    #[test]
-    fn fid_from_parts_round_trips_record_and_sequence() {
-        let fid = Fid::from_parts(0x2A, 0xABCD);
-        assert!(fid.is_standard());
-        assert_eq!(fid.record_number(), Some(0x2A));
-        assert_eq!(fid.sequence(), Some(0xABCD));
-        assert_eq!(fid.as_u64(), Some((0xABCDu64 << 48) | 0x2A));
-
-        // Record numbers are masked to the low 48 bits.
-        let masked = Fid::from_parts(u64::MAX, 0);
-        assert_eq!(masked.record_number(), Some((1u64 << 48) - 1));
-        assert_eq!(masked.sequence(), Some(0));
-    }
-
-    #[test]
-    fn fid_display_is_hex() {
-        assert_eq!(format!("{}", Fid::new(0x10)), "0x10");
-    }
-
-    #[test]
-    fn fid_round_trip() {
-        let v = Fid::new(0xDEAD_BEEF);
-        let u: u64 = v.try_into().expect("standard fid");
-        assert_eq!(u, 0xDEAD_BEEF);
-        assert_eq!(Fid::from(0x42u64).as_u64(), Some(0x42));
-    }
-
-    #[test]
-    fn extended_fid_round_trip() {
-        let fid = Fid::from_u128(0x0000_0000_0000_0000_0000_0000_0000_11c6);
-        assert!(fid.is_extended());
-        assert_eq!(
-            fid.as_bytes(),
-            [
-                0xc6, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00,
-            ]
-        );
-        assert_eq!(format!("{fid}"), "0x11c6");
-        assert_eq!(fid.record_number(), None);
-        assert_eq!(fid.sequence(), None);
-        assert!(u64::try_from(fid).is_err());
-    }
-
-    #[test]
-    fn extended_fid_from_bytes_round_trip() {
-        let raw = [
-            1, 2, 3, 4, 5, 6, 7, 8, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x10, 0x20,
-        ];
-        let fid = Fid::from_bytes(raw);
-        assert_eq!(fid.as_bytes(), raw);
-    }
-
-    #[test]
-    fn standard_fid_from_u128_and_as_u128_zero_extends() {
-        let fid = Fid::new(0x42);
-        assert_eq!(fid.as_u128(), 0x42);
-        assert_eq!(fid.as_bytes()[0], 0x42);
-        assert!(fid.as_bytes()[8..].iter().all(|&b| b == 0));
-    }
-
-    #[test]
-    fn fid_from_u128_is_extended() {
-        let fid = Fid::from(0x1_0000_0000_0000_0001u128);
-        assert!(fid.is_extended());
-        assert_eq!(fid.as_u128(), 0x1_0000_0000_0000_0001u128);
-        assert_eq!(fid.as_u64(), None);
     }
 
     #[test]
@@ -568,14 +288,11 @@ pub enum FileReferenceError {
     /// The record number cannot fit in NTFS's 48-bit slot field.
     #[error("record number {0} exceeds 48 bits")]
     RecordNumberOutOfRange(u64),
-    /// A generic 128-bit identifier cannot become an NTFS reference.
-    #[error("128-bit identifiers are not NTFS file references")]
-    ExtendedIdentifier,
 }
 
 /// NTFS 64-bit file reference, including the 48-bit slot and 16-bit sequence.
 ///
-/// Unlike generic [`Fid`], this type cannot represent ReFS identifiers, so
+/// This type cannot represent ReFS identifiers, so
 /// [`Self::record_number`] and [`Self::sequence`] return values directly.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -624,20 +341,6 @@ impl From<NtfsFileReference> for u64 {
         reference.get()
     }
 }
-impl From<NtfsFileReference> for Fid {
-    fn from(reference: NtfsFileReference) -> Self {
-        Self::Standard(reference.get())
-    }
-}
-impl TryFrom<Fid> for NtfsFileReference {
-    type Error = FileReferenceError;
-    fn try_from(reference: Fid) -> Result<Self, Self::Error> {
-        match reference {
-            Fid::Standard(raw) => Ok(Self(raw)),
-            Fid::Extended(_) => Err(FileReferenceError::ExtendedIdentifier),
-        }
-    }
-}
 impl fmt::Display for NtfsFileReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "0x{:x}", self.0)
@@ -658,22 +361,20 @@ impl fmt::UpperHex for NtfsFileReference {
 mod ntfs_reference_tests {
     use super::*;
     #[test]
-    fn references_preserve_sequence_and_reject_overflow_or_extended_ids() {
+    fn references_preserve_sequence_and_reject_overflow() {
         let reference = NtfsFileReference::try_from_parts(42, 7).unwrap();
         assert_eq!(reference.record_number(), 42);
         assert_eq!(reference.sequence(), 7);
+        assert_eq!(format!("{reference}"), "0x700000000002a");
+        assert_eq!(format!("{reference:#X}"), "0x700000000002A");
+        assert_eq!(u64::from(reference), reference.get());
         assert_eq!(reference.get(), (7u64 << 48) | 42);
-        assert_eq!(
-            NtfsFileReference::try_from(Fid::from(reference)).unwrap(),
-            reference
-        );
         assert_eq!(
             NtfsFileReference::new(u64::from_le_bytes(reference.to_le_bytes())),
             reference
         );
         assert!(NtfsFileReference::try_from_parts(1u64 << 48, 0).is_err());
         assert!(NtfsFileReference::try_from_parts(u64::MAX, 0).is_err());
-        assert!(NtfsFileReference::try_from(Fid::Extended(42)).is_err());
         assert_eq!(
             NtfsFileReference::try_from_parts((1u64 << 48) - 1, u16::MAX)
                 .unwrap()

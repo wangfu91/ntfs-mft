@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
-    Fid, Filetime, MftError, OfflineFieldState, OfflineIssue, OfflineMftRecord, RawMftEntry,
+    Filetime, MftError, NtfsFileReference, OfflineFieldState, OfflineIssue, OfflineMftRecord,
+    RawMftEntry,
 };
 use chrono::{Datelike, TimeZone, Utc};
 use std::ffi::OsStr;
@@ -33,13 +34,12 @@ impl ExportName {
     }
 }
 
-impl From<Fid> for ExportReference {
-    fn from(fid: Fid) -> Self {
+impl From<NtfsFileReference> for ExportReference {
+    fn from(reference: NtfsFileReference) -> Self {
         Self {
-            bits: if fid.is_standard() { 64 } else { 128 },
-            raw: fid.as_u128().to_string(),
-            record_number: fid.record_number().map(|v| v.to_string()),
-            sequence_number: fid.sequence(),
+            raw: reference.get().to_string(),
+            record_number: reference.record_number().to_string(),
+            sequence_number: reference.sequence(),
         }
     }
 }
@@ -292,7 +292,7 @@ impl ExportRecordV1 {
                     }
                     OfflineIssue::ExtensionRead { reference, error } => (
                         "extension_read",
-                        Some(Fid::new(*reference).into()),
+                        Some(NtfsFileReference::new(*reference).into()),
                         Some(error.into()),
                     ),
                     OfflineIssue::ExtensionMismatch => ("extension_mismatch", None, None),
@@ -309,11 +309,5 @@ impl ExportRecordV1 {
                 }
             })
             .collect();
-    }
-}
-
-impl From<crate::NtfsFileReference> for ExportReference {
-    fn from(reference: crate::NtfsFileReference) -> Self {
-        Fid::from(reference).into()
     }
 }

@@ -15,7 +15,7 @@
 //!
 //! Skips gracefully on non-elevated runs.
 
-use ntfs_mft::Fid;
+use ntfs_mft_integration_tests::Fid;
 use ntfs_mft::{MftError, RawMft, RawMftEntry, Volume as RawVolume};
 use ntfs_mft_integration_tests::{
     MftEntry,

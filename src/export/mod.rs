@@ -52,20 +52,18 @@ pub struct ExportName {
     pub raw: NameUnits,
 }
 
-/// A full file identifier; NTFS record and sequence fields are absent for extended IDs.
+/// A full NTFS reference with its record and sequence fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportReference {
-    /// Identifier width: 64 for NTFS or 128 for an extended caller-supplied ID.
-    pub bits: u8,
     /// Full unsigned identifier as a decimal string.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
     pub raw: String,
     /// Lower 48 bits of a standard reference, as a decimal string.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
-    pub record_number: Option<String>,
+    pub record_number: String,
     /// Upper 16 bits of a standard reference.
-    pub sequence_number: Option<u16>,
+    pub sequence_number: u16,
 }
 
 /// Why readable timestamp text is unavailable or ambiguous.

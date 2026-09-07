@@ -63,13 +63,13 @@ schema and golden output. Breaking changes require a new version. Readers should
 means preserving exported data, not reconstructing the original disk record or
 validating caller-authored DTOs against NTFS invariants.
 
-- All u64/u128 identifiers, sizes, offsets, cluster totals, and FILETIME values
+- All u64 identifiers, sizes, offsets, cluster totals, and FILETIME values
   are canonical unsigned decimal strings. Small flags, namespaces, counts, and
   u16 sequences are JSON integers. Unknown flag bits survive.
-- A file reference includes its full value and width. NTFS also carries its lower
-  48-bit record number and upper 16-bit sequence. Extended caller-supplied IDs
-  have null NTFS components. Header record/sequence fields remain separately
-  represented; conversion does not repair inconsistent caller-created entries.
+- A file reference includes its full 64-bit value, lower 48-bit record number,
+  and upper 16-bit sequence. All three fields are required. There is no generic
+  identifier width or 128-bit variant. Header record/sequence fields remain
+  separately represented; conversion does not repair inconsistent caller-created entries.
 - `base_record_number` preserves the scanner's value (zero sentinel included).
   `base_sequence_number` is null because both current adapters receive entries
   whose base sequence bits were discarded. Never interpret null as sequence zero.
