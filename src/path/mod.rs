@@ -1,8 +1,8 @@
 //! Internal snapshot tree and optional Windows live path fallback.
 mod in_memory_tree;
-pub(crate) use in_memory_tree::InMemoryDirTree;
+pub use in_memory_tree::{MftPathError, MftPathIndex, MftPathQuality, MftPathResolution};
 #[cfg(windows)]
 pub(crate) mod resolve;
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests;

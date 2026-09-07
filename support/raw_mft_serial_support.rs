@@ -136,8 +136,8 @@ pub fn print_serial_config(config: &SerialConfig) {
     #[cfg(windows)]
     let source = config.drive.to_string();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let source =
-        env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
+    let source = env::var("NTFS_MFT_TEST_VOLUME")
+        .unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
     eprintln!(
         "raw_mft serial read config: volume={} start_record={} end_record={} max_records={} ads={} runs={} dos={} unused={}",
         source,
@@ -170,7 +170,7 @@ pub fn run_serial_read(mft: &RawMft<'_>, config: &SerialConfig) -> Result<Serial
         match item {
             Ok(entry) => {
                 summary.records += 1;
-                summary.name_chars += entry.file_name.len() as u64;
+                summary.name_chars += entry.file_name.as_utf16().len() as u64;
                 summary.links += entry.links.len() as u64;
                 summary.ads += entry.alternate_data_streams.len() as u64;
                 summary.size_checksum ^= entry.real_size ^ entry.allocated_size;

@@ -36,9 +36,9 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
     assert!(!serial.is_empty());
     let chunks = raw.plan_chunks_with_options(
         RawMftChunkPlanOptions::builder()
-            .end_record(Some(4096))
             .max_records_per_chunk(NonZeroU64::new(16).unwrap())
             .build(),
+        &options,
     );
     assert!(
         chunks.len() > 1,
@@ -61,8 +61,9 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
     ] {
         let batches = raw
             .parallel()
+            .lean()
             .chunks(chunks.clone())
-            .scan_options(options.clone())
+            .scan_options(options.clone().into_lean())
             .workers(NonZeroUsize::new(4).unwrap())
             .scheduling(scheduling)
             .collect_batches()?;
@@ -88,7 +89,7 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
     let record_size = raw.file_record_size();
     let mut first = raw.byte_reader()?;
     let mut second = raw.byte_reader()?;
-    second.seek(SeekFrom::Start(record_size * 5))?;
+    second.seek(SeekFrom::Start(record_size as u64 * 5))?;
     let mut signature = [0; 4];
     second.read_exact(&mut signature)?;
     assert_eq!(&signature, b"FILE");
@@ -97,7 +98,7 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
     drop(second);
     drop(raw);
     drop(volume);
-    let mut stream = MftStream::from_reader(first, MftStreamOptions::new(record_size as usize)?)?;
+    let mut stream = MftStream::from_reader(first, MftStreamOptions::new(record_size)?)?;
     let parsed = stream.read_record(5)?;
     assert_eq!(parsed.entry.file_reference, root.file_reference);
     assert_eq!(parsed.entry.file_name, root.file_name);

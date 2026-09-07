@@ -1,8 +1,8 @@
 //! File-name namespace selection and retained-link policy.
 
-use std::ffi::OsString;
+use crate::NtfsName;
 
-use crate::{Fid, raw_mft::layout::attribute::FileNameNamespace};
+use crate::{NtfsFileReference, raw_mft::layout::attribute::FileNameNamespace};
 
 use super::entry::RawMftLink;
 
@@ -12,9 +12,9 @@ pub(super) struct CurrentFileName<'a> {
     /// Namespace of the current best `$FILE_NAME`.
     pub(super) namespace: FileNameNamespace,
     /// Parent directory reference of the current best `$FILE_NAME`.
-    pub(super) parent_reference: Fid,
+    pub(super) parent_reference: NtfsFileReference,
     /// Leaf name of the current best `$FILE_NAME`.
-    pub(super) file_name: &'a OsString,
+    pub(super) file_name: &'a NtfsName,
 }
 
 /// Chooses the best `$FILE_NAME` and retains additional hard-link names.
@@ -40,8 +40,8 @@ impl FileNameSelector {
         &mut self,
         current: Option<CurrentFileName<'_>>,
         candidate_namespace: FileNameNamespace,
-        candidate_parent: Fid,
-        candidate_name: &OsString,
+        candidate_parent: NtfsFileReference,
+        candidate_name: &NtfsName,
     ) -> bool {
         if !self.collect_dos_file_name_links
             && candidate_namespace == FileNameNamespace::Dos
@@ -104,7 +104,7 @@ impl FileNameSelector {
     fn has_non_dos_file_name_link(
         &self,
         current: Option<CurrentFileName<'_>>,
-        parent_reference: Fid,
+        parent_reference: NtfsFileReference,
     ) -> bool {
         current.is_some_and(|current| {
             current.parent_reference == parent_reference
@@ -117,9 +117,9 @@ impl FileNameSelector {
     fn should_retain_file_name_link(
         &self,
         link_namespace: FileNameNamespace,
-        link_parent: Fid,
+        link_parent: NtfsFileReference,
         current_namespace: FileNameNamespace,
-        current_parent: Fid,
+        current_parent: NtfsFileReference,
     ) -> bool {
         if self.collect_dos_file_name_links || link_namespace != FileNameNamespace::Dos {
             return true;
@@ -137,8 +137,8 @@ impl FileNameSelector {
 /// Borrow the currently selected file name when one exists.
 pub(super) fn current_file_name(
     namespace: FileNameNamespace,
-    parent_reference: Fid,
-    file_name: &OsString,
+    parent_reference: NtfsFileReference,
+    file_name: &NtfsName,
 ) -> Option<CurrentFileName<'_>> {
     if file_name.is_empty() {
         None
@@ -155,13 +155,13 @@ pub(super) fn current_file_name(
 mod tests {
     use super::*;
 
-    fn name(value: &str) -> OsString {
-        OsString::from(value)
+    fn name(value: &str) -> NtfsName {
+        NtfsName::from(value)
     }
 
     #[test]
     fn higher_namespace_score_replaces_selected_name() {
-        let parent = Fid::new(5);
+        let parent = NtfsFileReference::new(5);
         let mut selector = FileNameSelector::new(true);
         assert!(selector.consider(None, FileNameNamespace::Dos, parent, &name("FILE~1.TXT")));
         let current_name = name("FILE~1.TXT");
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn dos_link_is_suppressed_when_non_dos_same_parent_exists() {
-        let parent = Fid::new(5);
+        let parent = NtfsFileReference::new(5);
         let current_name = name("file.txt");
         let mut selector = FileNameSelector::new(false);
         assert!(selector.consider(None, FileNameNamespace::Win32, parent, &current_name));
@@ -190,8 +190,8 @@ mod tests {
 
     #[test]
     fn hard_link_candidates_are_retained() {
-        let first_parent = Fid::new(5);
-        let second_parent = Fid::new(9);
+        let first_parent = NtfsFileReference::new(5);
+        let second_parent = NtfsFileReference::new(9);
         let current_name = name("first.txt");
         let mut selector = FileNameSelector::new(true);
         assert!(selector.consider(None, FileNameNamespace::Win32, first_parent, &current_name));

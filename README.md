@@ -1,12 +1,27 @@
 # ntfs-mft
 
-Read-only raw NTFS Master File Table parsing and scanning for Windows, Linux, and macOS.
+Read-only NTFS Master File Table parsing and scanning for Windows, Linux, and macOS.
 
 This library reads the boot sector and fragmented `$MFT` streams directly,
 validates FILE records and update sequence arrays, and exposes timestamps,
 names, sizes, hard links, alternate data streams, and file attributes. It includes
-serial and parallel scans, snapshot path resolution, and experimental historical
+serial and parallel live volume scans, indexed path resolution, and experimental historical
 path reconstruction.
+
+See [Choosing an MFT API](docs/api-guide.md) for scan defaults, metadata choices,
+error behavior, and migration examples.
+
+## Terminology
+
+- **Live volume scan** reads MFT records directly from an NTFS volume/device.
+- **Offline MFT scan** parses an already extracted logical `$MFT` file or buffer.
+- **Read** means a single-record read or byte-stream operation; **scan** means
+  traversing records. **Parse** means interpreting the NTFS record bytes.
+
+`RawMft` accesses a volume and supports live volume scans. `MftStream` parses a
+logical byte stream from either source: a file-backed stream is an offline MFT
+scan; `MftStream::from_raw_mft()` still reads a live volume. Source and parsing
+policy are separate. A live volume scan is not an atomic filesystem snapshot.
 
 ## Local use
 
@@ -33,7 +48,7 @@ fn main() -> MftResult<()> {
 }
 ```
 
-## Extracted MFT streams
+## Offline MFT scans
 
 `MftStream` reads a standalone logical `$MFT` file using ordinary file permissions.
 It also accepts `Read + Seek` sources through `from_reader`, including
@@ -63,11 +78,11 @@ attribute-list references. Always retain `metadata`, `diagnostics`, and
 An MFT-only stream cannot supply non-resident attribute payloads or arbitrary
 file contents. See [the offline API contract](docs/offline-mft.md).
 
-For direct volume input without exporting first, pass `raw.byte_reader()?` to
-`MftStream::from_reader`, where `raw` is an existing `RawMft`. The adapter handles
-fragmented extents and exposes logical `$MFT::$DATA` bytes through `Read + Seek`.
-Use `raw.file_record_size()` for the parser options. Raw-volume permissions and
-live-scan consistency limitations still apply.
+For direct volume input, use `MftStream::from_raw_mft(&raw)` with an existing
+`RawMft`. It discovers the record size and opens an independent handle. For custom
+parser options, pass `raw.byte_reader()?` to `MftStream::from_reader` and use
+`raw.file_record_size()`. The adapter handles fragmented extents through
+`Read + Seek`. Raw-volume permissions and live-scan consistency limits still apply.
 
 ## Scope and limitations
 
@@ -87,7 +102,7 @@ live-scan consistency limitations still apply.
 Enable `jsonl` for streaming export of raw scan results or offline `MftStream`
 records. Enable only `serde` for the separate versioned DTOs. Both are optional.
 The [export guide and schema](docs/export.md) describe exact identifiers,
-timestamps, OS name encodings, metadata completeness, and known parser limits.
+timestamps, lossless NTFS names, native path encodings, metadata completeness, and known parser limits.
 
 ```text
 cargo run --example raw_mft_export --features jsonl -- file extracted.MFT 1024

@@ -6,6 +6,12 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MftError {
+    /// Caller supplied an invalid NTFS file reference.
+    #[error("Invalid file reference: {0}")]
+    InvalidFileReference(#[from] crate::FileReferenceError),
+    /// Indexed path construction failed.
+    #[error("Path index error: {0}")]
+    PathIndex(#[from] crate::MftPathError),
     /// Serialization of an export item failed.
     #[cfg(feature = "jsonl")]
     #[error("Export serialization error: {0}")]
@@ -413,4 +419,28 @@ mod tests {
             }
         }
     }
+}
+
+/// Failure of a scan with application-defined callbacks.
+///
+/// Scanner and callback errors remain distinct and retain their original types.
+///
+/// ```no_run
+/// use ntfs_mft::{RawMft, ScanError};
+/// fn export(mft: &RawMft<'_>) -> Result<(), ScanError<std::io::Error>> {
+///     mft.parallel().rich().try_for_each_batch(|batch| -> std::io::Result<()> {
+///         // Application-specific fallible work can use `?` here.
+///         let _destination = std::fs::File::open("existing-output")?;
+///         Ok(())
+///     })
+/// }
+/// ```
+#[derive(Debug, Error)]
+pub enum ScanError<E> {
+    /// Parsing, I/O, setup, or worker execution failed.
+    #[error("Scan failed: {0}")]
+    Scanner(#[from] MftError),
+    /// An application callback failed.
+    #[error("Scan consumer failed: {0}")]
+    Consumer(#[source] E),
 }

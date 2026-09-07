@@ -1,6 +1,6 @@
 //! Rich per-record metadata extracted from a single FILE record.
 
-use std::ffi::OsString;
+use crate::NtfsName;
 use std::fmt;
 
 use log::warn;
@@ -12,11 +12,11 @@ use super::{
 };
 
 use crate::{
-    Fid, FileAttributes, Filetime,
+    FileAttributes, Filetime, NtfsFileReference,
     raw_mft::layout::{
         attribute::{
             FileNameNamespace, NtfsAttribute, attr_header_flags, file_attr_flags,
-            osstring_from_utf16le,
+            ntfs_name_from_utf16le,
         },
         data_run::{DataRunSummary, summarize_runs},
         record::FileRecord,
@@ -62,7 +62,7 @@ pub(crate) enum AttributeListInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AdsInfo {
     /// Alternate data stream name.
-    pub name: OsString,
+    pub name: NtfsName,
     /// Logical stream size in bytes.
     pub real_size: u64,
     /// Allocated stream size in bytes.
@@ -75,26 +75,30 @@ pub struct AdsInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawMftLink {
     /// Parent directory file reference for this link.
-    pub parent_reference: Fid,
+    pub parent_reference: NtfsFileReference,
     /// Namespace of this specific `$FILE_NAME` attribute.
     pub namespace: FileNameNamespace,
     /// Leaf name carried by this link.
-    pub file_name: OsString,
+    pub file_name: NtfsName,
 }
 
 /// Comprehensive metadata for one MFT record.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawMftEntry {
+    /// Materialization choices that produced this entry. Empty collections do
+    /// not establish absence; use diagnostic or offline metadata for evidence.
+    pub collection_options: crate::RawMftEntryOptions,
     /// Record number in the `$MFT`.
     pub record_number: u64,
     /// Record sequence number.
     pub sequence_number: u16,
     /// Full file reference for this record.
-    pub file_reference: Fid,
+    pub file_reference: NtfsFileReference,
     /// Parent directory file reference from `$FILE_NAME`.
-    pub parent_reference: Fid,
-    /// Base-record reference for extension records.
-    pub base_record_reference: u64,
+    pub parent_reference: NtfsFileReference,
+    /// Base-record number for extension records, excluding sequence bits.
+    /// Zero for base records and also for extensions of record zero.
+    pub base_record_number: u64,
     /// Number of hard links to the file.
     pub hard_link_count: u16,
     /// Raw FILE-record flags.
@@ -111,7 +115,7 @@ pub struct RawMftEntry {
     pub namespace: FileNameNamespace,
 
     /// Leaf file name.
-    pub file_name: OsString,
+    pub file_name: NtfsName,
 
     /// `$STANDARD_INFORMATION` creation timestamp.
     pub si_created: Filetime,
@@ -226,11 +230,16 @@ impl RawMftEntryBuilder {
     fn new(record: &FileRecord<'_>, options: EntryBuildOptions) -> Self {
         Self {
             entry: RawMftEntry {
+                collection_options: crate::RawMftEntryOptions {
+                    collect_alternate_data_streams: options.collect_alternate_data_streams,
+                    collect_data_run_summary: options.collect_data_run_summary,
+                    collect_dos_file_name_links: options.collect_dos_file_name_links,
+                },
                 record_number: record.number,
                 sequence_number: record.sequence_value(),
-                file_reference: Fid::new(record.file_reference()),
-                parent_reference: Fid::new(0),
-                base_record_reference: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
+                file_reference: NtfsFileReference::new(record.file_reference()),
+                parent_reference: NtfsFileReference::new(0),
+                base_record_number: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
                 hard_link_count: record.link_count(),
                 flags: record.header.flags,
                 is_used: record.is_used(),
@@ -238,7 +247,7 @@ impl RawMftEntryBuilder {
                 is_reparse_point: false,
                 reparse_tag: None,
                 namespace: FileNameNamespace::Posix,
-                file_name: OsString::new(),
+                file_name: NtfsName::new(),
                 si_created: Filetime::new(0),
                 si_modified: Filetime::new(0),
                 si_mft_modified: Filetime::new(0),
@@ -282,11 +291,11 @@ impl RawMftEntryBuilder {
     /// Fold a `$FILE_NAME` attribute into the entry when it has the best namespace so far.
     fn apply_file_name(&mut self, attr: &NtfsAttribute<'_>) {
         if let Some((header, name_bytes)) = attr.as_file_name() {
-            let Some(file_name) = osstring_from_utf16le(name_bytes) else {
+            let Some(file_name) = ntfs_name_from_utf16le(name_bytes) else {
                 return;
             };
             let ns = FileNameNamespace::from_u8(header.namespace);
-            let parent_reference = Fid::new(header.parent_directory_reference);
+            let parent_reference = NtfsFileReference::new(header.parent_directory_reference);
             let should_replace = self.file_names.consider(
                 current_file_name(
                     self.entry.namespace,
@@ -361,7 +370,7 @@ impl RawMftEntryBuilder {
             }
             Some(name_bytes) => {
                 if self.collect_alternate_data_streams
-                    && let Some(name) = osstring_from_utf16le(name_bytes)
+                    && let Some(name) = ntfs_name_from_utf16le(name_bytes)
                 {
                     self.alternate_data_streams.push(AdsInfo {
                         name,
@@ -397,7 +406,7 @@ impl RawMftEntryBuilder {
             }
             Some(name_bytes) => {
                 if self.collect_alternate_data_streams
-                    && let Some(name) = osstring_from_utf16le(name_bytes)
+                    && let Some(name) = ntfs_name_from_utf16le(name_bytes)
                 {
                     self.alternate_data_streams.push(AdsInfo {
                         name,
@@ -663,10 +672,45 @@ mod tests {
         );
         assert_eq!(entry.alternate_data_streams[0].real_size, 3);
         assert!(entry.si_created.raw() != 0);
-        assert_eq!(entry.parent_reference, Fid::new((5u64 << 48) | 5));
+        assert_eq!(
+            entry.parent_reference,
+            NtfsFileReference::new((5u64 << 48) | 5)
+        );
         assert!(entry.links.is_empty());
-        assert_eq!(entry.parent_reference, Fid::new((5u64 << 48) | 5));
+        assert_eq!(
+            entry.parent_reference,
+            NtfsFileReference::new((5u64 << 48) | 5)
+        );
         assert_eq!(entry.file_name.to_string_lossy(), "hello.txt");
+    }
+
+    #[test]
+    fn both_projections_preserve_unpaired_surrogates_from_disk() {
+        let mut buf = build_test_record(42);
+        // Replace one code unit in each name without changing attribute sizes.
+        for text in ["hello.txt", "ads"] {
+            let encoded: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let offset = buf
+                .windows(encoded.len())
+                .position(|w| w == encoded)
+                .unwrap();
+            buf[offset..offset + 2].copy_from_slice(&0xd800u16.to_le_bytes());
+        }
+        let record = FileRecord::parse(42, None, &mut buf).unwrap();
+        let (rich, _) = RawMftEntry::from_record_with_attr_list(&record, EntryBuildOptions::full());
+        let (lean, _) =
+            super::super::batch::RawMftBatchScratch::from_record_with_attr_list(&record, true);
+        let lean = lean.into_entry();
+        assert_eq!(rich.file_name, lean.file_name);
+        assert_eq!(
+            rich.file_name.as_utf16(),
+            &[0xd800, 101, 108, 108, 111, 46, 116, 120, 116]
+        );
+        assert_eq!(
+            rich.alternate_data_streams[0].name.as_utf16(),
+            &[0xd800, 100, 115]
+        );
+        assert!(rich.file_name.try_to_string().is_err());
     }
 
     #[test]
@@ -675,10 +719,16 @@ mod tests {
         let rec = FileRecord::parse(42, None, &mut buf).expect("parse");
         let (entry, _) = RawMftEntry::from_record_with_attr_list(&rec, EntryBuildOptions::full());
         // file_reference = (seq << 48) | record_number; with seq=1, record=42
-        assert_eq!(entry.file_reference, Fid::new((1u64 << 48) | 42));
+        assert_eq!(
+            entry.file_reference,
+            NtfsFileReference::new((1u64 << 48) | 42)
+        );
         // parent_directory_reference was built as (5 << 48) | 5
-        assert_eq!(entry.parent_reference, Fid::new((5u64 << 48) | 5));
-        assert_eq!(entry.file_name, OsString::from("hello.txt"));
+        assert_eq!(
+            entry.parent_reference,
+            NtfsFileReference::new((5u64 << 48) | 5)
+        );
+        assert_eq!(entry.file_name, NtfsName::from("hello.txt"));
         assert!(!entry.is_directory);
     }
 }

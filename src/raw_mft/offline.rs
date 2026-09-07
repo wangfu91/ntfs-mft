@@ -1,11 +1,13 @@
-//! Offline, read-only parsing of a logical `$MFT` stream.
+//! Read-only parsing of logical `$MFT` bytes from a file, buffer, or volume.
 
-mod inspect;
+pub(in crate::raw_mft) mod inspect;
 use super::{
     RawMftEntry,
     layout::{attribute::NtfsAttribute, record::FileRecord},
 };
-use crate::{MftError, MftResult};
+use crate::{
+    MftDiagnostic, MftError, MftExternalPayload, MftFieldState, MftIssue, MftMetadata, MftResult,
+};
 use inspect::{Inspection, RecordData, inspect_record, list_references};
 use std::{
     collections::BTreeMap,
@@ -51,106 +53,24 @@ impl MftStreamOptions {
     }
 }
 
-/// Whether metadata was observed and whether its supported attributes were inspected.
-///
-/// This describes metadata, never the availability of arbitrary file contents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OfflineFieldState {
-    /// At least one valid attribute was observed. `complete` is false when more
-    /// metadata may be missing or a split stream could not be fully summarized.
-    Present {
-        /// All relevant supported metadata was inspected successfully.
-        complete: bool,
-    },
-    /// No such attribute exists in the fully inspected record set.
-    Absent,
-    /// No valid attribute was observed, but inspection was incomplete.
-    Unknown,
-}
-
-/// Completeness of the metadata categories represented by [`RawMftEntry`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OfflineMetadata {
-    /// `$STANDARD_INFORMATION` timestamps and flags.
-    pub standard_information: OfflineFieldState,
-    /// `$FILE_NAME` names, links, and timestamps.
-    pub file_names: OfflineFieldState,
-    /// Unnamed `$DATA` metadata, including its run summary.
-    pub unnamed_data: OfflineFieldState,
-    /// Named `$DATA` stream metadata.
-    pub alternate_data_streams: OfflineFieldState,
-    /// `$REPARSE_POINT` tag metadata (not a tag copied from `$FILE_NAME`).
-    pub reparse_point: OfflineFieldState,
-}
-
-/// An attribute whose payload is outside the extracted MFT stream.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OfflineExternalPayload {
-    /// Physical MFT record containing the attribute header.
-    pub record_number: u64,
-    /// NTFS attribute type code.
-    pub attribute_type: u32,
-    /// Attribute instance identifier within that record.
-    pub attribute_id: u16,
-}
-
-/// Why offline metadata is incomplete.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum OfflineIssue {
-    /// Attribute framing or a typed payload was malformed.
-    MalformedAttribute,
-    /// Extension lookup was disabled by the caller.
-    ExtensionsNotResolved,
-    /// A non-resident payload requires the original volume.
-    ExternalPayloadUnavailable,
-    /// A resident attribute list was malformed.
-    MalformedAttributeList,
-    /// A referenced record could not be read or validated.
-    ExtensionRead {
-        /// Full reference, including sequence number.
-        reference: u64,
-        /// Original item-level error.
-        error: MftError,
-    },
-    /// The reference sequence, base reference, or selected attribute did not match.
-    ExtensionMismatch,
-    /// An extension has its own attribute list; recursive traversal is unsupported.
-    NestedAttributeList,
-    /// A data stream spans attribute segments; a complete run summary is unavailable.
-    SplitDataStream,
-    /// A physical extension record was requested without resolving its base.
-    ExtensionRecordOnly,
-}
-
-/// A recoverable limitation associated with a parsed record.
-#[derive(Debug)]
-pub struct OfflineDiagnostic {
-    /// Record at which the issue was observed.
-    pub record_number: u64,
-    /// Affected attribute type, or `None` when all categories may be affected.
-    pub attribute_type: Option<u32>,
-    /// Structured reason, including underlying errors where applicable.
-    pub issue: OfflineIssue,
-}
-
 /// Metadata and provenance for one physical MFT slot.
 #[derive(Debug)]
-pub struct OfflineMftRecord {
+pub struct MftStreamRecord {
     /// Existing metadata representation. Interpret default values using `metadata`.
     pub entry: RawMftEntry,
     /// Offset in the supplied stream, not an offset in the original volume.
     pub stream_offset: u64,
     /// Per-category presence and completeness.
-    pub metadata: OfflineMetadata,
+    pub metadata: MftMetadata,
     /// Recoverable parsing and extension-resolution limitations.
-    pub diagnostics: Vec<OfflineDiagnostic>,
+    pub diagnostics: Vec<MftDiagnostic>,
     /// Observed non-resident attribute payloads unavailable in an MFT-only stream.
     /// Empty does not prove that none exist when metadata inspection was incomplete.
-    pub external_payloads: Vec<OfflineExternalPayload>,
+    pub external_payloads: Vec<MftExternalPayload>,
 }
 
-/// A generic, read-only parser for an extracted logical `$MFT` stream.
+/// A generic, read-only parser for a logical `$MFT` stream.
+/// File/buffer input is an offline MFT scan; volume input is a live volume scan.
 ///
 /// Offset zero must be record zero; retain empty/unused slots. Input must contain
 /// original USA-protected bytes, not already fixed-up records. The source must
@@ -181,6 +101,21 @@ impl MftStream<BufReader<File>> {
     /// Open an extracted MFT file read-only, with ordinary user file permissions.
     pub fn from_path(path: impl AsRef<Path>, options: MftStreamOptions) -> MftResult<Self> {
         Self::from_reader(BufReader::new(File::open(path)?), options)
+    }
+}
+
+impl MftStream<super::MftByteReader> {
+    /// Parse a volume's logical MFT using its discovered record size.
+    ///
+    /// The stream owns an independent handle and can outlive `raw` and its
+    /// volume. Extension resolution is disabled by default, as with
+    /// [`MftStreamOptions::new`]. For custom options, use [`Self::from_reader`]
+    /// with [`super::RawMft::byte_reader`]. A live volume is not a snapshot.
+    pub fn from_raw_mft(raw: &super::RawMft<'_>) -> MftResult<Self> {
+        Self::from_reader(
+            raw.byte_reader()?,
+            MftStreamOptions::new(raw.file_record_size())?,
+        )
     }
 }
 
@@ -264,21 +199,21 @@ impl<R: Read + Seek> MftStream<R> {
 
     /// Read one slot. Non-FILE slots, bad USA fixups, and out-of-range numbers
     /// are errors; incomplete metadata retains the entry with diagnostics.
-    pub fn read_record(&mut self, number: u64) -> MftResult<OfflineMftRecord> {
+    pub fn read_record(&mut self, number: u64) -> MftResult<MftStreamRecord> {
         let base = self.load(number)?;
         let mut inspection = Inspection::default();
         let base_attrs = inspect_record(&base, &mut inspection);
         let mut references = Vec::new();
         if base.header.base_reference != 0 {
-            inspection.issue(number, None, OfflineIssue::ExtensionRecordOnly);
+            inspection.issue(number, None, MftIssue::ExtensionRecordOnly);
         } else {
             for attr in base_attrs.iter().filter(|a| a.type_id() == 0x20) {
                 if attr.is_non_resident() {
-                    inspection.issue(number, None, OfflineIssue::ExternalPayloadUnavailable);
+                    inspection.issue(number, None, MftIssue::ExternalPayloadUnavailable);
                 } else if self.options.resolve_extensions {
                     references.extend(list_references(attr, number, &mut inspection));
                 } else {
-                    inspection.issue(number, None, OfflineIssue::ExtensionsNotResolved);
+                    inspection.issue(number, None, MftIssue::ExtensionsNotResolved);
                 }
             }
         }
@@ -295,7 +230,7 @@ impl<R: Read + Seek> MftStream<R> {
                     inspection.issue(
                         ext_number,
                         None,
-                        OfflineIssue::ExtensionRead {
+                        MftIssue::ExtensionRead {
                             reference: reference.file_reference,
                             error,
                         },
@@ -324,7 +259,7 @@ impl<R: Read + Seek> MftStream<R> {
                 inspection.issue(
                     ext_number,
                     Some(reference.type_id),
-                    OfflineIssue::ExtensionMismatch,
+                    MftIssue::ExtensionMismatch,
                 );
                 continue;
             }
@@ -332,7 +267,7 @@ impl<R: Read + Seek> MftStream<R> {
             let mut local = Inspection::default();
             let candidates = inspect_record(source, &mut local);
             if ext_number != number && candidates.iter().any(|a| a.type_id() == 0x20) {
-                inspection.issue(ext_number, None, OfflineIssue::NestedAttributeList);
+                inspection.issue(ext_number, None, MftIssue::NestedAttributeList);
             }
             let matched = candidates.into_iter().find(|attr| reference.matches(attr));
             match matched {
@@ -347,20 +282,20 @@ impl<R: Read + Seek> MftStream<R> {
                 None => inspection.issue(
                     ext_number,
                     Some(reference.type_id),
-                    OfflineIssue::ExtensionMismatch,
+                    MftIssue::ExtensionMismatch,
                 ),
             }
             if local
                 .diagnostics
                 .iter()
-                .any(|diagnostic| matches!(diagnostic.issue, OfflineIssue::MalformedAttribute))
+                .any(|diagnostic| matches!(diagnostic.issue, MftIssue::MalformedAttribute))
             {
                 // A malformed extension may hide another required attribute. Do not
                 // claim completeness even if the selected attribute was accessible.
                 inspection.issue(
                     ext_number,
                     Some(reference.type_id),
-                    OfflineIssue::MalformedAttribute,
+                    MftIssue::MalformedAttribute,
                 );
             }
         }
@@ -371,7 +306,7 @@ impl<R: Read + Seek> MftStream<R> {
                     || attr.nonresident_header().is_none_or(|h| h.lowest_vcn == 0)
             }),
         );
-        Ok(OfflineMftRecord {
+        Ok(MftStreamRecord {
             entry,
             stream_offset: number * self.options.record_size as u64,
             metadata: inspection.metadata(),
@@ -393,7 +328,7 @@ impl<R: Read + Seek> MftStream<R> {
     }
 }
 
-/// Borrowing serial iterator over offline MFT slots.
+/// Borrowing serial iterator over physical slots in a logical MFT stream.
 pub struct MftStreamIter<'a, R: Read + Seek> {
     stream: &'a mut MftStream<R>,
     next: u64,
@@ -401,7 +336,7 @@ pub struct MftStreamIter<'a, R: Read + Seek> {
 }
 
 impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
-    type Item = MftResult<OfflineMftRecord>;
+    type Item = MftResult<MftStreamRecord>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.stopped || self.next >= self.stream.record_count {
             return None;
@@ -412,7 +347,7 @@ impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
             Err(error) => error.is_io_error(),
             Ok(record) => record.diagnostics.iter().any(|d| {
                 matches!(
-                    &d.issue, OfflineIssue::ExtensionRead { error, .. } if error.is_io_error()
+                    &d.issue, MftIssue::ExtensionRead { error, .. } if error.is_io_error()
                 )
             }),
         };

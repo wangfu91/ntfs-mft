@@ -53,7 +53,7 @@ fn run() -> Result<(), MftError> {
                 let path = resolver.resolve_path(&entry);
                 let path_display = path
                     .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_else(|| entry.file_name.to_string_lossy().to_string());
+                    .unwrap_or_else(|| entry.file_name.to_string_lossy());
                 let kind = if entry.is_directory { "DIR " } else { "FILE" };
                 println!(
                     "{kind} #{:>10} size={:>12} alloc={:>12} links={} ads={} sparse={} compressed={} {}",

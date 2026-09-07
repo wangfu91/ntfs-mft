@@ -3,14 +3,16 @@
 //! These types intentionally carry less data than [`super::RawMftEntry`] so
 //! high-throughput batch consumers can avoid rebuilding fields they do not use.
 
-use std::ffi::OsString;
+use crate::NtfsName;
 
 use crate::{
-    Fid, FileAttributes, Filetime,
+    FileAttributes, Filetime, NtfsFileReference,
     raw_mft::{
         RawMftWorkChunk,
         layout::{
-            attribute::{FileNameNamespace, NtfsAttribute, file_attr_flags, osstring_from_utf16le},
+            attribute::{
+                FileNameNamespace, NtfsAttribute, file_attr_flags, ntfs_name_from_utf16le,
+            },
             record::FileRecord,
         },
     },
@@ -28,11 +30,11 @@ use super::{
 /// The `entries` preserve the record order produced by the underlying chunk
 /// scan so callers can fold or compare batches deterministically.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawMftChunkBatch {
+pub struct RawMftChunkBatch<E = RawMftBatchEntry> {
     /// Logical chunk that produced this batch.
     pub chunk: RawMftWorkChunk,
-    /// Lean entries parsed from the chunk in chunk order.
-    pub entries: Vec<RawMftBatchEntry>,
+    /// Entries parsed from the chunk in chunk order.
+    pub entries: Vec<E>,
 }
 
 /// Lean raw-MFT entry shape for high-throughput batch consumers.
@@ -45,11 +47,14 @@ pub struct RawMftBatchEntry {
     /// Record number in the `$MFT`.
     pub record_number: u64,
     /// Full file reference for this record.
-    pub file_reference: Fid,
+    pub file_reference: NtfsFileReference,
     /// Parent directory file reference from the selected `$FILE_NAME`.
-    pub parent_reference: Fid,
-    /// Base-record reference for extension records.
-    pub base_record_reference: u64,
+    pub parent_reference: NtfsFileReference,
+    /// Base-record number for extension records, excluding sequence bits.
+    /// Zero for base records and also for extensions of record zero.
+    pub base_record_number: u64,
+    /// Whether the FILE header marks this record as in use.
+    pub is_used: bool,
     /// Whether the record is marked as a directory.
     pub is_directory: bool,
     /// Reparse tag when the file is a reparse point.
@@ -57,7 +62,7 @@ pub struct RawMftBatchEntry {
     /// Namespace of the selected `$FILE_NAME`.
     pub namespace: FileNameNamespace,
     /// Selected leaf file name.
-    pub file_name: OsString,
+    pub file_name: NtfsName,
     /// `$STANDARD_INFORMATION` last-modified timestamp.
     pub si_modified: Filetime,
     /// `$STANDARD_INFORMATION` attribute flags.
@@ -109,7 +114,8 @@ impl From<RawMftEntry> for RawMftBatchEntry {
             record_number: entry.record_number,
             file_reference: entry.file_reference,
             parent_reference: entry.parent_reference,
-            base_record_reference: entry.base_record_reference,
+            base_record_number: entry.base_record_number,
+            is_used: entry.is_used,
             is_directory: entry.is_directory,
             reparse_tag: entry.reparse_tag,
             namespace: entry.namespace,
@@ -135,13 +141,14 @@ impl RawMftBatchEntryBuilder {
             scratch: RawMftBatchScratch {
                 entry: RawMftBatchEntry {
                     record_number: record.number,
-                    file_reference: Fid::new(record.file_reference()),
-                    parent_reference: Fid::new(0),
-                    base_record_reference: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
+                    file_reference: NtfsFileReference::new(record.file_reference()),
+                    parent_reference: NtfsFileReference::new(0),
+                    base_record_number: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
+                    is_used: record.is_used(),
                     is_directory: record.is_directory(),
                     reparse_tag: None,
                     namespace: FileNameNamespace::Posix,
-                    file_name: OsString::new(),
+                    file_name: NtfsName::new(),
                     si_modified: Filetime::new(0),
                     si_file_attributes: FileAttributes::empty(),
                     real_size: 0,
@@ -167,11 +174,11 @@ impl RawMftBatchEntryBuilder {
 
     fn apply_file_name(&mut self, attr: &NtfsAttribute<'_>) {
         if let Some((header, name_bytes)) = attr.as_file_name() {
-            let Some(file_name) = osstring_from_utf16le(name_bytes) else {
+            let Some(file_name) = ntfs_name_from_utf16le(name_bytes) else {
                 return;
             };
             let namespace = FileNameNamespace::from_u8(header.namespace);
-            let parent_reference = Fid::new(header.parent_directory_reference);
+            let parent_reference = NtfsFileReference::new(header.parent_directory_reference);
             let should_replace = self.file_names.consider(
                 current_file_name(
                     self.scratch.entry.namespace,

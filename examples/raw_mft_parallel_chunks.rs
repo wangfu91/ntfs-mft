@@ -32,7 +32,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let chunk_plan = RawMftChunkPlanOptions::builder()
         .max_records_per_chunk(max_records_per_chunk)
         .build();
-    let chunks = raw_mft.plan_chunks_with_options(chunk_plan);
     let options = RawMftScanOptions::builder()
         .include_unused_records(false)
         .collect_alternate_data_streams(false)
@@ -40,17 +39,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect_dos_file_name_links(false)
         .build();
 
+    let chunks = raw_mft.plan_chunks_with_options(chunk_plan, &options);
+
     let start = Instant::now();
     let chunk_count = chunks.len();
     let mut entry_count = 0usize;
     raw_mft
         .parallel()
+        .lean()
         .chunks(chunks)
-        .scan_options(options)
+        .scan_options(options.into_lean())
         .workers(worker_count)
-        .for_each_batch(|batch| {
+        .try_for_each_batch(|batch| {
             entry_count += batch.entries.len();
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         })?;
     let elapsed = start.elapsed();
 

@@ -61,9 +61,9 @@ impl RawMft<'_> {
     /// re-reading them randomly from disk.
     ///
     /// `init`/`fold`/`visit` mirror
-    /// [`RawMftParallelScan::fold_chunks`](super::RawMftParallelScan::fold_chunks),
+    /// `RawMftParallelScan<Lean>::try_fold_chunks`,
     /// except `init` takes no chunk (it is also used for the phase-2 accumulator).
-    pub(crate) fn fold_records_cached_enrich<Init, Fold, Visit, T>(
+    pub(crate) fn fold_records_cached_enrich<Init, Fold, Visit, T, E>(
         &self,
         chunks: Vec<RawMftWorkChunk>,
         options: RawMftScanOptions,
@@ -71,11 +71,12 @@ impl RawMft<'_> {
         init: Init,
         fold: Fold,
         mut visit: Visit,
-    ) -> Result<(), MftError>
+    ) -> Result<(), E>
     where
+        E: From<MftError> + Send,
         Init: Fn() -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError> + Sync,
-        Visit: FnMut(T) -> Result<(), MftError>,
+        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E> + Sync,
+        Visit: FnMut(T) -> Result<(), E>,
         T: Send,
     {
         if chunks.is_empty() {
@@ -93,7 +94,7 @@ impl RawMft<'_> {
         let chunks = chunks.into_boxed_slice();
         let next_chunk = AtomicUsize::new(0);
 
-        let outputs: Vec<WorkerOutput<T>> = thread::scope(|scope| -> Result<_, MftError> {
+        let outputs: Vec<WorkerOutput<T>> = thread::scope(|scope| -> Result<_, E> {
             let mut handles = Vec::with_capacity(worker_count);
             for _ in 0..worker_count {
                 let next_chunk = &next_chunk;
@@ -105,7 +106,7 @@ impl RawMft<'_> {
                 let options = options.clone();
                 let init = &init;
                 let fold = &fold;
-                handles.push(scope.spawn(move || -> Result<WorkerOutput<T>, MftError> {
+                handles.push(scope.spawn(move || -> Result<WorkerOutput<T>, E> {
                     let volume = open_parallel_volume(&source)?;
                     let worker_mft = RawMft {
                         volume: &volume,
@@ -124,7 +125,8 @@ impl RawMft<'_> {
                     Err(_) => {
                         return Err(MftError::Io(std::io::Error::other(
                             "raw_mft cached-enrich worker panicked",
-                        )));
+                        ))
+                        .into());
                     }
                 }
             }
@@ -161,7 +163,7 @@ impl RawMft<'_> {
 
     /// One phase-1 worker: pull chunks, capturing extension records and deferring
     /// enrichment.
-    fn capture_worker<Init, Fold, T>(
+    fn capture_worker<Init, Fold, T, E>(
         &self,
         chunks: &[RawMftWorkChunk],
         next_chunk: &AtomicUsize,
@@ -169,10 +171,11 @@ impl RawMft<'_> {
         collect_dos: bool,
         init: &Init,
         fold: &Fold,
-    ) -> Result<WorkerOutput<T>, MftError>
+    ) -> Result<WorkerOutput<T>, E>
     where
+        E: From<MftError> + Send,
         Init: Fn() -> T,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError>,
+        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E>,
     {
         let mut acc = init();
         let mut ext_cache: HashMap<u64, Box<[u8]>> = HashMap::new();
@@ -209,7 +212,7 @@ impl RawMft<'_> {
                     } else {
                         fold(&mut acc, scratch.into_entry())?;
                     }
-                    Ok(())
+                    Ok::<_, E>(())
                 },
                 |record_number, raw| {
                     ext_cache
@@ -232,7 +235,7 @@ impl RawMft<'_> {
     /// Runs single-threaded: the work is dominated by parsing the cached
     /// extension records, and a worker-count sweep showed parallelism only adds
     /// contending volume reopens (1w 0.41s, 8w 0.60s, 16w 1.11s).
-    fn enrich_deferred<Init, Fold, T>(
+    fn enrich_deferred<Init, Fold, T, E>(
         &self,
         deferred: Vec<DeferredBase>,
         ext_cache: &HashMap<u64, Box<[u8]>>,
@@ -240,13 +243,14 @@ impl RawMft<'_> {
         collect_dos: bool,
         init: &Init,
         fold: &Fold,
-    ) -> Result<T, MftError>
+    ) -> Result<T, E>
     where
+        E: From<MftError> + Send,
         Init: Fn() -> T,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError>,
+        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E>,
     {
         let mut acc = init();
-        // Only needed for the rare non-resident `$ATTRIBUTE_LIST` payload.
+        // Read non-resident attribute lists and extensions outside the captured selection.
         let mut attr_reader = VolumeReader::with_buffer_bytes(
             self.volume(),
             self.boot.bytes_per_sector as u64,
@@ -260,7 +264,7 @@ impl RawMft<'_> {
                 deferred.attr_list,
                 deferred.base_number,
                 &mut attr_reader,
-                &self.boot,
+                self,
                 collect_dos,
                 ext_cache,
             );

@@ -8,12 +8,12 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fmt,
     path::PathBuf,
 };
 
-use crate::{Fid, raw_mft::RawMftEntry, volume::Volume};
+use crate::{NtfsFileReference, NtfsName, raw_mft::RawMftEntry, volume::Volume};
 
 /// NTFS record number reserved for the volume root directory.
 const NTFS_ROOT_RECORD_NUMBER: u64 = 5;
@@ -24,26 +24,26 @@ const MAX_STEPS: usize = 256;
 #[derive(Debug, Clone)]
 struct SnapshotNode {
     /// Parent directory reference recorded for this entry.
-    parent: Fid,
+    parent: NtfsFileReference,
     /// File name selected for this snapshot node.
-    name: OsString,
+    name: NtfsName,
 }
 
 /// Internal result of walking a parent chain through the snapshot.
 #[derive(Debug, Clone)]
 struct WalkOutcome {
     /// Path components collected from leaf to root.
-    components: Vec<OsString>,
+    components: Vec<NtfsName>,
     /// Whether the walk reached the NTFS root without breaking.
     complete: bool,
     /// Parent reference where the walk stopped, if any.
-    missing_parent: Option<Fid>,
+    missing_parent: Option<NtfsFileReference>,
 }
 
 /// Resolution quality for [`HistoricalPathResolution`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HistoricalPathResolutionQuality {
-    /// Every path component matched the exact `Fid` stored in the snapshot.
+    /// Every path component matched the exact `NtfsFileReference` stored in the snapshot.
     Exact,
     /// At least one parent step had to fall back to the current snapshot
     /// occupant of the referenced record number.
@@ -78,7 +78,7 @@ pub struct HistoricalPathResolution {
     /// How trustworthy the reconstructed path is.
     pub quality: HistoricalPathResolutionQuality,
     /// Parent file reference where the walk broke, when the resolution is only partial.
-    pub missing_parent: Option<Fid>,
+    pub missing_parent: Option<NtfsFileReference>,
 }
 
 /// Snapshot-local path index for raw-`$MFT` historical reconstruction.
@@ -90,9 +90,9 @@ pub struct HistoricalPathResolution {
 #[derive(Debug, Default, Clone)]
 pub struct HistoricalPathIndex {
     /// Named snapshot nodes keyed by their full file reference.
-    nodes_by_fid: HashMap<Fid, SnapshotNode>,
+    nodes_by_fid: HashMap<NtfsFileReference, SnapshotNode>,
     /// Current snapshot occupants keyed by record number for fallback lookup.
-    fid_by_record: HashMap<u64, Fid>,
+    fid_by_record: HashMap<u64, NtfsFileReference>,
 }
 
 impl HistoricalPathIndex {
@@ -123,9 +123,7 @@ impl HistoricalPathIndex {
             return;
         }
 
-        let Some(record_number) = entry.file_reference.record_number() else {
-            return;
-        };
+        let record_number = entry.file_reference.record_number();
 
         self.fid_by_record
             .insert(record_number, entry.file_reference);
@@ -141,12 +139,13 @@ impl HistoricalPathIndex {
     /// Resolve an arbitrary file reference against the snapshot with best-effort fallback.
     ///
     /// `fallback_leaf` is used when the snapshot cannot provide any named path
-    /// component for `fid` itself.
+    /// component for `fid` itself. Native paths replace unpaired UTF-16 surrogates
+    /// on Unix; quality describes the reference chain, not native name fidelity.
     #[must_use]
     pub fn resolve_best_effort(
         &self,
         volume: &Volume,
-        fid: Fid,
+        fid: NtfsFileReference,
         fallback_leaf: &OsStr,
     ) -> HistoricalPathResolution {
         let exact = self.walk(fid, false);
@@ -189,21 +188,22 @@ impl HistoricalPathIndex {
         volume: &Volume,
         entry: &RawMftEntry,
     ) -> HistoricalPathResolution {
-        self.resolve_best_effort(volume, entry.file_reference, entry.file_name.as_os_str())
+        self.resolve_best_effort(
+            volume,
+            entry.file_reference,
+            entry.file_name.to_os_string().as_os_str(),
+        )
     }
 
     /// Walk the parent chain for a file reference with optional record-number fallback.
-    fn walk(&self, fid: Fid, allow_record_fallback: bool) -> WalkOutcome {
+    fn walk(&self, fid: NtfsFileReference, allow_record_fallback: bool) -> WalkOutcome {
         let mut components = Vec::with_capacity(16);
         let mut visited = HashSet::with_capacity(32);
         let mut current_fid = fid;
         let mut missing_parent = None;
 
         for _ in 0..MAX_STEPS {
-            let Some(record_number) = current_fid.record_number() else {
-                missing_parent = Some(current_fid);
-                break;
-            };
+            let record_number = current_fid.record_number();
 
             if !visited.insert(record_number) {
                 missing_parent = Some(current_fid);
@@ -231,10 +231,7 @@ impl HistoricalPathIndex {
 
             components.push(node.name.clone());
 
-            let Some(parent_record) = node.parent.record_number() else {
-                missing_parent = Some(node.parent);
-                break;
-            };
+            let parent_record = node.parent.record_number();
 
             if parent_record == NTFS_ROOT_RECORD_NUMBER || parent_record == record_number {
                 return WalkOutcome {
@@ -260,7 +257,7 @@ impl HistoricalPathIndex {
 fn compose_path(
     volume: &Volume,
     marker: Option<&str>,
-    components: &[OsString],
+    components: &[NtfsName],
     fallback_leaf: &OsStr,
 ) -> PathBuf {
     let mut path = PathBuf::new();
@@ -280,7 +277,7 @@ fn compose_path(
     }
 
     for component in components.iter().rev() {
-        path.push(component);
+        path.push(component.to_os_string());
     }
     path
 }
@@ -293,11 +290,11 @@ mod tests {
         raw_mft::{FileNameNamespace, RawMftEntry},
         volume::{Volume, VolumeSource},
     };
-    use std::{ffi::OsString, path::PathBuf};
+    use std::path::PathBuf;
     use windows::Win32::Foundation::HANDLE;
 
-    fn standard_fid(record_number: u64, sequence_number: u16) -> Fid {
-        Fid::new(((sequence_number as u64) << 48) | record_number)
+    fn standard_fid(record_number: u64, sequence_number: u16) -> NtfsFileReference {
+        NtfsFileReference::new(((sequence_number as u64) << 48) | record_number)
     }
 
     fn sample_entry(
@@ -308,11 +305,12 @@ mod tests {
         file_name: &str,
     ) -> RawMftEntry {
         RawMftEntry {
+            collection_options: crate::RawMftEntryOptions::default(),
             record_number,
             sequence_number,
             file_reference: standard_fid(record_number, sequence_number),
             parent_reference: standard_fid(parent_record, parent_sequence),
-            base_record_reference: 0,
+            base_record_number: 0,
             hard_link_count: 1,
             flags: 0,
             is_used: true,
@@ -320,7 +318,7 @@ mod tests {
             is_reparse_point: false,
             reparse_tag: None,
             namespace: FileNameNamespace::Win32,
-            file_name: OsString::from(file_name),
+            file_name: NtfsName::from(file_name),
             si_created: Filetime::new(0),
             si_modified: Filetime::new(0),
             si_mft_modified: Filetime::new(0),
@@ -416,17 +414,6 @@ mod tests {
     fn insert_ignores_entries_without_a_name() {
         let mut index = HistoricalPathIndex::new();
         index.insert(&sample_entry(10, 1, 7, 1, ""));
-        assert!(index.is_empty());
-    }
-
-    #[test]
-    fn insert_ignores_extended_file_ids() {
-        let mut index = HistoricalPathIndex::new();
-        let mut entry = sample_entry(10, 1, 7, 1, "refs.dat");
-        // A 128-bit ReFS-style id exposes no NTFS record number, so it cannot
-        // participate in record-number reconstruction and must be ignored.
-        entry.file_reference = Fid::from_u128(0x1_0000_0000_0000_0001);
-        index.insert(&entry);
         assert!(index.is_empty());
     }
 

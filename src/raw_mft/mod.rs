@@ -37,6 +37,10 @@ mod attr_list;
 mod bootstrap;
 mod byte_reader;
 mod chunk_plan;
+mod diagnostics;
+mod metadata;
+pub use diagnostics::{RawMftDiagnosticRecord, RawMftScanDiagnostic, RawMftScanReport};
+pub use metadata::{MftDiagnostic, MftExternalPayload, MftFieldState, MftIssue, MftMetadata};
 // Enabled only by the non-publishable differential test package's build script.
 #[cfg(all(test, ntfs_mft_differential))]
 #[path = "../../differential-tests/tests/mod.rs"]
@@ -73,18 +77,16 @@ pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawM
 pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
 pub use layout::data_run::{DataRun as DataRunInfo, DataRunSummary};
-pub use offline::{
-    MftStream, MftStreamIter, MftStreamOptions, OfflineDiagnostic, OfflineExternalPayload,
-    OfflineFieldState, OfflineIssue, OfflineMetadata, OfflineMftRecord,
-};
+pub use offline::{MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord};
 pub use options::{
-    RawMftEntryOptions, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
+    RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions,
+    RawMftLeanScanOptionsBuilder, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
     RawMftScanOptionsBuilder,
 };
-pub use parallel::RawMftParallelScan;
 pub use parallel::RawMftParallelScheduling;
+pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
 pub use path_resolver::RawMftPathResolver;
-pub use serial::RawMftIter;
+pub use serial::{RawMftDiagnosticIter, RawMftIter};
 
 /// Default I/O buffer size for raw `$MFT` iteration.
 #[allow(clippy::useless_nonzero_new_unchecked)]
@@ -138,14 +140,20 @@ impl<'a> RawMft<'a> {
     /// File record size in bytes.
     #[must_use]
     #[inline]
-    pub fn file_record_size(&self) -> u64 {
-        self.boot.file_record_size
+    pub fn file_record_size(&self) -> usize {
+        self.boot.file_record_size as usize
     }
 
     /// Create a [`RawMftPathResolver`] for entries produced by this raw `$MFT` reader.
     ///
-    /// The returned resolver uses a snapshot-local in-memory directory tree by
-    /// default. On Windows, call `RawMftPathResolver::with_live_fallback` if you
+    /// Construction scans all base records, including root record 5, and stores
+    /// their selected names in memory: O(records + names) space and a full scan
+    /// of I/O. Scan I/O errors are propagated; malformed records may still be
+    /// skipped by the raw scanner. This is not an atomic snapshot. Build a
+    /// [`crate::MftPathIndex`] during an existing scan and use
+    /// [`RawMftPathResolver::from_index`] to avoid a second pass.
+    ///
+    /// Default lookups verify sequence numbers at every step. On Windows, call `RawMftPathResolver::with_live_fallback` if you
     /// explicitly want best-effort current-volume fallback for snapshot misses.
     pub fn path_resolver(&self) -> crate::MftResult<RawMftPathResolver<'a>> {
         RawMftPathResolver::new(self)

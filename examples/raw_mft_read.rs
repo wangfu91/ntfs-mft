@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let entry = entry?;
         let path = resolver
             .resolve_path(&entry)
-            .unwrap_or_else(|| entry.file_name.clone().into());
+            .unwrap_or_else(|| entry.file_name.to_os_string().into());
         println!(
             "{:<10} {:016x} {:<5} {}",
             entry.record_number,

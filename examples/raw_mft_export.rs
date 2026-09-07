@@ -1,8 +1,7 @@
 //! Export an extracted MFT or raw volume as JSONL. Diagnostics go to stderr.
-use ntfs_mft::export::{ExportContext, JsonlWriter};
+use ntfs_mft::export::JsonlWriter;
 use ntfs_mft::{
-    MftError, MftResult, MftStream, MftStreamOptions, OfflineIssue, OfflineMftRecord,
-    RawMftScanOptions,
+    MftError, MftIssue, MftResult, MftStream, MftStreamOptions, MftStreamRecord, RawMftScanOptions,
 };
 use std::{
     env,
@@ -24,11 +23,18 @@ fn main() -> ExitCode {
 
 fn run() -> MftResult<bool> {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    let usage = || {
+        MftError::InvalidOptions(
+            "usage: raw_mft_export file <MFT-path> <record-size> | volume <drive/mount/device>",
+        )
+    };
+    let (command, arguments) = args.split_first().ok_or_else(usage)?;
+
     let mut writer = JsonlWriter::new(BufWriter::new(io::stdout().lock()));
     let mut errors = 0u64;
     let mut records = 0u64;
-    match args.as_slice() {
-        [mode, path, size] if mode == "file" => {
+    match (command.to_str(), arguments) {
+        (Some("file"), [path, size]) => {
             let size = size
                 .to_str()
                 .and_then(|s| s.parse::<usize>().ok())
@@ -37,7 +43,7 @@ fn run() -> MftResult<bool> {
             let mut stream = MftStream::from_path(path, options)?;
             (records, errors) = export_offline(stream.iter_records(), &mut writer)?;
         }
-        [mode, source] if mode == "volume" => {
+        (Some("volume"), [source]) => {
             let source = source
                 .to_str()
                 .ok_or(MftError::InvalidOptions("volume source must be Unicode"))?;
@@ -52,13 +58,10 @@ fn run() -> MftResult<bool> {
                 .collect_data_run_summary(true)
                 .collect_dos_file_name_links(true)
                 .build();
-            let context = ExportContext {
-                entry_options: Some(options.entry()),
-            };
             for result in mft.try_iter_with_options(options)? {
                 match result {
                     Ok(entry) => {
-                        writer.write_entry(&entry, &context)?;
+                        writer.write_entry(&entry)?;
                         records += 1;
                     }
                     Err(error) => {
@@ -68,11 +71,7 @@ fn run() -> MftResult<bool> {
                 }
             }
         }
-        _ => {
-            return Err(MftError::InvalidOptions(
-                "usage: raw_mft_export file <MFT-path> <record-size> | volume <drive/mount/device>",
-            ));
-        }
+        _ => return Err(usage()),
     }
     writer.flush()?;
     eprintln!("Exported {records} records; {errors} failures (including terminal diagnostics).");
@@ -80,7 +79,7 @@ fn run() -> MftResult<bool> {
 }
 
 fn export_offline(
-    source: impl IntoIterator<Item = MftResult<OfflineMftRecord>>,
+    source: impl IntoIterator<Item = MftResult<MftStreamRecord>>,
     writer: &mut JsonlWriter<impl io::Write>,
 ) -> MftResult<(u64, u64)> {
     let (mut records, mut errors) = (0, 0);
@@ -90,10 +89,10 @@ fn export_offline(
                 let terminal = record.diagnostics.iter().any(|diagnostic| {
                     matches!(
                         &diagnostic.issue,
-                        OfflineIssue::ExtensionRead { error, .. } if error.is_io_error()
+                        MftIssue::ExtensionRead { error, .. } if error.is_io_error()
                     )
                 });
-                writer.write_offline(&record)?;
+                writer.write_stream(&record)?;
                 records += 1;
                 if terminal {
                     // The offline iterator stops here even though the item is Ok.

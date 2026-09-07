@@ -1,7 +1,7 @@
 {
   "$defs": {
     "ExportDiagnostic": {
-      "description": "Structured offline limitation with optional nested read error.",
+      "description": "Structured metadata limitation with optional nested read error.",
       "properties": {
         "attribute_type": {
           "description": "Affected NTFS type code, if known.",
@@ -93,7 +93,7 @@
       "type": "object"
     },
     "ExportExternalPayload": {
-      "description": "Observed non-resident payload outside the offline input.",
+      "description": "Observed non-resident payload outside the logical MFT input.",
       "properties": {
         "attribute_id": {
           "description": "Instance ID within that record.",
@@ -240,7 +240,7 @@
         },
         "raw": {
           "$ref": "#/$defs/NameUnits",
-          "description": "Exact supplied OS representation, independently readable on any platform."
+          "description": "Exact supplied representation, independently readable on any platform."
         }
       },
       "required": [
@@ -357,7 +357,7 @@
           "description": "Summary when available; see metadata for completeness."
         },
         "diagnostics": {
-          "description": "Offline diagnostics; empty raw-scan diagnostics do not prove completeness.",
+          "description": "Parsing diagnostics; empty entry diagnostics do not prove completeness.",
           "items": {
             "$ref": "#/$defs/ExportDiagnostic"
           },
@@ -414,7 +414,7 @@
           "description": "Evidence for presence, completeness, and collection choices."
         },
         "name_fidelity": {
-          "description": "`windows_utf16_preserved` or `original_ntfs_utf16_unavailable`.",
+          "description": "`ntfs_utf16_preserved` for exact original NTFS code units.",
           "type": "string"
         },
         "path": {
@@ -455,7 +455,7 @@
           "type": "integer"
         },
         "source": {
-          "description": "`raw_scan` or `offline_stream`.",
+          "description": "Adapter that supplied this record: `entry`, `mft_stream`, or `volume_scan`.\n`mft_stream` may read a live volume; it does not imply offline provenance.",
           "type": "string"
         },
         "sparse": {
@@ -519,15 +519,8 @@
       "type": "object"
     },
     "ExportReference": {
-      "description": "A full file identifier; NTFS record and sequence fields are absent for extended IDs.",
+      "description": "A full NTFS reference with its record and sequence fields.",
       "properties": {
-        "bits": {
-          "description": "Identifier width: 64 for NTFS or 128 for an extended caller-supplied ID.",
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
-          "type": "integer"
-        },
         "raw": {
           "description": "Full unsigned identifier as a decimal string.",
           "pattern": "^(0|[1-9][0-9]*)$",
@@ -536,25 +529,20 @@
         "record_number": {
           "description": "Lower 48 bits of a standard reference, as a decimal string.",
           "pattern": "^(0|[1-9][0-9]*)$",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "sequence_number": {
           "description": "Upper 16 bits of a standard reference.",
           "format": "uint16",
           "maximum": 65535,
           "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
+          "type": "integer"
         }
       },
       "required": [
-        "bits",
-        "raw"
+        "raw",
+        "record_number",
+        "sequence_number"
       ],
       "type": "object"
     },
@@ -705,10 +693,10 @@
       ]
     },
     "NameUnits": {
-      "description": "Exact platform representation of a supplied name or path.",
+      "description": "Exact UTF-16 name or native platform representation of a supplied path.",
       "oneOf": [
         {
-          "description": "Windows UTF-16 units, including unpaired surrogates.",
+          "description": "NTFS or Windows UTF-16 units, including unpaired surrogates, on any host.",
           "properties": {
             "encoding": {
               "const": "windows_utf16",

@@ -6,13 +6,13 @@
 //! extension records, and merges the relevant metadata back into the caller's
 //! base entry.
 
-use std::ffi::OsStr;
+use crate::NtfsName;
 
 use log::{debug, warn};
 use rustc_hash::FxHashSet;
 
 use crate::{
-    Fid,
+    NtfsFileReference,
     errors::MftError,
     raw_mft::{
         entry_build::{
@@ -69,11 +69,11 @@ struct LinkView<'a> {
     /// Existing boxed links, if the entry already materialized them.
     links: &'a [RawMftLink],
     /// Parent file reference paired with the inline file name.
-    parent_reference: Fid,
+    parent_reference: NtfsFileReference,
     /// Namespace paired with the inline file name.
     namespace: FileNameNamespace,
     /// Inline file name used when the entry has no boxed link list yet.
-    file_name: &'a OsStr,
+    file_name: &'a NtfsName,
 }
 
 /// Return `true` when a raw entry should consult its `$ATTRIBUTE_LIST`.
@@ -172,18 +172,15 @@ pub(super) fn enrich_batch_from_attr_list(
     )
 }
 
-/// Enrich a batch scratch entry, loading extension records from a pre-built
-/// cache of raw (un-fixed-up) record bytes instead of the disk.
-///
-/// `reader` is still used for the rare non-resident `$ATTRIBUTE_LIST` payload;
-/// the (common, costly) extension-record reads are served from `ext_cache`,
-/// which the scan populated as it streamed past those records.
+/// Enrich a batch scratch entry from captured extension bytes, reading cache
+/// misses from the volume. Output selection may exclude required extensions.
+/// Cached but malformed records retain the usual best-effort failure behavior.
 pub(in crate::raw_mft) fn enrich_batch_from_attr_list_cached(
     entry: &mut RawMftBatchScratch,
     attr_list: AttributeListInfo,
     base_record_number: u64,
     reader: &mut VolumeReader,
-    boot: &BootSector,
+    mft: &super::RawMft<'_>,
     collect_dos_file_name_links: bool,
     ext_cache: &std::collections::HashMap<u64, Box<[u8]>>,
 ) -> AttrListEnrichStats {
@@ -192,11 +189,21 @@ pub(in crate::raw_mft) fn enrich_batch_from_attr_list_cached(
         attr_list,
         base_record_number,
         reader,
-        boot.cluster_size,
-        |_reader, ext_num| {
-            Ok(ext_cache
-                .get(&ext_num)
-                .and_then(|raw| parse_cached_extension(raw, ext_num, collect_dos_file_name_links)))
+        mft.boot.cluster_size,
+        |reader, ext_num| match ext_cache.get(&ext_num) {
+            Some(raw) => Ok(parse_cached_extension(
+                raw,
+                ext_num,
+                collect_dos_file_name_links,
+            )),
+            None => read_batch_record_raw(
+                reader,
+                &mft.boot,
+                mft.extent_map.as_ref(),
+                ext_num,
+                collect_dos_file_name_links,
+            )
+            .map(|result| result.map(|(entry, _)| entry)),
         },
     )
 }
@@ -453,13 +460,13 @@ fn merge_extension_links(entry: &mut RawMftEntry, ext_entry: &RawMftEntry) {
             links: &entry.links,
             parent_reference: entry.parent_reference,
             namespace: entry.namespace,
-            file_name: entry.file_name.as_os_str(),
+            file_name: &entry.file_name,
         },
         LinkView {
             links: &ext_entry.links,
             parent_reference: ext_entry.parent_reference,
             namespace: ext_entry.namespace,
-            file_name: ext_entry.file_name.as_os_str(),
+            file_name: &ext_entry.file_name,
         },
     ) {
         entry.links = links;
@@ -473,13 +480,13 @@ fn merge_batch_extension_links(entry: &mut RawMftBatchScratch, ext_entry: &RawMf
             links: &entry.entry.links,
             parent_reference: entry.entry.parent_reference,
             namespace: entry.entry.namespace,
-            file_name: entry.entry.file_name.as_os_str(),
+            file_name: &entry.entry.file_name,
         },
         LinkView {
             links: &ext_entry.entry.links,
             parent_reference: ext_entry.entry.parent_reference,
             namespace: ext_entry.entry.namespace,
-            file_name: ext_entry.entry.file_name.as_os_str(),
+            file_name: &ext_entry.entry.file_name,
         },
     ) {
         entry.entry.links = links;
@@ -506,14 +513,14 @@ fn merged_links(base: LinkView<'_>, ext: LinkView<'_>) -> Option<Box<[RawMftLink
         links.push(RawMftLink {
             parent_reference: base.parent_reference,
             namespace: base.namespace,
-            file_name: base.file_name.to_os_string(),
+            file_name: base.file_name.clone(),
         });
     }
     if has_single_ext_link {
         links.push(RawMftLink {
             parent_reference: ext.parent_reference,
             namespace: ext.namespace,
-            file_name: ext.file_name.to_os_string(),
+            file_name: ext.file_name.clone(),
         });
     } else {
         links.extend_from_slice(ext.links);
@@ -524,7 +531,7 @@ fn merged_links(base: LinkView<'_>, ext: LinkView<'_>) -> Option<Box<[RawMftLink
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsString;
+    use crate::NtfsName;
     use zerocopy::IntoBytes;
 
     use crate::raw_mft::layout::attribute::AttributeListEntryHeader;
@@ -565,46 +572,63 @@ mod tests {
 
     #[test]
     fn merged_links_includes_inline_base_and_extension_names() {
-        let base_name = OsString::from("base.txt");
-        let ext_name = OsString::from("ext.txt");
+        let base_name = NtfsName::from("base.txt");
+        let ext_name = NtfsName::from("ext.txt");
         let links = merged_links(
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(5),
+                parent_reference: NtfsFileReference::new(5),
                 namespace: FileNameNamespace::Win32,
-                file_name: base_name.as_os_str(),
+                file_name: &base_name,
             },
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(9),
+                parent_reference: NtfsFileReference::new(9),
                 namespace: FileNameNamespace::Win32,
-                file_name: ext_name.as_os_str(),
+                file_name: &ext_name,
             },
         )
         .expect("extension name should produce merged links");
 
         assert_eq!(links.len(), 2);
-        assert_eq!(links[0].parent_reference, Fid::new(5));
-        assert_eq!(links[1].parent_reference, Fid::new(9));
+        assert_eq!(links[0].parent_reference, NtfsFileReference::new(5));
+        assert_eq!(links[1].parent_reference, NtfsFileReference::new(9));
+    }
+
+    #[test]
+    fn merged_links_preserve_distinct_names_with_same_display() {
+        let base = NtfsName::from_utf16(vec![0xd800]);
+        let extension = NtfsName::from_utf16(vec![0xd801]);
+        assert_eq!(base.to_string_lossy(), extension.to_string_lossy());
+        let view = |name| LinkView {
+            links: &[],
+            parent_reference: NtfsFileReference::new(5),
+            namespace: FileNameNamespace::Win32,
+            file_name: name,
+        };
+        let links = merged_links(view(&base), view(&extension)).unwrap();
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].file_name, base);
+        assert_eq!(links[1].file_name, extension);
     }
 
     #[test]
     fn merged_links_returns_none_without_extension_contribution() {
-        let base_name = OsString::from("base.txt");
+        let base_name = NtfsName::from("base.txt");
         // The extension record carries neither boxed links nor an inline name,
         // so there is nothing to merge.
         let result = merged_links(
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(5),
+                parent_reference: NtfsFileReference::new(5),
                 namespace: FileNameNamespace::Win32,
-                file_name: base_name.as_os_str(),
+                file_name: &base_name,
             },
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(9),
+                parent_reference: NtfsFileReference::new(9),
                 namespace: FileNameNamespace::Win32,
-                file_name: std::ffi::OsStr::new(""),
+                file_name: &crate::NtfsName::new(),
             },
         );
         assert!(result.is_none());
@@ -627,11 +651,12 @@ mod tests {
 
     fn complete_entry() -> RawMftEntry {
         RawMftEntry {
+            collection_options: crate::RawMftEntryOptions::default(),
             record_number: 10,
             sequence_number: 1,
-            file_reference: Fid::new(10),
-            parent_reference: Fid::new(5),
-            base_record_reference: 0,
+            file_reference: NtfsFileReference::new(10),
+            parent_reference: NtfsFileReference::new(5),
+            base_record_number: 0,
             hard_link_count: 1,
             flags: 0,
             is_used: true,
@@ -639,7 +664,7 @@ mod tests {
             is_reparse_point: false,
             reparse_tag: None,
             namespace: FileNameNamespace::Win32,
-            file_name: OsString::from("file.txt"),
+            file_name: NtfsName::from("file.txt"),
             si_created: crate::Filetime::new(0),
             si_modified: crate::Filetime::new(0),
             si_mft_modified: crate::Filetime::new(0),
@@ -685,7 +710,7 @@ mod tests {
     #[test]
     fn empty_name_needs_file_name_enrichment() {
         let mut entry = complete_entry();
-        entry.file_name = OsString::new();
+        entry.file_name = NtfsName::new();
         assert!(raw_entry_enrichment_needs(&entry).file_name);
     }
 

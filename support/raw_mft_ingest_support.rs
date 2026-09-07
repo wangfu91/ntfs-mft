@@ -4,14 +4,13 @@
 
 use std::{
     env,
-    ffi::OsStr,
     num::{NonZeroU64, NonZeroUsize},
     sync::OnceLock,
     thread,
 };
 
 use ntfs_mft::{
-    Fid,
+    NtfsFileReference, NtfsName,
     errors::MftError,
     raw_mft::{
         FileNameNamespace, RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftEntry,
@@ -72,10 +71,7 @@ impl BenchConfig {
     fn from_env() -> Self {
         Self {
             drive: pick_drive(),
-            worker_count: parse_env_nonzero_usize(
-                "NTFS_MFT_BENCH_WORKERS",
-                default_worker_count(),
-            ),
+            worker_count: parse_env_nonzero_usize("NTFS_MFT_BENCH_WORKERS", default_worker_count()),
             main_buffer_bytes: parse_env_nonzero_usize(
                 "NTFS_MFT_BENCH_BUFFER_BYTES",
                 nonzero_usize(DEFAULT_MAIN_BUFFER_BYTES),
@@ -120,9 +116,6 @@ impl BenchConfig {
     /// Build chunk-planning options for the parallel ingest path.
     fn chunk_plan_options(&self) -> RawMftChunkPlanOptions {
         RawMftChunkPlanOptions::builder()
-            .include_unused_records(false)
-            .start_record(self.start_record)
-            .end_record(self.end_record)
             .max_records_per_chunk(self.chunk_records)
             .build()
     }
@@ -194,7 +187,7 @@ pub struct BenchWorkloadShape {
     /// Number of logical chunks planned for the current config.
     pub planned_chunks: usize,
     /// NTFS file-record size in bytes.
-    pub file_record_size: u64,
+    pub file_record_size: usize,
     /// NTFS cluster size in bytes.
     pub cluster_size: u64,
 }
@@ -226,8 +219,8 @@ pub fn print_bench_config(config: &BenchConfig) {
     #[cfg(windows)]
     let source = config.drive.to_string();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let source =
-        env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
+    let source = env::var("NTFS_MFT_TEST_VOLUME")
+        .unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
     eprintln!(
         "raw_mft_ingest bench config: volume={} workers={} chunk_records={} main_buffer={} attr_buffer={} start_record={} end_record={}",
         source,
@@ -286,7 +279,7 @@ pub fn workload_shape(mft: &RawMft<'_>, config: &BenchConfig) -> BenchWorkloadSh
     BenchWorkloadShape {
         record_count: mft.record_count(),
         planned_chunks: mft
-            .plan_chunks_with_options(config.chunk_plan_options())
+            .plan_chunks_with_options(config.chunk_plan_options(), &config.iter_options())
             .len(),
         file_record_size: mft.file_record_size(),
         cluster_size: mft.cluster_size(),
@@ -297,9 +290,9 @@ pub fn workload_shape(mft: &RawMft<'_>, config: &BenchConfig) -> BenchWorkloadSh
 pub fn run_parallel_ingest(
     mft: &RawMft<'_>,
     config: &BenchConfig,
-) -> Result<BenchSummary, MftError> {
-    let chunks = mft.plan_chunks_with_options(config.chunk_plan_options());
+) -> Result<BenchSummary, ntfs_mft::ScanError<std::convert::Infallible>> {
     let iter_options = config.iter_options();
+    let chunks = mft.plan_chunks_with_options(config.chunk_plan_options(), &iter_options);
     let record_table_len = record_count_hint(mft, config);
     let mut records = Vec::with_capacity(record_table_len);
     records.resize_with(record_table_len, || None);
@@ -312,11 +305,12 @@ pub fn run_parallel_ingest(
             children_by_parent: &mut children_by_parent,
         };
         mft.parallel()
+            .lean()
             .chunks(chunks)
-            .scan_options(iter_options)
+            .scan_options(iter_options.into_lean())
             .workers(config.worker_count)
             .scheduling(config.scheduling)
-            .fold_chunks(
+            .try_fold_chunks(
                 new_partial_ingest,
                 |partial, entry| {
                     ingest_raw_entry_partial(entry, partial);
@@ -455,7 +449,7 @@ fn merge_partial_ingest(partial: PartialIngest, targets: &mut BenchTargets<'_>) 
 
 /// Convert a batch entry into the compact benchmark representation.
 fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest) {
-    if entry.base_record_reference != 0 {
+    if entry.base_record_number != 0 {
         return;
     }
 
@@ -477,12 +471,10 @@ fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest
     for_each_visible_link(
         entry.parent_reference,
         entry.namespace,
-        entry.file_name.as_os_str(),
+        &entry.file_name,
         &entry.links,
         |parent_reference, _file_name| {
-            let Some(parent_record) = parent_reference.record_number() else {
-                return;
-            };
+            let parent_record = parent_reference.record_number();
             partial.child_links.push((
                 parent_record,
                 BenchChildLink {
@@ -495,7 +487,7 @@ fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest
 
 /// Convert a full iterator entry into the compact benchmark representation.
 fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
-    if entry.base_record_reference != 0 {
+    if entry.base_record_number != 0 {
         return;
     }
 
@@ -519,12 +511,10 @@ fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
     for_each_visible_link(
         entry.parent_reference,
         entry.namespace,
-        entry.file_name.as_os_str(),
+        &entry.file_name,
         &entry.links,
         |parent_reference, _file_name| {
-            let Some(parent_record) = parent_reference.record_number() else {
-                return;
-            };
+            let parent_record = parent_reference.record_number();
             targets
                 .children_by_parent
                 .entry(parent_record)
@@ -538,13 +528,13 @@ fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
 
 /// Visit the visible file-name links for a record and suppress shadowed names.
 fn for_each_visible_link<F>(
-    parent_reference: Fid,
+    parent_reference: NtfsFileReference,
     _namespace: FileNameNamespace,
-    file_name: &OsStr,
+    file_name: &NtfsName,
     all_links: &[RawMftLink],
     mut visit: F,
 ) where
-    F: FnMut(Fid, &OsStr),
+    F: FnMut(NtfsFileReference, &NtfsName),
 {
     let mut emitted_any = false;
     for (index, link) in all_links.iter().enumerate() {
@@ -552,7 +542,7 @@ fn for_each_visible_link<F>(
             continue;
         }
         emitted_any = true;
-        visit(link.parent_reference, link.file_name.as_os_str());
+        visit(link.parent_reference, &link.file_name);
     }
 
     if !emitted_any && !file_name.is_empty() {

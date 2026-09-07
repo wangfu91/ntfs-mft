@@ -20,7 +20,7 @@ fn main() -> MftResult<()> {
     let mut output = JsonlWriter::new(BufWriter::new(io::stdout().lock()));
     for result in source.iter_records() {
         match result {
-            Ok(record) => output.write_offline(&record)?,
+            Ok(record) => output.write_stream(&record)?,
             Err(error) => output.write_error(&error)?,
         }
     }
@@ -45,7 +45,7 @@ mode starts at record zero, includes unused records, and collects ADS, run summa
 and DOS aliases. The scanner may skip non-FILE slots. Output contains only items
 the iterator yields, not an inventory of every physical slot. The example returns
 nonzero for top-level or item errors and for terminal extension I/O diagnostics.
-The latter can stop the offline iterator after an otherwise successful record;
+The latter can stop the stream iterator after an otherwise successful record;
 the example retains that record and counts the interrupted scan as a failure.
 Other partial metadata remains a record with diagnostics, not an item error.
 Consult those diagnostics even when the process succeeds.
@@ -63,13 +63,13 @@ schema and golden output. Breaking changes require a new version. Readers should
 means preserving exported data, not reconstructing the original disk record or
 validating caller-authored DTOs against NTFS invariants.
 
-- All u64/u128 identifiers, sizes, offsets, cluster totals, and FILETIME values
+- All u64 identifiers, sizes, offsets, cluster totals, and FILETIME values
   are canonical unsigned decimal strings. Small flags, namespaces, counts, and
   u16 sequences are JSON integers. Unknown flag bits survive.
-- A file reference includes its full value and width. NTFS also carries its lower
-  48-bit record number and upper 16-bit sequence. Extended caller-supplied IDs
-  have null NTFS components. Header record/sequence fields remain separately
-  represented; conversion does not repair inconsistent caller-created entries.
+- A file reference includes its full 64-bit value, lower 48-bit record number,
+  and upper 16-bit sequence. All three fields are required. There is no generic
+  identifier width or 128-bit variant. Header record/sequence fields remain
+  separately represented; conversion does not repair inconsistent caller-created entries.
 - `base_record_number` preserves the scanner's value (zero sentinel included).
   `base_sequence_number` is null because both current adapters receive entries
   whose base sequence bits were discarded. Never interpret null as sequence zero.
@@ -82,9 +82,10 @@ validating caller-authored DTOs against NTFS invariants.
   `windows_utf16` preserves u16 units, including unpaired surrogates. `unix_bytes`
   preserves u8 OS bytes. These arrays can be decoded on any supported platform;
   native path reconstruction is left to the caller. Display text is never authoritative.
-  `name_fidelity` reports whether the original UTF-16 is preserved. On Linux
-  and macOS, the parser may have replaced lone surrogates before export. Export
-  cannot undo that loss. Namespace codes likewise represent the scanner's normalized enum, not unknown original bytes.
+  NTFS entry, link, and stream names use `windows_utf16` on every host: the tag
+  identifies the encoding, not the machine running the exporter. `name_fidelity`
+  is `ntfs_utf16_preserved`. Supplied native paths still use their platform encoding.
+  Namespace codes represent the scanner's normalized enum, not unknown original bytes.
 - `selected_name` is separate from retained `links`; each link keeps its parent
   sequence and namespace. Preserve array order. Header hard-link count can differ
   from array length because of DOS aliases, collection options, or incomplete
@@ -97,18 +98,18 @@ validating caller-authored DTOs against NTFS invariants.
 
 ## Evidence, errors, and paths
 
-`from_offline` preserves category-level `present`, `partial`, `absent`, and
+`from_stream` preserves category-level `present`, `partial`, `absent`, and
 `unknown` states, stream offsets, external-payload headers, and structured
-diagnostics. The offline completeness definition covers supported metadata, not
+diagnostics. The stream parser's completeness definition covers supported metadata, not
 original name-byte fidelity or arbitrary file contents. Diagnostic codes are:
 `malformed_attribute`, `extensions_not_resolved`, `external_payload_unavailable`,
 `malformed_attribute_list`, `extension_read`, `extension_mismatch`,
 `nested_attribute_list`, `split_data_stream`, and `extension_record_only`.
 Extension-read issues retain the full requested reference and nested error.
 
-`from_entry(&entry, &ExportContext)` and `write_entry` support existing serial,
-parallel, or caller-owned results. Supply the actual `RawMftEntryOptions` when
-known. `not_collected` means disabled, `not_observed` does not establish absence,
+`from_entry(&entry)` and `write_entry` support existing serial,
+parallel, or caller-owned results. Collection policy comes directly from
+`entry.collection_options`; there is no separate context or override. `not_collected` means disabled, `not_observed` does not establish absence,
 and `partial` indicates an observed value without completeness evidence. SI and
 reparse-attribute evidence remain unknown. No timestamp-zero or empty-vector
 heuristic establishes absence. Empty raw diagnostics do not establish success of
@@ -149,3 +150,9 @@ states, short writes, output failure, flush failure, and iterator backpressure.
 Schemars only on DTOs and validate actual output with JSON Schema. To intentionally
 regenerate the reviewed contract, set `NTFS_MFT_UPDATE_EXPORT_SCHEMA=1` while
 running `schema_and_golden_contract`, then inspect the schema/golden diff.
+
+The `source` field identifies the exporting adapter: `entry` for a bare entry,
+`mft_stream` for a `MftStreamRecord`, and `volume_scan` for live volume diagnostic
+records. `mft_stream` does not establish offline provenance: its bytes may come
+from a live volume. Callers should retain their input-source information when
+that distinction matters.

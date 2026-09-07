@@ -46,7 +46,7 @@ fn captured_bootstrap_reads_both_bitmap_extents() -> MftResult<()> {
 }
 
 #[test]
-fn captured_serial_matches_both_parallel_schedulers() -> MftResult<()> {
+fn captured_serial_matches_both_parallel_schedulers() -> Result<(), Box<dyn std::error::Error>> {
     let volume = source(true).open()?;
     let raw = volume.raw_mft()?;
     let options = RawMftScanOptions::builder().start_record(0).build();
@@ -57,19 +57,52 @@ fn captured_serial_matches_both_parallel_schedulers() -> MftResult<()> {
     assert_eq!(serial.iter().filter(|e| e.is_directory).count(), 107);
     let chunks = raw.plan_chunks_with_options(
         RawMftChunkPlanOptions::builder()
-            .start_record(0)
             .max_records_per_chunk(NonZeroU64::new(16).unwrap())
             .build(),
+        &options,
     );
     assert!(chunks.len() > 1);
     for scheduling in [
         RawMftParallelScheduling::Dynamic,
         RawMftParallelScheduling::Contiguous,
     ] {
+        let rich = raw
+            .parallel()
+            .rich()
+            .scan_options(options.clone())
+            .chunk_plan(
+                RawMftChunkPlanOptions::builder()
+                    .max_records_per_chunk(NonZeroU64::new(16).unwrap())
+                    .build(),
+            )
+            .workers(NonZeroUsize::new(4).unwrap())
+            .scheduling(scheduling);
+        assert_eq!(
+            rich.clone()
+                .collect_batches()?
+                .into_iter()
+                .flat_map(|b| b.entries)
+                .collect::<Vec<_>>(),
+            serial
+        );
+        let mut folded = Vec::new();
+        rich.try_fold_chunks(
+            |_| Vec::new(),
+            |entries, entry| {
+                entries.push(entry);
+                Ok::<_, std::convert::Infallible>(())
+            },
+            |entries| {
+                folded.extend(entries);
+                Ok::<_, std::convert::Infallible>(())
+            },
+        )?;
+        assert_eq!(folded, serial);
         let batches = raw
             .parallel()
+            .lean()
             .chunks(chunks.clone())
-            .scan_options(options.clone())
+            .scan_options(options.clone().into_lean())
             .workers(NonZeroUsize::new(4).unwrap())
             .scheduling(scheduling)
             .collect_batches()?;
@@ -125,7 +158,7 @@ fn captured_record_inventory_matches_independent_decoder() -> MftResult<()> {
         let record = FileRecord::parse(number as u64, None, &mut bytes)?;
         let entry = RawMftEntry::from_record_with_attr_list(&record, EntryBuildOptions::full()).0;
         assert!(entry.is_used);
-        assert_eq!(entry.base_record_reference, 0);
+        assert_eq!(entry.base_record_number, 0);
         files += 1;
         dirs += usize::from(entry.is_directory);
     }
@@ -150,7 +183,7 @@ fn captured_known_files_match_independently_decoded_text_fixture() -> MftResult<
         let reference = item["parent_reference"].as_u64().unwrap();
         assert_eq!(
             entry.parent_reference,
-            crate::Fid::from_parts(reference & 0xffff_ffff_ffff, (reference >> 48) as u16)
+            crate::NtfsFileReference::new(reference)
         );
         assert_eq!(entry.is_directory, item["directory"].as_bool().unwrap());
         assert_eq!(entry.has_unnamed_data, !item["data_size"].is_null());
@@ -158,5 +191,20 @@ fn captured_known_files_match_independently_decoded_text_fixture() -> MftResult<
             assert_eq!(entry.real_size, size);
         }
     }
+    Ok(())
+}
+
+#[test]
+fn stream_from_raw_infers_geometry_and_owns_its_handle() -> MftResult<()> {
+    let volume = source(true).open()?;
+    let raw = volume.raw_mft()?;
+    let root = raw.read_record(5)?.unwrap();
+    let mut stream = crate::MftStream::from_raw_mft(&raw)?;
+    assert_eq!(stream.file_record_size(), raw.file_record_size());
+    drop(raw);
+    drop(volume);
+    let parsed = stream.read_record(5)?;
+    assert_eq!(parsed.entry.file_reference, root.file_reference);
+    assert_eq!(parsed.entry.file_name, root.file_name);
     Ok(())
 }

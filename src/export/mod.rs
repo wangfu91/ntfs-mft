@@ -1,8 +1,8 @@
 //! Versioned export representations, independent of scanner implementation structs.
 //!
 //! Enable `serde` for DTOs, or `jsonl` for `JsonlWriter`. Decimal strings preserve
-//! large integers in JSON consumers. Names preserve the supplied OS representation;
-//! Linux/macOS parsing may already have replaced invalid NTFS UTF-16. See `docs/export.md`.
+//! large integers in JSON consumers. NTFS names retain original UTF-16 on every
+//! platform; supplied native paths retain their OS representation. See `docs/export.md`.
 
 mod convert;
 #[cfg(feature = "jsonl")]
@@ -10,15 +10,7 @@ mod writer;
 #[cfg(feature = "jsonl")]
 pub use writer::JsonlWriter;
 
-use crate::RawMftEntryOptions;
 use serde::{Deserialize, Serialize};
-
-/// Evidence supplied alongside a raw scan entry. Omission never implies completeness.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ExportContext {
-    /// Actual materialization options used to produce the entry, if known.
-    pub entry_options: Option<RawMftEntryOptions>,
-}
 
 /// Presence and completeness of the supported metadata, not file contents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,12 +31,12 @@ pub enum FieldState {
     Partial,
 }
 
-/// Exact platform representation of a supplied name or path.
+/// Exact UTF-16 name or native platform representation of a supplied path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "encoding", content = "units", rename_all = "snake_case")]
 pub enum NameUnits {
-    /// Windows UTF-16 units, including unpaired surrogates.
+    /// NTFS or Windows UTF-16 units, including unpaired surrogates, on any host.
     WindowsUtf16(Vec<u16>),
     /// Unix OS bytes. These are not the original NTFS UTF-16 bytes.
     UnixBytes(Vec<u8>),
@@ -56,24 +48,22 @@ pub enum NameUnits {
 pub struct ExportName {
     /// Replacement characters may occur here; use `raw` for roundtrips.
     pub display: String,
-    /// Exact supplied OS representation, independently readable on any platform.
+    /// Exact supplied representation, independently readable on any platform.
     pub raw: NameUnits,
 }
 
-/// A full file identifier; NTFS record and sequence fields are absent for extended IDs.
+/// A full NTFS reference with its record and sequence fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportReference {
-    /// Identifier width: 64 for NTFS or 128 for an extended caller-supplied ID.
-    pub bits: u8,
     /// Full unsigned identifier as a decimal string.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
     pub raw: String,
     /// Lower 48 bits of a standard reference, as a decimal string.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
-    pub record_number: Option<String>,
+    pub record_number: String,
     /// Upper 16 bits of a standard reference.
-    pub sequence_number: Option<u16>,
+    pub sequence_number: u16,
 }
 
 /// Why readable timestamp text is unavailable or ambiguous.
@@ -215,7 +205,7 @@ pub struct ExportError {
     pub reported_offset: Option<String>,
 }
 
-/// Structured offline limitation with optional nested read error.
+/// Structured metadata limitation with optional nested read error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportDiagnostic {
@@ -232,7 +222,7 @@ pub struct ExportDiagnostic {
     pub error: Option<ExportError>,
 }
 
-/// Observed non-resident payload outside the offline input.
+/// Observed non-resident payload outside the logical MFT input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportExternalPayload {
@@ -249,7 +239,8 @@ pub struct ExportExternalPayload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportRecordV1 {
-    /// `raw_scan` or `offline_stream`.
+    /// Adapter that supplied this record: `entry`, `mft_stream`, or `volume_scan`.
+    /// `mft_stream` may read a live volume; it does not imply offline provenance.
     pub source: String,
     /// Supplied physical record number as decimal, independent of the reference.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
@@ -304,11 +295,11 @@ pub struct ExportRecordV1 {
     pub metadata: ExportMetadata,
     /// Selected-name path evidence supplied by the caller.
     pub path: ExportPath,
-    /// Offline diagnostics; empty raw-scan diagnostics do not prove completeness.
+    /// Parsing diagnostics; empty entry diagnostics do not prove completeness.
     pub diagnostics: Vec<ExportDiagnostic>,
     /// Observed external payload headers. Empty does not establish absence.
     pub external_payloads: Vec<ExportExternalPayload>,
-    /// `windows_utf16_preserved` or `original_ntfs_utf16_unavailable`.
+    /// `ntfs_utf16_preserved` for exact original NTFS code units.
     pub name_fidelity: String,
 }
 

@@ -1,11 +1,11 @@
 use super::*;
 use crate::{
-    AdsInfo, Fid, FileAttributes, Filetime, MftError, MftStream, MftStreamOptions,
-    OfflineDiagnostic, OfflineFieldState, OfflineIssue, RawMftLink, RawMftScanOptions,
+    AdsInfo, FileAttributes, Filetime, MftDiagnostic, MftError, MftFieldState, MftIssue, MftStream,
+    MftStreamOptions, RawMftLink, RawMftScanOptions,
 };
 use std::{ffi::OsString, io::Cursor};
 
-fn fixture() -> crate::MftResult<crate::OfflineMftRecord> {
+fn fixture() -> crate::MftResult<crate::MftStreamRecord> {
     let bytes = include_bytes!("../../tests/fixtures/omerbenamram-mft/MFT");
     let mut stream =
         MftStream::from_reader(Cursor::new(bytes.as_slice()), MftStreamOptions::new(1024)?)?;
@@ -14,7 +14,7 @@ fn fixture() -> crate::MftResult<crate::OfflineMftRecord> {
 
 fn item() -> crate::MftResult<ExportItem> {
     Ok(ExportItem::V1(ExportItemV1::Record(Box::new(
-        ExportRecordV1::from_offline(&fixture()?),
+        ExportRecordV1::from_stream(&fixture()?),
     ))))
 }
 
@@ -73,18 +73,16 @@ fn schema_and_golden_contract() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn references_timestamps_and_unknown_bits_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let mut record = fixture()?;
-    record.entry.file_reference = Fid::new(u64::MAX);
+    record.entry.file_reference = crate::NtfsFileReference::new(u64::MAX);
     record.entry.si_file_attributes = FileAttributes::from_bits_retain(0x8000_0001);
     record.entry.real_size = u64::MAX;
     record.entry.has_unnamed_data = true;
     record.entry.si_created = Filetime::new(u64::MAX);
-    let dto = ExportRecordV1::from_offline(&record);
+    let dto = ExportRecordV1::from_stream(&record);
+    assert_eq!(dto.source, "mft_stream");
     assert_eq!(dto.reference.raw, "18446744073709551615");
-    assert_eq!(dto.reference.sequence_number, Some(65535));
-    assert_eq!(
-        dto.reference.record_number.as_deref(),
-        Some("281474976710655")
-    );
+    assert_eq!(dto.reference.sequence_number, 65535);
+    assert_eq!(dto.reference.record_number.as_str(), "281474976710655");
     assert_eq!(dto.file_attributes, 0x8000_0001);
     assert_eq!(
         dto.unnamed_stream.as_ref().map(|s| s.real_size.as_str()),
@@ -96,10 +94,6 @@ fn references_timestamps_and_unknown_bits_roundtrip() -> Result<(), Box<dyn std:
     );
     assert_eq!(dto.standard_information_times.created.utc, None);
     assert_eq!(dto, serde_json::from_slice(&serde_json::to_vec(&dto)?)?);
-    let extended = ExportReference::from(Fid::from_u128(u128::MAX));
-    assert_eq!(extended.raw, u128::MAX.to_string());
-    assert_eq!(extended.bits, 128);
-    assert_eq!(extended.sequence_number, None);
     let cases = [
         (0, "1601-01-01T00:00:00.0000000Z"),
         (116444735999999999, "1969-12-31T23:59:59.9999999Z"),
@@ -139,17 +133,18 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
         decoded.raw,
         NameUnits::UnixBytes(vec![b'a', 0xff, b'\n', b'"'])
     );
+    let name = crate::NtfsName::from_utf16(vec![0x61, 0xd800, 0x0a, 0x22]);
     let mut record = fixture()?;
     let entry = &mut record.entry;
     entry.file_name = name.clone();
     entry.links = vec![
         RawMftLink {
-            parent_reference: Fid::from_parts(5, 7),
+            parent_reference: crate::NtfsFileReference::try_from_parts(5, 7).unwrap(),
             namespace: entry.namespace,
             file_name: name.clone(),
         },
         RawMftLink {
-            parent_reference: Fid::from_parts(6, 8),
+            parent_reference: crate::NtfsFileReference::try_from_parts(6, 8).unwrap(),
             namespace: entry.namespace,
             file_name: "second".into(),
         },
@@ -170,9 +165,14 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
         },
     ]
     .into();
-    let dto = ExportRecordV1::from_offline(&record);
+    let dto = ExportRecordV1::from_stream(&record);
+    assert_eq!(dto.name_fidelity, "ntfs_utf16_preserved");
+    let units = NameUnits::WindowsUtf16(vec![0x61, 0xd800, 0x0a, 0x22]);
+    assert_eq!(dto.selected_name.name.raw, units);
+    assert_eq!(dto.links[0].name.raw, units);
+    assert_eq!(dto.alternate_streams[0].name.as_ref().unwrap().raw, units);
     assert_eq!(dto.links.len(), 2);
-    assert_eq!(dto.links[0].parent.sequence_number, Some(7));
+    assert_eq!(dto.links[0].parent.sequence_number, 7);
     assert_eq!(dto.alternate_streams.len(), 2);
     assert_eq!(dto.alternate_streams[1].real_size, u64::MAX.to_string());
     assert_eq!(dto, serde_json::from_str(&serde_json::to_string(&dto)?)?);
@@ -182,18 +182,18 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
 #[test]
 fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error::Error>> {
     let mut record = fixture()?;
-    record.metadata.standard_information = OfflineFieldState::Absent;
-    record.metadata.file_names = OfflineFieldState::Unknown;
-    record.metadata.alternate_data_streams = OfflineFieldState::Present { complete: false };
-    record.diagnostics.push(OfflineDiagnostic {
+    record.metadata.standard_information = MftFieldState::Absent;
+    record.metadata.file_names = MftFieldState::Unknown;
+    record.metadata.alternate_data_streams = MftFieldState::Present { complete: false };
+    record.diagnostics.push(MftDiagnostic {
         record_number: 5,
         attribute_type: Some(0x20),
-        issue: OfflineIssue::ExtensionRead {
+        issue: MftIssue::ExtensionRead {
             reference: u64::MAX,
             error: MftError::FixupMismatch { number: 42 },
         },
     });
-    let dto = ExportRecordV1::from_offline(&record);
+    let dto = ExportRecordV1::from_stream(&record);
     assert_eq!(dto.metadata.standard_information, FieldState::Absent);
     assert_eq!(dto.metadata.file_names, FieldState::Unknown);
     assert_eq!(dto.metadata.alternate_data_streams, FieldState::Partial);
@@ -216,12 +216,11 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
         .collect_alternate_data_streams(false)
         .collect_data_run_summary(false)
         .build();
-    let raw = ExportRecordV1::from_entry(
-        &record.entry,
-        &ExportContext {
-            entry_options: Some(options.entry()),
-        },
-    );
+    record.entry.collection_options = options.entry();
+    record.entry.alternate_data_streams = Box::default();
+    record.entry.data_run_summary = None;
+    let raw = ExportRecordV1::from_entry(&record.entry);
+    assert_eq!(raw.source, "entry");
     assert_eq!(
         raw.metadata.alternate_data_streams,
         FieldState::NotCollected
@@ -229,6 +228,24 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
     assert_eq!(raw.metadata.data_run_summary, FieldState::NotCollected);
     assert_eq!(raw.metadata.standard_information, FieldState::Unknown);
     assert!(raw.diagnostics.is_empty());
+    record.entry.collection_options = crate::RawMftEntryOptions::default();
+    let collected = ExportRecordV1::from_entry(&record.entry);
+    assert_eq!(
+        collected.metadata.alternate_data_streams,
+        FieldState::NotObserved
+    );
+    assert_eq!(collected.metadata.data_run_summary, FieldState::NotObserved);
+    #[cfg(feature = "jsonl")]
+    {
+        let mut bytes = Vec::new();
+        JsonlWriter::new(&mut bytes).write_entry(&record.entry)?;
+        let item: ExportItem = serde_json::from_slice(&bytes)?;
+        assert_eq!(
+            item,
+            ExportItem::V1(ExportItemV1::Record(Box::new(collected)))
+        );
+    }
+
     Ok(())
 }
 
@@ -288,7 +305,7 @@ mod streaming {
         )?;
         for record in stream.iter_records() {
             match record {
-                Ok(record) => output.write_offline(&record)?,
+                Ok(record) => output.write_stream(&record)?,
                 Err(error) => output.write_error(&error)?,
             }
         }

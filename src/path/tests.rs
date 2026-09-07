@@ -1,61 +1,84 @@
-use super::InMemoryDirTree;
-use crate::Fid;
-
-fn utf16(s: &str) -> Vec<u16> {
-    s.encode_utf16().collect()
+use super::*;
+use crate::NtfsFileReference;
+use crate::NtfsName;
+use std::path::PathBuf;
+fn fid(n: u64, seq: u16) -> NtfsFileReference {
+    NtfsFileReference::try_from_parts(n, seq).unwrap()
 }
-
+fn index() -> MftPathIndex {
+    let mut index = MftPathIndex::new();
+    for (reference, parent, name) in [
+        (fid(5, 1), fid(5, 1), "."),
+        (fid(10, 1), fid(5, 1), "docs"),
+        (fid(20, 1), fid(10, 1), "note.txt"),
+    ] {
+        index
+            .insert_reference(reference, parent, &NtfsName::from(name))
+            .unwrap();
+    }
+    index
+}
 #[test]
-fn in_memory_tree_resolve_four_deep_path() {
-    // Layout:
-    //   5 (root)  -> "Users" (10) -> "alice" (20) -> "docs" (30) -> "todo.txt" (40)
-    let mut tree = InMemoryDirTree::default();
-    tree.insert(10, 5, &utf16("Users"));
-    tree.insert(20, 10, &utf16("alice"));
-    tree.insert(30, 20, &utf16("docs"));
-    tree.insert(40, 30, &utf16("todo.txt"));
-
-    let p = tree.resolve(Fid::new(40)).expect("resolved");
-    // Without drive prefix, components join with the platform separator.
+fn exact_paths_require_matching_root_and_parent_generations() {
+    let mut index = index();
     assert_eq!(
-        p.to_string_lossy().replace('/', "\\"),
-        "Users\\alice\\docs\\todo.txt"
+        index.resolve_strict(fid(20, 1)).unwrap(),
+        PathBuf::from("docs").join("note.txt")
     );
-
-    let p = tree
-        .resolve_with_drive_letter(Fid::new(40), 'c')
-        .expect("with drive");
-    assert_eq!(p.to_string_lossy(), "C:\\Users\\alice\\docs\\todo.txt");
+    assert_eq!(index.resolve_strict(fid(5, 1)).unwrap(), PathBuf::new());
+    index
+        .insert_reference(fid(10, 2), fid(5, 1), &NtfsName::from("replacement"))
+        .unwrap();
+    assert!(matches!(
+        index.resolve_strict(fid(20, 1)),
+        Err(MftPathError::SequenceMismatch { .. })
+    ));
+    let fallback = index.resolve_best_effort(fid(20, 1));
+    assert_eq!(fallback.quality, MftPathQuality::RecordFallback);
+    assert!(fallback.used_record_fallback);
+    assert_eq!(fallback.path, PathBuf::from("replacement").join("note.txt"));
+    index
+        .insert_reference(fid(5, 2), fid(5, 2), &NtfsName::from("."))
+        .unwrap();
+    assert!(matches!(
+        index.resolve_strict(fid(10, 2)),
+        Err(MftPathError::SequenceMismatch { .. })
+    ));
 }
-
 #[test]
-fn in_memory_tree_cycle_detection() {
-    let mut tree = InMemoryDirTree::default();
-    // 10 -> 11 -> 10 (cycle)
-    tree.insert(10, 11, &utf16("a"));
-    tree.insert(11, 10, &utf16("b"));
-    assert!(tree.resolve(Fid::new(10)).is_none());
-}
-
-#[test]
-fn in_memory_tree_missing_fid_returns_none() {
-    let tree = InMemoryDirTree::default();
-    assert!(tree.resolve(Fid::new(0xDEADBEEF)).is_none());
-}
-
-#[test]
-fn in_memory_tree_fid_with_sequence_bits_is_masked() {
-    let mut tree = InMemoryDirTree::default();
-    tree.insert(10, 5, &utf16("hello"));
-    // Lookup with the high 16 bits set (sequence number) must
-    // still resolve to the same record.
-    let fid = (0x0123u64 << 48) | 10;
-    assert!(tree.resolve(Fid::new(fid)).is_some());
-}
-
-#[test]
-fn builder_in_memory_tree_empty_tree() {
-    let tree = InMemoryDirTree::default();
-    assert!(tree.is_empty());
-    assert!(tree.resolve(Fid::new(0xDEADBEEF)).is_none());
+fn missing_parents_cycles_depth_and_invalid_names_are_explicit() {
+    let mut index = index();
+    assert!(matches!(
+        index.resolve_strict(fid(30, 1)),
+        Err(MftPathError::MissingReference(_))
+    ));
+    index
+        .insert_reference(fid(10, 1), fid(30, 1), &NtfsName::from("docs"))
+        .unwrap();
+    let partial = index.resolve_best_effort(fid(20, 1));
+    assert_eq!(partial.quality, MftPathQuality::Partial);
+    assert_eq!(partial.path, PathBuf::from("docs").join("note.txt"));
+    index
+        .insert_reference(fid(10, 1), fid(20, 1), &NtfsName::from("docs"))
+        .unwrap();
+    assert!(matches!(
+        index.resolve_strict(fid(20, 1)),
+        Err(MftPathError::Cycle(_))
+    ));
+    for n in 100..400 {
+        index
+            .insert_reference(fid(n, 1), fid(n + 1, 1), &NtfsName::from("x"))
+            .unwrap();
+    }
+    assert!(matches!(
+        index.resolve_strict(fid(100, 1)),
+        Err(MftPathError::DepthLimit)
+    ));
+    for name in ["..", ".", "/abs", "a/b", "a\\b"] {
+        assert!(
+            index
+                .insert_reference(fid(30, 1), fid(5, 1), &NtfsName::from(name))
+                .is_err()
+        );
+    }
 }

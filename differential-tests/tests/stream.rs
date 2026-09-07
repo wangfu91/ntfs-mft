@@ -56,7 +56,7 @@ fn fragmented_stream_matches_pinned_parser_and_public_iterator() -> TestResult {
         assert_eq!(entry.record_number, reference.number);
         assert_eq!(entry.sequence_number, reference.sequence);
         assert_eq!(
-            entry.base_record_reference,
+            entry.base_record_number,
             reference.base & 0x0000_ffff_ffff_ffff
         );
         assert_eq!(entry.flags & 0xf, reference.flags);
@@ -86,8 +86,8 @@ fn fragmented_stream_matches_pinned_parser_and_public_iterator() -> TestResult {
                     } => {
                         let bytes: Vec<u8> = name.iter().flat_map(|u| u.to_le_bytes()).collect();
                         let decoded =
-                            crate::raw_mft::layout::attribute::osstring_from_utf16le(&bytes);
-                        Some(*parent) == entry.parent_reference.as_u64()
+                            crate::raw_mft::layout::attribute::ntfs_name_from_utf16le(&bytes);
+                        *parent == entry.parent_reference.get()
                             && *namespace == entry.namespace as u8
                             && decoded.as_ref() == Some(&entry.file_name)
                             && *times

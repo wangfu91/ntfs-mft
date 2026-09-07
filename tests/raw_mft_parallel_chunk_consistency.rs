@@ -8,7 +8,7 @@
 use std::num::{NonZeroU64, NonZeroUsize};
 
 use ntfs_mft::{
-    Fid,
+    NtfsFileReference,
     errors::MftError,
     raw_mft::{RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftScanOptions},
     volume::Volume,
@@ -51,13 +51,17 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
     let Some(max_records_per_chunk) = NonZeroU64::new(1024) else {
         return Err("max_records_per_chunk must be non-zero".into());
     };
-    let chunk_options = RawMftChunkPlanOptions::builder()
+    let options = RawMftScanOptions::builder()
         .start_record(24)
         .end_record(Some(50_000))
+        .collect_alternate_data_streams(false)
+        .collect_data_run_summary(false)
+        .build();
+    let chunk_options = RawMftChunkPlanOptions::builder()
         .max_records_per_chunk(max_records_per_chunk)
         .build();
     let chunks: Vec<_> = raw_mft
-        .plan_chunks_with_options(chunk_options)
+        .plan_chunks_with_options(chunk_options, &options)
         .into_iter()
         .take(8)
         .collect();
@@ -66,10 +70,6 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
         return Ok(());
     }
 
-    let options = RawMftScanOptions::builder()
-        .collect_alternate_data_streams(false)
-        .collect_data_run_summary(false)
-        .build();
     let serial_entries: Vec<_> = chunks
         .iter()
         .map(|chunk| {
@@ -84,8 +84,9 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
     };
     let parallel_batches = raw_mft
         .parallel()
+        .lean()
         .chunks(chunks.clone())
-        .scan_options(options)
+        .scan_options(options.into_lean())
         .workers(worker_count)
         .collect_batches()
         .map_err(|error| format!("parallel collect_batches failed: {error}"))?;
@@ -117,11 +118,13 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
     Ok(())
 }
 
-fn entry_identity(entry: &RawMftBatchEntry) -> (u64, Fid, u64, Fid, bool) {
+fn entry_identity(
+    entry: &RawMftBatchEntry,
+) -> (u64, NtfsFileReference, u64, NtfsFileReference, bool) {
     (
         entry.record_number,
         entry.file_reference,
-        entry.base_record_reference,
+        entry.base_record_number,
         entry.parent_reference,
         entry.is_directory,
     )

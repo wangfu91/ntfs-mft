@@ -22,16 +22,23 @@ impl<'a> RawMft<'a> {
     /// Build deterministic logical work chunks for raw `$MFT` parsing.
     #[must_use]
     pub fn plan_chunks(&self) -> Vec<RawMftWorkChunk> {
-        self.plan_chunks_with_options(RawMftChunkPlanOptions::default())
+        self.plan_chunks_with_options(
+            RawMftChunkPlanOptions::default(),
+            &RawMftScanOptions::default(),
+        )
     }
 
-    /// Build logical work chunks with custom planning options.
+    /// Build logical work chunks using scan selection and custom partition sizing.
+    ///
+    /// Pass the same scan options to execution. A precomputed plan cannot recover
+    /// ranges or unused bands omitted by the options used to create it.
     #[must_use]
     pub fn plan_chunks_with_options(
         &self,
         options: RawMftChunkPlanOptions,
+        scan_options: &RawMftScanOptions,
     ) -> Vec<RawMftWorkChunk> {
-        let range = options.range();
+        let range = scan_options.range();
         let end_record = range
             .end_record()
             .unwrap_or(self.record_count())
@@ -40,12 +47,15 @@ impl<'a> RawMft<'a> {
             range.start_record(),
             end_record,
             options.max_records_per_chunk(),
-            options.include_unused_records(),
+            scan_options.include_unused_records(),
             |record_number| self.bitmap_used(record_number),
         )
     }
 
     /// Parse one logical work chunk into lean batch entries.
+    ///
+    /// This low-level operation uses the chunk range directly, ignoring the
+    /// range in `options`. For automatic range intersection use [`Self::parallel`].
     pub fn read_chunk(
         &self,
         chunk: RawMftWorkChunk,
@@ -56,6 +66,9 @@ impl<'a> RawMft<'a> {
     }
 
     /// Parse one logical work chunk and fold lean batch entries into a caller-owned accumulator.
+    ///
+    /// As with [`Self::read_chunk`], the chunk supplies the range; the range in
+    /// `options` is ignored.
     pub fn fold_chunk<T, Init, Fold>(
         &self,
         chunk: RawMftWorkChunk,
@@ -80,7 +93,7 @@ impl<'a> RawMft<'a> {
 
     /// Visit each batch entry in a record-number range using caller-supplied
     /// readers so chunk workers can reuse their buffer state.
-    fn for_each_batch_entry_in_range_with_readers<F>(
+    fn for_each_batch_entry_in_range_with_readers<F, E>(
         &self,
         start_record: u64,
         end_record: u64,
@@ -88,9 +101,10 @@ impl<'a> RawMft<'a> {
         reader: &mut VolumeReader,
         attr_reader: &mut VolumeReader,
         mut visit: F,
-    ) -> Result<(), MftError>
+    ) -> Result<(), E>
     where
-        F: FnMut(RawMftBatchEntry) -> Result<(), MftError>,
+        E: From<MftError>,
+        F: FnMut(RawMftBatchEntry) -> Result<(), E>,
     {
         let mut scan = SerialParseState::for_range(self, options, start_record, end_record);
 
@@ -125,7 +139,7 @@ impl<'a> RawMft<'a> {
     }
 
     /// Parse one chunk into batch entries using caller-supplied readers.
-    fn read_chunk_with_reused_readers(
+    pub(super) fn read_chunk_with_reused_readers(
         &self,
         chunk: RawMftWorkChunk,
         options: &RawMftScanOptions,
@@ -141,14 +155,14 @@ impl<'a> RawMft<'a> {
             attr_reader,
             |entry| {
                 entries.push(entry);
-                Ok(())
+                Ok::<_, MftError>(())
             },
         )?;
         Ok(entries)
     }
 
     /// Fold one chunk into a caller-owned accumulator using caller-supplied readers.
-    fn fold_chunk_with_reused_readers<T, Init, Fold>(
+    pub(super) fn fold_chunk_with_reused_readers<T, Init, Fold, E>(
         &self,
         chunk: RawMftWorkChunk,
         options: &RawMftScanOptions,
@@ -156,10 +170,11 @@ impl<'a> RawMft<'a> {
         fold_entry: &Fold,
         reader: &mut VolumeReader,
         attr_reader: &mut VolumeReader,
-    ) -> Result<T, MftError>
+    ) -> Result<T, E>
     where
+        E: From<MftError>,
         Init: Fn(RawMftWorkChunk) -> T,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError>,
+        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E>,
     {
         let mut acc = init(chunk);
         self.for_each_batch_entry_in_range_with_readers(
@@ -203,44 +218,6 @@ impl<'a> RawMft<'a> {
         )
     }
 
-    /// Parse logical work chunks in parallel and fold lean batch entries on worker threads.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn for_each_folded_chunk<Init, Fold, T, V>(
-        &self,
-        chunks: Vec<RawMftWorkChunk>,
-        options: RawMftScanOptions,
-        worker_count: NonZeroUsize,
-        scheduling: ChunkScheduling,
-        init: Init,
-        fold_entry: Fold,
-        visit: V,
-    ) -> Result<(), MftError>
-    where
-        Init: Fn(RawMftWorkChunk) -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError> + Sync,
-        T: Send,
-        V: FnMut(T) -> Result<(), MftError>,
-    {
-        executor::run_parallel_chunks_in_order(
-            self,
-            chunks,
-            options,
-            worker_count,
-            scheduling,
-            move |mft, chunk, options, reader, attr_reader| {
-                mft.fold_chunk_with_reused_readers(
-                    chunk,
-                    options,
-                    &init,
-                    &fold_entry,
-                    reader,
-                    attr_reader,
-                )
-            },
-            visit,
-        )
-    }
-
     /// Parse logical work chunks in parallel and visit batches in deterministic order.
     pub(crate) fn for_each_chunk<F>(
         &self,
@@ -277,5 +254,39 @@ impl<'a> RawMft<'a> {
             Ok(())
         })?;
         Ok(ordered_batches)
+    }
+}
+
+impl RawMft<'_> {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn fold_rich_chunk<T, Init, Fold, E>(
+        &self,
+        chunk: RawMftWorkChunk,
+        options: &RawMftScanOptions,
+        reader: &mut VolumeReader,
+        attr_reader: &mut VolumeReader,
+        init: &Init,
+        fold: &Fold,
+    ) -> Result<T, E>
+    where
+        E: From<MftError>,
+        Init: Fn(RawMftWorkChunk) -> T,
+        Fold: Fn(&mut T, crate::RawMftEntry) -> Result<(), E>,
+    {
+        let mut acc = init(chunk);
+        let build_options = super::super::reader::entry_build_options(options);
+        let mut scan =
+            SerialParseState::for_range(self, options, chunk.start_record, chunk.end_record);
+        while let Some(entry) = next_record_output(self, &mut scan, reader, |record| {
+            Ok(super::super::reader::build_rich_entry(
+                self,
+                record,
+                attr_reader,
+                build_options,
+            ))
+        })? {
+            fold(&mut acc, entry)?;
+        }
+        Ok(acc)
     }
 }

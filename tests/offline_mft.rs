@@ -1,6 +1,6 @@
 //! Public offline API tests: no volume handles or elevated privileges.
 use ntfs_mft::{
-    MftError, MftResult, MftStream, MftStreamOptions, OfflineFieldState as State, OfflineIssue,
+    MftError, MftFieldState as State, MftIssue, MftResult, MftStream, MftStreamOptions,
 };
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
@@ -106,7 +106,7 @@ fn fixture_public_iteration_and_random_access() -> MftResult<()> {
             Ok(r) => {
                 counts.0 += 1;
                 counts.2 += usize::from(r.entry.is_used);
-                counts.3 += usize::from(r.entry.base_record_reference != 0);
+                counts.3 += usize::from(r.entry.base_record_number != 0);
                 assert_eq!(r.stream_offset, r.entry.record_number * 1024);
             }
             Err(e) => {
@@ -209,7 +209,7 @@ fn absence_empty_data_and_unavailable_list_are_distinct() -> MftResult<()> {
         missing
             .diagnostics
             .iter()
-            .any(|d| matches!(d.issue, OfflineIssue::ExternalPayloadUnavailable))
+            .any(|d| matches!(d.issue, MftIssue::ExternalPayloadUnavailable))
     );
     let external_data = stream.read_record(3)?;
     assert_eq!(
@@ -262,7 +262,7 @@ fn resident_extensions_select_exact_attributes_and_preserve_cursor() -> MftResul
         rows[1]
             .diagnostics
             .iter()
-            .any(|d| matches!(d.issue, OfflineIssue::ExtensionRecordOnly))
+            .any(|d| matches!(d.issue, MftIssue::ExtensionRecordOnly))
     );
     Ok(())
 }
@@ -322,7 +322,7 @@ fn missing_mismatched_and_recursive_extensions_remain_partial() -> MftResult<()>
     assert!(
         base.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, OfflineIssue::NestedAttributeList))
+            .any(|d| matches!(d.issue, MftIssue::NestedAttributeList))
     );
     Ok(())
 }
@@ -350,7 +350,7 @@ fn malformed_attributes_never_imply_absence() -> MftResult<()> {
             .read_record(0)?
             .diagnostics
             .iter()
-            .any(|d| matches!(d.issue, OfflineIssue::MalformedAttributeList))
+            .any(|d| matches!(d.issue, MftIssue::MalformedAttributeList))
     );
     Ok(())
 }
@@ -368,7 +368,7 @@ fn split_data_is_not_reported_as_a_complete_summary() -> MftResult<()> {
     assert!(
         row.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, OfflineIssue::SplitDataStream))
+            .any(|d| matches!(d.issue, MftIssue::SplitDataStream))
     );
     Ok(())
 }
@@ -435,7 +435,7 @@ fn extension_io_failure_is_preserved_and_stops_iteration() -> MftResult<()> {
     assert_eq!(row.metadata.unnamed_data, State::Unknown);
     assert!(row.diagnostics.iter().any(|d| matches!(
         &d.issue,
-        OfflineIssue::ExtensionRead {
+        MftIssue::ExtensionRead {
             error: MftError::Io(_),
             ..
         }
@@ -500,7 +500,10 @@ fn selected_extension_file_name_uses_shared_builder() -> MftResult<()> {
     let row = stream.read_record(0)?;
     assert_eq!(row.entry.file_name, "name");
     assert_eq!(row.entry.fn_created.raw(), 123);
-    assert_eq!(row.entry.parent_reference, ntfs_mft::Fid::from_parts(5, 5));
+    assert_eq!(
+        row.entry.parent_reference,
+        ntfs_mft::NtfsFileReference::try_from_parts(5, 5).unwrap()
+    );
     assert_eq!(row.metadata.file_names, State::Present { complete: true });
     Ok(())
 }
@@ -520,7 +523,7 @@ fn overlapping_attribute_names_and_payloads_are_rejected() -> MftResult<()> {
         assert!(
             row.diagnostics
                 .iter()
-                .any(|d| matches!(d.issue, OfflineIssue::MalformedAttribute))
+                .any(|d| matches!(d.issue, MftIssue::MalformedAttribute))
         );
     }
     // A named runlist immediately after the name is valid (no required gap).
@@ -556,7 +559,7 @@ fn impossible_initialized_size_is_not_complete_metadata() -> MftResult<()> {
     assert!(
         row.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, OfflineIssue::MalformedAttribute))
+            .any(|d| matches!(d.issue, MftIssue::MalformedAttribute))
     );
     let mut continuation = nonresident(0x80, 1, 1);
     continuation[56..64].copy_from_slice(&u64::MAX.to_le_bytes());
@@ -566,7 +569,7 @@ fn impossible_initialized_size_is_not_complete_metadata() -> MftResult<()> {
     assert!(
         !row.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, OfflineIssue::MalformedAttribute))
+            .any(|d| matches!(d.issue, MftIssue::MalformedAttribute))
     );
     Ok(())
 }
@@ -589,5 +592,24 @@ fn impossible_stream_length_is_rejected_before_allocation() -> MftResult<()> {
         MftStream::from_reader(HugeStream, options()?),
         Err(MftError::InvalidOptions(_))
     ));
+    Ok(())
+}
+
+#[test]
+fn offline_records_build_a_volume_independent_path_index() -> MftResult<()> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/omerbenamram-mft/MFT");
+    let mut stream = MftStream::from_path(path, options()?)?;
+    let mut index = ntfs_mft::MftPathIndex::new();
+    for number in [5, 28, 29, 30] {
+        index.insert(&stream.read_record(number)?.entry)?;
+    }
+    let entry = stream.read_record(30)?.entry;
+    assert_eq!(
+        index.resolve_strict(entry.file_reference)?,
+        std::path::PathBuf::from("WINDOWS")
+            .join("system32")
+            .join("config")
+    );
     Ok(())
 }

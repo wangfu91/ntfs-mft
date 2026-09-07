@@ -49,13 +49,13 @@ fn volume_byte_reader_feeds_iterator_and_owns_independent_handle() -> MftResult<
     eprintln!("Opening first MFT byte reader");
     let mut first = raw.byte_reader()?;
     let mut second = raw.byte_reader()?;
-    assert!(first.len() <= raw.record_count() * record_size);
+    assert!(first.len() <= raw.record_count() * record_size as u64);
     assert!(!first.is_empty());
     let length = first.len();
     assert_eq!(first.seek(SeekFrom::End(0))?, length);
     assert_eq!(first.read(&mut [0; 4])?, 0);
     first.seek(SeekFrom::Start(0))?;
-    second.seek(SeekFrom::Start(record_size))?;
+    second.seek(SeekFrom::Start(record_size as u64))?;
     let mut signature = [0; 4];
     second.read_exact(&mut signature)?;
     assert_eq!(&signature, b"FILE");
@@ -64,8 +64,8 @@ fn volume_byte_reader_feeds_iterator_and_owns_independent_handle() -> MftResult<
     drop(raw);
     drop(volume);
     drop(second);
-    let mut parser = MftStream::from_reader(first, MftStreamOptions::new(record_size as usize)?)?;
-    assert_eq!(parser.record_count(), length / record_size);
+    let mut parser = MftStream::from_reader(first, MftStreamOptions::new(record_size)?)?;
+    assert_eq!(parser.record_count(), length / record_size as u64);
     let root = parser.read_record(5)?;
     assert_eq!(root.entry.file_name, expected.file_name);
     assert_eq!(root.entry.file_reference, expected.file_reference);
