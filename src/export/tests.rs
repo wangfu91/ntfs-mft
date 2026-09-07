@@ -139,6 +139,7 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
         decoded.raw,
         NameUnits::UnixBytes(vec![b'a', 0xff, b'\n', b'"'])
     );
+    let name = crate::NtfsName::from_utf16(vec![0x61, 0xd800, 0x0a, 0x22]);
     let mut record = fixture()?;
     let entry = &mut record.entry;
     entry.file_name = name.clone();
@@ -171,6 +172,11 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
     ]
     .into();
     let dto = ExportRecordV1::from_offline(&record);
+    assert_eq!(dto.name_fidelity, "ntfs_utf16_preserved");
+    let units = NameUnits::WindowsUtf16(vec![0x61, 0xd800, 0x0a, 0x22]);
+    assert_eq!(dto.selected_name.name.raw, units);
+    assert_eq!(dto.links[0].name.raw, units);
+    assert_eq!(dto.alternate_streams[0].name.as_ref().unwrap().raw, units);
     assert_eq!(dto.links.len(), 2);
     assert_eq!(dto.links[0].parent.sequence_number, Some(7));
     assert_eq!(dto.alternate_streams.len(), 2);

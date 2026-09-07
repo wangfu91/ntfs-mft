@@ -5,10 +5,7 @@
 //! payload access plus typed decoding of the attribute payloads the crate
 //! currently cares about.
 
-use std::ffi::OsString;
 use std::mem::size_of;
-#[cfg(windows)]
-use std::os::windows::ffi::OsStringExt;
 
 use zerocopy::FromBytes;
 
@@ -17,73 +14,20 @@ use super::{
     NtfsResidentAttributeHeader, NtfsStandardInformation,
 };
 
-/// Decode a UTF-16LE on-disk name into an [`OsString`].
-///
-/// NTFS stores names as UTF-16LE in byte buffers that are not guaranteed to be
-/// `u16`-aligned, so the bytes are decoded explicitly rather than by borrowing
-/// a `&[u16]`. Pure-ASCII names (overwhelmingly the common case on Windows) are
-/// valid UTF-8 byte-for-byte and take a fast path that skips the surrogate-aware
-/// UTF-16 → WTF-8 transcode performed by [`OsString::from_wide`]; all other
-/// names fall back to `from_wide` so lone surrogates are preserved.
-///
-/// Returns `None` only when `bytes` has an odd length and therefore cannot be a
-/// valid UTF-16 sequence.
-pub(crate) fn osstring_from_utf16le(bytes: &[u8]) -> Option<OsString> {
+/// Retain an on-disk UTF-16LE name, rejecting odd-length byte buffers.
+/// Byte decoding avoids alignment assumptions and preserves unpaired surrogates.
+pub(crate) fn ntfs_name_from_utf16le(bytes: &[u8]) -> Option<crate::NtfsName> {
     if !bytes.len().is_multiple_of(2) {
         return None;
     }
-
-    if bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .all(|chunk| chunk[1] == 0 && chunk[0] < 0x80)
-    {
-        #[cfg(windows)]
-        {
-            let mut ascii = String::with_capacity(bytes.len() / 2);
-            for chunk in bytes.as_chunks::<2>().0 {
-                ascii.push(chunk[0] as char);
-            }
-            return Some(OsString::from(ascii));
-        }
-        #[cfg(not(windows))]
-        {
-            use std::os::unix::ffi::OsStringExt;
-
-            let ascii = bytes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|chunk| chunk[0])
-                .collect();
-            return Some(OsString::from_vec(ascii));
-        }
-    }
-
-    #[cfg(windows)]
-    let units: Vec<u16> = bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect();
-    #[cfg(windows)]
-    {
-        Some(OsString::from_wide(&units))
-    }
-    #[cfg(not(windows))]
-    {
-        let units = bytes
+    Some(crate::NtfsName::from_utf16(
+        bytes
             .as_chunks::<2>()
             .0
             .iter()
-            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]));
-        let decoded: String = char::decode_utf16(units)
-            .map(|result| result.unwrap_or(char::REPLACEMENT_CHARACTER))
-            .collect();
-        Some(OsString::from(decoded))
-    }
+            .map(|chunk| u16::from_le_bytes(*chunk))
+            .collect::<Vec<_>>(),
+    ))
 }
 
 /// A view into a single attribute record borrowed from a FILE record's
@@ -163,7 +107,7 @@ impl<'a> NtfsAttribute<'a> {
     /// Borrow the raw little-endian UTF-16 attribute-name bytes.
     ///
     /// Returns `None` if the attribute is unnamed or the name range is invalid.
-    /// Decode the bytes into an `OsString` with [`osstring_from_utf16le`].
+    /// Decode the bytes into an `NtfsName` with [`ntfs_name_from_utf16le`].
     pub fn name_bytes(&self) -> Option<&'a [u8]> {
         let n = self.header.name_length as usize;
         if n == 0 {
@@ -217,7 +161,7 @@ impl<'a> NtfsAttribute<'a> {
     /// Returns `(header, raw_le_name_bytes)` for a `$FILE_NAME` attribute.
     ///
     /// The returned slice is the raw little-endian UTF-16 leaf name; decode it
-    /// into an `OsString` with [`osstring_from_utf16le`].
+    /// into an `NtfsName` with [`ntfs_name_from_utf16le`].
     pub fn as_file_name(&self) -> Option<(NtfsFileNameHeader, &'a [u8])> {
         if self.type_id() != NtfsAttributeType::FileName as u32 {
             return None;
@@ -317,8 +261,8 @@ mod tests {
         let attr = NtfsAttribute::new(&buf).expect("attr");
         let (parsed, name_bytes) = attr.as_file_name().expect("file name");
         assert_eq!(parsed.name_length as usize, name.len());
-        let decoded = osstring_from_utf16le(name_bytes).expect("decoded name");
-        assert_eq!(decoded, std::ffi::OsString::from("hello.txt"));
+        let decoded = ntfs_name_from_utf16le(name_bytes).expect("decoded name");
+        assert_eq!(decoded, crate::NtfsName::from("hello.txt"));
     }
 
     #[test]
@@ -400,8 +344,8 @@ mod tests {
         assert!(attr.has_name());
         let raw_name = attr.name_bytes().expect("name bytes");
         assert_eq!(
-            osstring_from_utf16le(raw_name).expect("decode"),
-            std::ffi::OsString::from("ads")
+            ntfs_name_from_utf16le(raw_name).expect("decode"),
+            crate::NtfsName::from("ads")
         );
     }
 }

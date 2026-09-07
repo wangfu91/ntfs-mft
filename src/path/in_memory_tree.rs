@@ -1,10 +1,7 @@
 //! Volume-independent path indexing with explicit identity and quality checks.
-use crate::{NtfsFileReference, RawMftBatchEntry, RawMftEntry};
+use crate::{NtfsFileReference, NtfsName, RawMftBatchEntry, RawMftEntry};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::{
-    ffi::{OsStr, OsString},
-    path::{Component, Path, PathBuf},
-};
+use std::path::{Component, Path, PathBuf};
 
 /// Why a path could not be reconstructed exactly.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -61,7 +58,7 @@ pub struct MftPathResolution {
 struct Node {
     reference: NtfsFileReference,
     parent: NtfsFileReference,
-    name: OsString,
+    name: NtfsName,
 }
 
 /// Reusable path index built from caller-supplied rich, lean or offline records.
@@ -111,14 +108,15 @@ impl MftPathIndex {
         &mut self,
         reference: NtfsFileReference,
         parent: NtfsFileReference,
-        name: &OsStr,
+        name: &NtfsName,
     ) -> Result<bool, MftPathError> {
         let number = reference.record_number();
         if name.is_empty() {
             return Ok(false);
         }
-        let mut components = Path::new(name).components();
-        if !(number == 5 && name == OsStr::new("."))
+        let native = name.to_os_string();
+        let mut components = Path::new(&native).components();
+        if !(number == 5 && name == &NtfsName::from("."))
             && !(matches!(components.next(), Some(Component::Normal(_)))
                 && components.next().is_none()
                 && !name.to_string_lossy().contains(['/', '\\', '\0']))
@@ -136,6 +134,8 @@ impl MftPathIndex {
         Ok(true)
     }
     /// Reconstruct a root-relative path, checking every full reference.
+    /// Native path conversion uses [`NtfsName::to_os_string`], which replaces
+    /// unpaired surrogates on Unix. Exact quality describes reference matching.
     pub fn resolve_strict(&self, reference: NtfsFileReference) -> Result<PathBuf, MftPathError> {
         let result = self.walk(reference, false);
         match result.error {
@@ -178,7 +178,7 @@ impl MftPathIndex {
                 failure = None;
                 break;
             }
-            names.push(node.name.as_os_str());
+            names.push(node.name.to_os_string());
             reference = node.parent;
         }
         let path = names.into_iter().rev().collect();

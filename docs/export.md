@@ -82,9 +82,10 @@ validating caller-authored DTOs against NTFS invariants.
   `windows_utf16` preserves u16 units, including unpaired surrogates. `unix_bytes`
   preserves u8 OS bytes. These arrays can be decoded on any supported platform;
   native path reconstruction is left to the caller. Display text is never authoritative.
-  `name_fidelity` reports whether the original UTF-16 is preserved. On Linux
-  and macOS, the parser may have replaced lone surrogates before export. Export
-  cannot undo that loss. Namespace codes likewise represent the scanner's normalized enum, not unknown original bytes.
+  NTFS entry, link, and stream names use `windows_utf16` on every host: the tag
+  identifies the encoding, not the machine running the exporter. `name_fidelity`
+  is `ntfs_utf16_preserved`. Supplied native paths still use their platform encoding.
+  Namespace codes represent the scanner's normalized enum, not unknown original bytes.
 - `selected_name` is separate from retained `links`; each link keeps its parent
   sequence and namespace. Preserve array order. Header hard-link count can differ
   from array length because of DOS aliases, collection options, or incomplete

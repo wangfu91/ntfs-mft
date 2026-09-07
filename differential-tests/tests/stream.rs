@@ -86,7 +86,7 @@ fn fragmented_stream_matches_pinned_parser_and_public_iterator() -> TestResult {
                     } => {
                         let bytes: Vec<u8> = name.iter().flat_map(|u| u.to_le_bytes()).collect();
                         let decoded =
-                            crate::raw_mft::layout::attribute::osstring_from_utf16le(&bytes);
+                            crate::raw_mft::layout::attribute::ntfs_name_from_utf16le(&bytes);
                         *parent == entry.parent_reference.get()
                             && *namespace == entry.namespace as u8
                             && decoded.as_ref() == Some(&entry.file_name)

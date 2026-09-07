@@ -1,6 +1,7 @@
 use super::*;
 use crate::NtfsFileReference;
-use std::{ffi::OsStr, path::PathBuf};
+use crate::NtfsName;
+use std::path::PathBuf;
 fn fid(n: u64, seq: u16) -> NtfsFileReference {
     NtfsFileReference::try_from_parts(n, seq).unwrap()
 }
@@ -12,7 +13,7 @@ fn index() -> MftPathIndex {
         (fid(20, 1), fid(10, 1), "note.txt"),
     ] {
         index
-            .insert_reference(reference, parent, OsStr::new(name))
+            .insert_reference(reference, parent, &NtfsName::from(name))
             .unwrap();
     }
     index
@@ -26,7 +27,7 @@ fn exact_paths_require_matching_root_and_parent_generations() {
     );
     assert_eq!(index.resolve_strict(fid(5, 1)).unwrap(), PathBuf::new());
     index
-        .insert_reference(fid(10, 2), fid(5, 1), OsStr::new("replacement"))
+        .insert_reference(fid(10, 2), fid(5, 1), &NtfsName::from("replacement"))
         .unwrap();
     assert!(matches!(
         index.resolve_strict(fid(20, 1)),
@@ -37,7 +38,7 @@ fn exact_paths_require_matching_root_and_parent_generations() {
     assert!(fallback.used_record_fallback);
     assert_eq!(fallback.path, PathBuf::from("replacement").join("note.txt"));
     index
-        .insert_reference(fid(5, 2), fid(5, 2), OsStr::new("."))
+        .insert_reference(fid(5, 2), fid(5, 2), &NtfsName::from("."))
         .unwrap();
     assert!(matches!(
         index.resolve_strict(fid(10, 2)),
@@ -52,13 +53,13 @@ fn missing_parents_cycles_depth_and_invalid_names_are_explicit() {
         Err(MftPathError::MissingReference(_))
     ));
     index
-        .insert_reference(fid(10, 1), fid(30, 1), OsStr::new("docs"))
+        .insert_reference(fid(10, 1), fid(30, 1), &NtfsName::from("docs"))
         .unwrap();
     let partial = index.resolve_best_effort(fid(20, 1));
     assert_eq!(partial.quality, MftPathQuality::Partial);
     assert_eq!(partial.path, PathBuf::from("docs").join("note.txt"));
     index
-        .insert_reference(fid(10, 1), fid(20, 1), OsStr::new("docs"))
+        .insert_reference(fid(10, 1), fid(20, 1), &NtfsName::from("docs"))
         .unwrap();
     assert!(matches!(
         index.resolve_strict(fid(20, 1)),
@@ -66,7 +67,7 @@ fn missing_parents_cycles_depth_and_invalid_names_are_explicit() {
     ));
     for n in 100..400 {
         index
-            .insert_reference(fid(n, 1), fid(n + 1, 1), OsStr::new("x"))
+            .insert_reference(fid(n, 1), fid(n + 1, 1), &NtfsName::from("x"))
             .unwrap();
     }
     assert!(matches!(
@@ -76,7 +77,7 @@ fn missing_parents_cycles_depth_and_invalid_names_are_explicit() {
     for name in ["..", ".", "/abs", "a/b", "a\\b"] {
         assert!(
             index
-                .insert_reference(fid(30, 1), fid(5, 1), OsStr::new(name))
+                .insert_reference(fid(30, 1), fid(5, 1), &NtfsName::from(name))
                 .is_err()
         );
     }

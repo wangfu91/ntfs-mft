@@ -240,7 +240,7 @@
         },
         "raw": {
           "$ref": "#/$defs/NameUnits",
-          "description": "Exact supplied OS representation, independently readable on any platform."
+          "description": "Exact supplied representation, independently readable on any platform."
         }
       },
       "required": [
@@ -414,7 +414,7 @@
           "description": "Evidence for presence, completeness, and collection choices."
         },
         "name_fidelity": {
-          "description": "`windows_utf16_preserved` or `original_ntfs_utf16_unavailable`.",
+          "description": "`ntfs_utf16_preserved` for exact original NTFS code units.",
           "type": "string"
         },
         "path": {
@@ -705,10 +705,10 @@
       ]
     },
     "NameUnits": {
-      "description": "Exact platform representation of a supplied name or path.",
+      "description": "Exact UTF-16 name or native platform representation of a supplied path.",
       "oneOf": [
         {
-          "description": "Windows UTF-16 units, including unpaired surrogates.",
+          "description": "NTFS or Windows UTF-16 units, including unpaired surrogates, on any host.",
           "properties": {
             "encoding": {
               "const": "windows_utf16",

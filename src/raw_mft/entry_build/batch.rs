@@ -3,14 +3,16 @@
 //! These types intentionally carry less data than [`super::RawMftEntry`] so
 //! high-throughput batch consumers can avoid rebuilding fields they do not use.
 
-use std::ffi::OsString;
+use crate::NtfsName;
 
 use crate::{
     FileAttributes, Filetime, NtfsFileReference,
     raw_mft::{
         RawMftWorkChunk,
         layout::{
-            attribute::{FileNameNamespace, NtfsAttribute, file_attr_flags, osstring_from_utf16le},
+            attribute::{
+                FileNameNamespace, NtfsAttribute, file_attr_flags, ntfs_name_from_utf16le,
+            },
             record::FileRecord,
         },
     },
@@ -60,7 +62,7 @@ pub struct RawMftBatchEntry {
     /// Namespace of the selected `$FILE_NAME`.
     pub namespace: FileNameNamespace,
     /// Selected leaf file name.
-    pub file_name: OsString,
+    pub file_name: NtfsName,
     /// `$STANDARD_INFORMATION` last-modified timestamp.
     pub si_modified: Filetime,
     /// `$STANDARD_INFORMATION` attribute flags.
@@ -146,7 +148,7 @@ impl RawMftBatchEntryBuilder {
                     is_directory: record.is_directory(),
                     reparse_tag: None,
                     namespace: FileNameNamespace::Posix,
-                    file_name: OsString::new(),
+                    file_name: NtfsName::new(),
                     si_modified: Filetime::new(0),
                     si_file_attributes: FileAttributes::empty(),
                     real_size: 0,
@@ -172,7 +174,7 @@ impl RawMftBatchEntryBuilder {
 
     fn apply_file_name(&mut self, attr: &NtfsAttribute<'_>) {
         if let Some((header, name_bytes)) = attr.as_file_name() {
-            let Some(file_name) = osstring_from_utf16le(name_bytes) else {
+            let Some(file_name) = ntfs_name_from_utf16le(name_bytes) else {
                 return;
             };
             let namespace = FileNameNamespace::from_u8(header.namespace);

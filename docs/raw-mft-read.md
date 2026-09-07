@@ -257,3 +257,24 @@ Rich and lean option builders accept `.range(100..200)`, `.range(24..)`,
 `RawMftRecordRange::default()` now means `0..`; scan-option defaults still mean
 `24..`, preserving the ordinary scan policy. Empty ranges remain empty, and an
 inclusive `u64::MAX` upper bound becomes an unbounded end clipped to the MFT.
+
+### Lossless NTFS names
+
+`RawMftEntry::file_name`, `RawMftBatchEntry::file_name`, hard-link names, and ADS
+names use `NtfsName`. Parsing and extension merging preserve every original
+UTF-16 code unit on Windows, Linux, and macOS. Equality and hashing use those
+units without case folding or normalization.
+
+- `name.as_utf16()` borrows the exact original units; `into_utf16()` takes ownership.
+- `name.try_to_string()` rejects unpaired surrogates.
+- `name.to_string_lossy()` and `Display` provide readable text with replacement characters.
+- `name.to_os_string()` preserves units on Windows and replaces unpaired surrogates
+  on Unix. Native paths produced by path resolvers have this same limitation;
+  their quality describes reference matching, not lossless name conversion.
+
+Use `NtfsName::from("file.txt")` for Unicode text or
+`NtfsName::from_utf16(vec![0x61, 0xd800])` for exact code units. Names are stored
+once as UTF-16, without a second cached native string. `MftPathIndex::insert_reference`
+accepts `&NtfsName`; it validates path components separately. Export uses the
+existing `windows_utf16` encoding tag for NTFS names on every platform and reports
+`name_fidelity: "ntfs_utf16_preserved"`.

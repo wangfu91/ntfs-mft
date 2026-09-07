@@ -1,5 +1,9 @@
 # Serial MFT performance
 
+Historical performance findings: the later public-API migration replaced native
+name decoding with `NtfsName` UTF-16 storage. The name-decoding implementation
+and measurements below describe the earlier representation.
+
 These measurements describe the tested workloads, not a throughput guarantee.
 
 | Workload | Baseline median | Optimized median |

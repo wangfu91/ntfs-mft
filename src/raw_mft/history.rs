@@ -8,12 +8,12 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fmt,
     path::PathBuf,
 };
 
-use crate::{NtfsFileReference, raw_mft::RawMftEntry, volume::Volume};
+use crate::{NtfsName, NtfsFileReference, raw_mft::RawMftEntry, volume::Volume};
 
 /// NTFS record number reserved for the volume root directory.
 const NTFS_ROOT_RECORD_NUMBER: u64 = 5;
@@ -26,14 +26,14 @@ struct SnapshotNode {
     /// Parent directory reference recorded for this entry.
     parent: NtfsFileReference,
     /// File name selected for this snapshot node.
-    name: OsString,
+    name: NtfsName,
 }
 
 /// Internal result of walking a parent chain through the snapshot.
 #[derive(Debug, Clone)]
 struct WalkOutcome {
     /// Path components collected from leaf to root.
-    components: Vec<OsString>,
+    components: Vec<NtfsName>,
     /// Whether the walk reached the NTFS root without breaking.
     complete: bool,
     /// Parent reference where the walk stopped, if any.
@@ -139,7 +139,8 @@ impl HistoricalPathIndex {
     /// Resolve an arbitrary file reference against the snapshot with best-effort fallback.
     ///
     /// `fallback_leaf` is used when the snapshot cannot provide any named path
-    /// component for `fid` itself.
+    /// component for `fid` itself. Native paths replace unpaired UTF-16 surrogates
+    /// on Unix; quality describes the reference chain, not native name fidelity.
     #[must_use]
     pub fn resolve_best_effort(
         &self,
@@ -187,7 +188,7 @@ impl HistoricalPathIndex {
         volume: &Volume,
         entry: &RawMftEntry,
     ) -> HistoricalPathResolution {
-        self.resolve_best_effort(volume, entry.file_reference, entry.file_name.as_os_str())
+        self.resolve_best_effort(volume, entry.file_reference, entry.file_name.to_os_string().as_os_str())
     }
 
     /// Walk the parent chain for a file reference with optional record-number fallback.
@@ -252,7 +253,7 @@ impl HistoricalPathIndex {
 fn compose_path(
     volume: &Volume,
     marker: Option<&str>,
-    components: &[OsString],
+    components: &[NtfsName],
     fallback_leaf: &OsStr,
 ) -> PathBuf {
     let mut path = PathBuf::new();
@@ -272,7 +273,7 @@ fn compose_path(
     }
 
     for component in components.iter().rev() {
-        path.push(component);
+        path.push(component.to_os_string());
     }
     path
 }
@@ -285,7 +286,7 @@ mod tests {
         raw_mft::{FileNameNamespace, RawMftEntry},
         volume::{Volume, VolumeSource},
     };
-    use std::{ffi::OsString, path::PathBuf};
+    use std::path::PathBuf;
     use windows::Win32::Foundation::HANDLE;
 
     fn standard_fid(record_number: u64, sequence_number: u16) -> NtfsFileReference {
@@ -313,7 +314,7 @@ mod tests {
             is_reparse_point: false,
             reparse_tag: None,
             namespace: FileNameNamespace::Win32,
-            file_name: OsString::from(file_name),
+            file_name: NtfsName::from(file_name),
             si_created: Filetime::new(0),
             si_modified: Filetime::new(0),
             si_mft_modified: Filetime::new(0),

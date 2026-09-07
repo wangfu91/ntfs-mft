@@ -6,6 +6,14 @@ use chrono::{Datelike, TimeZone, Utc};
 use std::ffi::OsStr;
 
 impl ExportName {
+    /// Preserve original NTFS code units on every host platform.
+    pub fn from_ntfs_name(name: &crate::NtfsName) -> Self {
+        Self {
+            display: name.to_string_lossy(),
+            raw: NameUnits::WindowsUtf16(name.as_utf16().to_vec()),
+        }
+    }
+
     /// Preserve the supplied OS string without treating its display text as authoritative.
     pub fn from_os_str(name: &OsStr) -> Self {
         #[cfg(windows)]
@@ -150,7 +158,7 @@ impl ExportRecordV1 {
             selected_name: ExportLink {
                 parent: entry.parent_reference.into(),
                 namespace: entry.namespace as u8,
-                name: ExportName::from_os_str(&entry.file_name),
+                name: ExportName::from_ntfs_name(&entry.file_name),
             },
             links: entry
                 .links
@@ -158,7 +166,7 @@ impl ExportRecordV1 {
                 .map(|link| ExportLink {
                     parent: link.parent_reference.into(),
                     namespace: link.namespace as u8,
-                    name: ExportName::from_os_str(&link.file_name),
+                    name: ExportName::from_ntfs_name(&link.file_name),
                 })
                 .collect(),
             standard_information_times: ExportTimes {
@@ -191,7 +199,7 @@ impl ExportRecordV1 {
                 .alternate_data_streams
                 .iter()
                 .map(|stream| ExportStream {
-                    name: Some(ExportName::from_os_str(&stream.name)),
+                    name: Some(ExportName::from_ntfs_name(&stream.name)),
                     real_size: stream.real_size.to_string(),
                     allocated_size: stream.allocated_size.to_string(),
                     resident: stream.is_resident,
@@ -215,12 +223,7 @@ impl ExportRecordV1 {
             path: ExportPath::NotRequested,
             diagnostics: Vec::new(),
             external_payloads: Vec::new(),
-            name_fidelity: if cfg!(windows) {
-                "windows_utf16_preserved"
-            } else {
-                "original_ntfs_utf16_unavailable"
-            }
-            .into(),
+            name_fidelity: "ntfs_utf16_preserved".into(),
         }
     }
 

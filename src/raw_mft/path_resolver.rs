@@ -95,7 +95,7 @@ impl<'a> RawMftPathResolver<'a> {
                     self.volume,
                     entry.file_reference.into(),
                     entry.parent_reference.into(),
-                    entry.file_name.as_os_str(),
+                    entry.file_name.to_os_string().as_os_str(),
                     &self.buffer,
                 )
             })?

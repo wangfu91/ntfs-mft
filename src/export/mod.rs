@@ -1,8 +1,8 @@
 //! Versioned export representations, independent of scanner implementation structs.
 //!
 //! Enable `serde` for DTOs, or `jsonl` for `JsonlWriter`. Decimal strings preserve
-//! large integers in JSON consumers. Names preserve the supplied OS representation;
-//! Linux/macOS parsing may already have replaced invalid NTFS UTF-16. See `docs/export.md`.
+//! large integers in JSON consumers. NTFS names retain original UTF-16 on every
+//! platform; supplied native paths retain their OS representation. See `docs/export.md`.
 
 mod convert;
 #[cfg(feature = "jsonl")]
@@ -39,12 +39,12 @@ pub enum FieldState {
     Partial,
 }
 
-/// Exact platform representation of a supplied name or path.
+/// Exact UTF-16 name or native platform representation of a supplied path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "encoding", content = "units", rename_all = "snake_case")]
 pub enum NameUnits {
-    /// Windows UTF-16 units, including unpaired surrogates.
+    /// NTFS or Windows UTF-16 units, including unpaired surrogates, on any host.
     WindowsUtf16(Vec<u16>),
     /// Unix OS bytes. These are not the original NTFS UTF-16 bytes.
     UnixBytes(Vec<u8>),
@@ -56,7 +56,7 @@ pub enum NameUnits {
 pub struct ExportName {
     /// Replacement characters may occur here; use `raw` for roundtrips.
     pub display: String,
-    /// Exact supplied OS representation, independently readable on any platform.
+    /// Exact supplied representation, independently readable on any platform.
     pub raw: NameUnits,
 }
 
@@ -308,7 +308,7 @@ pub struct ExportRecordV1 {
     pub diagnostics: Vec<ExportDiagnostic>,
     /// Observed external payload headers. Empty does not establish absence.
     pub external_payloads: Vec<ExportExternalPayload>,
-    /// `windows_utf16_preserved` or `original_ntfs_utf16_unavailable`.
+    /// `ntfs_utf16_preserved` for exact original NTFS code units.
     pub name_fidelity: String,
 }
 

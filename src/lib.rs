@@ -7,6 +7,8 @@
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 compile_error!("ntfs-mft supports only Windows, Linux, and macOS targets");
 mod display;
+mod ntfs_name;
+pub use ntfs_name::NtfsName;
 pub mod errors;
 #[cfg(feature = "serde")]
 pub mod export;
@@ -30,6 +32,6 @@ pub type MftResult<T> = std::result::Result<T, MftError>;
 pub mod prelude {
     pub use crate::{
         Fid, NtfsFileReference, FileAttributes, Filetime, MftError, MftResult, MftStream, MftStreamOptions, RawMft,
-        RawMftEntry, RawMftPathResolver, RawMftScanOptions, Usn, Volume,
+        NtfsName, RawMftEntry, RawMftPathResolver, RawMftScanOptions, Usn, Volume,
     };
 }

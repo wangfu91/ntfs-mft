@@ -4,14 +4,13 @@
 
 use std::{
     env,
-    ffi::OsStr,
     num::{NonZeroU64, NonZeroUsize},
     sync::OnceLock,
     thread,
 };
 
 use ntfs_mft::{
-    NtfsFileReference,
+    NtfsFileReference, NtfsName,
     errors::MftError,
     raw_mft::{
         FileNameNamespace, RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftEntry,
@@ -474,7 +473,7 @@ fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest
     for_each_visible_link(
         entry.parent_reference,
         entry.namespace,
-        entry.file_name.as_os_str(),
+        &entry.file_name,
         &entry.links,
         |parent_reference, _file_name| {
             let parent_record = parent_reference.record_number();
@@ -514,7 +513,7 @@ fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
     for_each_visible_link(
         entry.parent_reference,
         entry.namespace,
-        entry.file_name.as_os_str(),
+        &entry.file_name,
         &entry.links,
         |parent_reference, _file_name| {
             let parent_record = parent_reference.record_number();
@@ -533,11 +532,11 @@ fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
 fn for_each_visible_link<F>(
     parent_reference: NtfsFileReference,
     _namespace: FileNameNamespace,
-    file_name: &OsStr,
+    file_name: &NtfsName,
     all_links: &[RawMftLink],
     mut visit: F,
 ) where
-    F: FnMut(NtfsFileReference, &OsStr),
+    F: FnMut(NtfsFileReference, &NtfsName),
 {
     let mut emitted_any = false;
     for (index, link) in all_links.iter().enumerate() {
@@ -545,7 +544,7 @@ fn for_each_visible_link<F>(
             continue;
         }
         emitted_any = true;
-        visit(link.parent_reference, link.file_name.as_os_str());
+        visit(link.parent_reference, &link.file_name);
     }
 
     if !emitted_any && !file_name.is_empty() {

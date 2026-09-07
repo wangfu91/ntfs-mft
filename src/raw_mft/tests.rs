@@ -34,7 +34,7 @@ fn raw_mft_entry_display_is_compact() {
         is_reparse_point: false,
         reparse_tag: None,
         namespace: FileNameNamespace::Win32,
-        file_name: std::ffi::OsString::from("file.txt"),
+        file_name: crate::NtfsName::from("file.txt"),
         si_created: Filetime::new(0),
         si_modified: Filetime::new(0),
         si_mft_modified: Filetime::new(0),

@@ -1,6 +1,6 @@
 //! File-name namespace selection and retained-link policy.
 
-use std::ffi::OsString;
+use crate::NtfsName;
 
 use crate::{NtfsFileReference, raw_mft::layout::attribute::FileNameNamespace};
 
@@ -14,7 +14,7 @@ pub(super) struct CurrentFileName<'a> {
     /// Parent directory reference of the current best `$FILE_NAME`.
     pub(super) parent_reference: NtfsFileReference,
     /// Leaf name of the current best `$FILE_NAME`.
-    pub(super) file_name: &'a OsString,
+    pub(super) file_name: &'a NtfsName,
 }
 
 /// Chooses the best `$FILE_NAME` and retains additional hard-link names.
@@ -41,7 +41,7 @@ impl FileNameSelector {
         current: Option<CurrentFileName<'_>>,
         candidate_namespace: FileNameNamespace,
         candidate_parent: NtfsFileReference,
-        candidate_name: &OsString,
+        candidate_name: &NtfsName,
     ) -> bool {
         if !self.collect_dos_file_name_links
             && candidate_namespace == FileNameNamespace::Dos
@@ -138,7 +138,7 @@ impl FileNameSelector {
 pub(super) fn current_file_name(
     namespace: FileNameNamespace,
     parent_reference: NtfsFileReference,
-    file_name: &OsString,
+    file_name: &NtfsName,
 ) -> Option<CurrentFileName<'_>> {
     if file_name.is_empty() {
         None
@@ -155,8 +155,8 @@ pub(super) fn current_file_name(
 mod tests {
     use super::*;
 
-    fn name(value: &str) -> OsString {
-        OsString::from(value)
+    fn name(value: &str) -> NtfsName {
+        NtfsName::from(value)
     }
 
     #[test]
