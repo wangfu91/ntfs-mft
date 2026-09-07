@@ -1,7 +1,7 @@
 {
   "$defs": {
     "ExportDiagnostic": {
-      "description": "Structured offline limitation with optional nested read error.",
+      "description": "Structured metadata limitation with optional nested read error.",
       "properties": {
         "attribute_type": {
           "description": "Affected NTFS type code, if known.",
@@ -93,7 +93,7 @@
       "type": "object"
     },
     "ExportExternalPayload": {
-      "description": "Observed non-resident payload outside the offline input.",
+      "description": "Observed non-resident payload outside the logical MFT input.",
       "properties": {
         "attribute_id": {
           "description": "Instance ID within that record.",
@@ -357,7 +357,7 @@
           "description": "Summary when available; see metadata for completeness."
         },
         "diagnostics": {
-          "description": "Offline diagnostics; empty raw-scan diagnostics do not prove completeness.",
+          "description": "Parsing diagnostics; empty entry diagnostics do not prove completeness.",
           "items": {
             "$ref": "#/$defs/ExportDiagnostic"
           },
@@ -455,7 +455,7 @@
           "type": "integer"
         },
         "source": {
-          "description": "`raw_scan` or `offline_stream`.",
+          "description": "Adapter that supplied this record: `entry`, `mft_stream`, or `volume_scan`.\n`mft_stream` may read a live volume; it does not imply offline provenance.",
           "type": "string"
         },
         "sparse": {

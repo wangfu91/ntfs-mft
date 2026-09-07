@@ -1,9 +1,12 @@
 #![deny(missing_docs)]
-//! Read-only raw NTFS Master File Table scanning on Windows, Linux, and macOS.
+//! Read-only NTFS Master File Table scanning on Windows, Linux, and macOS.
 //!
-//! Open a [`Volume`] and construct a [`RawMft`] to iterate metadata records.
+//! A **live volume scan** reads directly from an NTFS volume/device through
+//! [`RawMft`]. An **offline MFT scan** parses an extracted file or buffer.
 //! See [`raw_mft`] for scan options, parallel iteration, and limitations.
-//! For an extracted `$MFT` file or memory buffer, use [`MftStream`] without a volume.
+//! Use [`MftStream`] to parse logical `$MFT` bytes. Its source can be an offline
+//! file or a live volume; the parser type does not imply a stable snapshot.
+//! **Read** denotes one record or a byte operation; **scan** denotes traversal.
 //!
 //! | API | Projection | Default selection | Parse failures |
 //! | --- | --- | --- | --- |
@@ -11,9 +14,9 @@
 //! | [`RawMft::parallel`] then `.rich()` | Rich batches | Same raw selection | Skipped |
 //! | [`RawMft::parallel`] then `.lean()` | Lean batches | Same raw selection | Skipped |
 //! | [`RawMft::try_iter_diagnostic`] | Rich entries and evidence | Supplied raw selection | Counted, bounded retention |
-//! | [`MftStream::iter_records`] | Offline records and evidence | Every slot from zero | Returned per slot |
+//! | [`MftStream::iter_records`] | Stream records and evidence | Every slot from zero | Returned per slot |
 //!
-//! Scan I/O errors are returned. Diagnostic and offline iterators stop on I/O
+//! Scan I/O errors are returned. Diagnostic and stream iterators stop on I/O
 //! failure; parse errors can be recoverable. No live scan is an atomic snapshot.
 //! Rich entries retain their [`RawMftEntryOptions`]; lean options omit metadata
 //! settings for fields they cannot return. Empty ordinary fields do not prove

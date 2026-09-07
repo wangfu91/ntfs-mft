@@ -85,7 +85,7 @@ impl MftPathIndex {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
-    /// Insert a rich record, including `OfflineMftRecord::entry`. Nameless
+    /// Insert a rich record, including `MftStreamRecord::entry`. Nameless
     /// records are ignored. Caller decides whether unused records belong here.
     pub fn insert(&mut self, entry: &RawMftEntry) -> Result<bool, MftPathError> {
         self.insert_reference(

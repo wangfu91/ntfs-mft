@@ -205,7 +205,7 @@ pub struct ExportError {
     pub reported_offset: Option<String>,
 }
 
-/// Structured offline limitation with optional nested read error.
+/// Structured metadata limitation with optional nested read error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportDiagnostic {
@@ -222,7 +222,7 @@ pub struct ExportDiagnostic {
     pub error: Option<ExportError>,
 }
 
-/// Observed non-resident payload outside the offline input.
+/// Observed non-resident payload outside the logical MFT input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportExternalPayload {
@@ -239,7 +239,8 @@ pub struct ExportExternalPayload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ExportRecordV1 {
-    /// `raw_scan` or `offline_stream`.
+    /// Adapter that supplied this record: `entry`, `mft_stream`, or `volume_scan`.
+    /// `mft_stream` may read a live volume; it does not imply offline provenance.
     pub source: String,
     /// Supplied physical record number as decimal, independent of the reference.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
@@ -294,7 +295,7 @@ pub struct ExportRecordV1 {
     pub metadata: ExportMetadata,
     /// Selected-name path evidence supplied by the caller.
     pub path: ExportPath,
-    /// Offline diagnostics; empty raw-scan diagnostics do not prove completeness.
+    /// Parsing diagnostics; empty entry diagnostics do not prove completeness.
     pub diagnostics: Vec<ExportDiagnostic>,
     /// Observed external payload headers. Empty does not establish absence.
     pub external_payloads: Vec<ExportExternalPayload>,

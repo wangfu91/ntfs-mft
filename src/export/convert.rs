@@ -1,7 +1,6 @@
 use super::*;
 use crate::{
-    Filetime, MftError, NtfsFileReference, MftFieldState, OfflineIssue, OfflineMftRecord,
-    RawMftEntry,
+    Filetime, MftError, MftFieldState, MftIssue, MftStreamRecord, NtfsFileReference, RawMftEntry,
 };
 use chrono::{Datelike, TimeZone, Utc};
 use std::ffi::OsStr;
@@ -142,7 +141,7 @@ impl ExportRecordV1 {
     pub fn from_entry(entry: &RawMftEntry) -> Self {
         let options = entry.collection_options;
         Self {
-            source: "raw_scan".into(),
+            source: "entry".into(),
             record_number: entry.record_number.to_string(),
             sequence_number: entry.sequence_number,
             reference: entry.file_reference.into(),
@@ -227,10 +226,10 @@ impl ExportRecordV1 {
         }
     }
 
-    /// Preserve the merged offline API's explicit evidence and diagnostic structure.
-    pub fn from_offline(record: &OfflineMftRecord) -> Self {
+    /// Preserve the logical-stream parser's explicit evidence and diagnostics.
+    pub fn from_stream(record: &MftStreamRecord) -> Self {
         let mut dto = Self::from_entry(&record.entry);
-        dto.source = "offline_stream".into();
+        dto.source = "mft_stream".into();
         dto.stream_offset = Some(record.stream_offset.to_string());
         dto.apply_inspection(record.metadata, &record.diagnostics);
         dto.external_payloads = record
@@ -249,6 +248,7 @@ impl ExportRecordV1 {
     pub fn from_diagnostic(record: &crate::RawMftDiagnosticRecord) -> Self {
         let options = record.entry.collection_options;
         let mut dto = Self::from_entry(&record.entry);
+        dto.source = "volume_scan".into();
         dto.apply_inspection(record.metadata, &record.diagnostics);
         dto.metadata.dos_links_collected = Some(options.collect_dos_file_name_links());
         if !options.collect_data_run_summary() {
@@ -259,7 +259,7 @@ impl ExportRecordV1 {
     fn apply_inspection(
         &mut self,
         metadata: crate::MftMetadata,
-        diagnostics: &[crate::OfflineDiagnostic],
+        diagnostics: &[crate::MftDiagnostic],
     ) {
         let m = metadata;
         self.metadata = ExportMetadata {
@@ -281,24 +281,22 @@ impl ExportRecordV1 {
             .iter()
             .map(|d| {
                 let (code, reference, error) = match &d.issue {
-                    OfflineIssue::EnrichmentNotVerified => ("enrichment_not_verified", None, None),
-                    OfflineIssue::MalformedAttribute => ("malformed_attribute", None, None),
-                    OfflineIssue::ExtensionsNotResolved => ("extensions_not_resolved", None, None),
-                    OfflineIssue::ExternalPayloadUnavailable => {
+                    MftIssue::EnrichmentNotVerified => ("enrichment_not_verified", None, None),
+                    MftIssue::MalformedAttribute => ("malformed_attribute", None, None),
+                    MftIssue::ExtensionsNotResolved => ("extensions_not_resolved", None, None),
+                    MftIssue::ExternalPayloadUnavailable => {
                         ("external_payload_unavailable", None, None)
                     }
-                    OfflineIssue::MalformedAttributeList => {
-                        ("malformed_attribute_list", None, None)
-                    }
-                    OfflineIssue::ExtensionRead { reference, error } => (
+                    MftIssue::MalformedAttributeList => ("malformed_attribute_list", None, None),
+                    MftIssue::ExtensionRead { reference, error } => (
                         "extension_read",
                         Some(NtfsFileReference::new(*reference).into()),
                         Some(error.into()),
                     ),
-                    OfflineIssue::ExtensionMismatch => ("extension_mismatch", None, None),
-                    OfflineIssue::NestedAttributeList => ("nested_attribute_list", None, None),
-                    OfflineIssue::SplitDataStream => ("split_data_stream", None, None),
-                    OfflineIssue::ExtensionRecordOnly => ("extension_record_only", None, None),
+                    MftIssue::ExtensionMismatch => ("extension_mismatch", None, None),
+                    MftIssue::NestedAttributeList => ("nested_attribute_list", None, None),
+                    MftIssue::SplitDataStream => ("split_data_stream", None, None),
+                    MftIssue::ExtensionRecordOnly => ("extension_record_only", None, None),
                 };
                 ExportDiagnostic {
                     record_number: d.record_number.to_string(),

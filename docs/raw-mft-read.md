@@ -1,6 +1,8 @@
-# Raw MFT reader internals
+# Live volume scan internals
 
-`RawMft` reads NTFS boot metadata and `$MFT` directly. It does not use Windows
+A **live volume scan** uses `RawMft` to read NTFS boot metadata and `$MFT`
+directly from the volume/device. An **offline MFT scan** instead parses an
+already extracted logical stream. It does not use Windows
 FSCTL enumeration. ReFS is rejected with `MftError::UnsupportedFilesystem`.
 All volume access is read-only; see [Windows](windows-raw-volume-access.md) and
 [macOS](macos-raw-volume-access.md) access requirements.

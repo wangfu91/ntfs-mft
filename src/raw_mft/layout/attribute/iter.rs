@@ -70,7 +70,7 @@ pub(crate) fn for_each_attribute<'a, F>(
 }
 
 /// Walk attributes and report whether an end marker was reached.
-/// The legacy walker intentionally discards this diagnostic.
+/// The best-effort walker intentionally discards this diagnostic.
 pub(crate) fn for_each_attribute_checked<'a, F>(
     data: &'a [u8],
     attrs_offset: usize,

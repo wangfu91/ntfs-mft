@@ -28,12 +28,12 @@ impl RecordData {
 pub(in crate::raw_mft) struct Inspection {
     present: [bool; 5],
     incomplete: [bool; 5],
-    pub diagnostics: Vec<OfflineDiagnostic>,
-    pub external_payloads: Vec<OfflineExternalPayload>,
+    pub diagnostics: Vec<MftDiagnostic>,
+    pub external_payloads: Vec<MftExternalPayload>,
 }
 
 impl Inspection {
-    pub fn issue(&mut self, number: u64, attribute_type: Option<u32>, issue: OfflineIssue) {
+    pub fn issue(&mut self, number: u64, attribute_type: Option<u32>, issue: MftIssue) {
         match attribute_type {
             Some(0x10) => self.incomplete[0] = true,
             Some(0x30) => self.incomplete[1] = true,
@@ -44,7 +44,7 @@ impl Inspection {
             Some(0xc0) => self.incomplete[4] = true,
             _ => self.incomplete.fill(true),
         }
-        self.diagnostics.push(OfflineDiagnostic {
+        self.diagnostics.push(MftDiagnostic {
             record_number: number,
             attribute_type,
             issue,
@@ -98,11 +98,11 @@ impl Inspection {
             _ => true,
         };
         if attr.header.is_non_resident > 1 || !valid_name || !valid_payload || !valid_typed {
-            self.issue(number, Some(kind), OfflineIssue::MalformedAttribute);
+            self.issue(number, Some(kind), MftIssue::MalformedAttribute);
             return false;
         }
         if attr.is_non_resident() {
-            self.external_payloads.push(OfflineExternalPayload {
+            self.external_payloads.push(MftExternalPayload {
                 record_number: number,
                 attribute_type: kind,
                 attribute_id: attr.header.id,
@@ -116,21 +116,21 @@ impl Inspection {
                 if let Some(header) = attr.nonresident_header() {
                     // Stream sizes are authoritative only in the initial segment.
                     if header.lowest_vcn == 0 && header.initialized_size > header.data_size {
-                        self.issue(number, Some(kind), OfflineIssue::MalformedAttribute);
+                        self.issue(number, Some(kind), MftIssue::MalformedAttribute);
                     }
                     if header.lowest_vcn != 0 {
-                        self.issue(number, Some(kind), OfflineIssue::SplitDataStream);
+                        self.issue(number, Some(kind), MftIssue::SplitDataStream);
                         // The existing builder uses the first segment's sizes; do not
                         // replace them with continuation-header placeholder values.
                     }
                     if summarize_runs(&attr.data()[header.data_runs_offset as usize..]).is_err() {
-                        self.issue(number, Some(kind), OfflineIssue::MalformedAttribute);
+                        self.issue(number, Some(kind), MftIssue::MalformedAttribute);
                     }
                 }
             }
             0xc0 => {
                 if attr.is_non_resident() {
-                    self.issue(number, Some(kind), OfflineIssue::ExternalPayloadUnavailable);
+                    self.issue(number, Some(kind), MftIssue::ExternalPayloadUnavailable);
                 } else {
                     self.present[4] = true;
                 }
@@ -164,7 +164,7 @@ pub(in crate::raw_mft) fn inspect_view<'a>(
         }
     });
     if !complete {
-        inspection.issue(view.number, None, OfflineIssue::MalformedAttribute);
+        inspection.issue(view.number, None, MftIssue::MalformedAttribute);
     }
     attributes
 }
@@ -207,7 +207,7 @@ pub(super) fn list_references(
             .get(..header_size)
             .and_then(|bytes| AttributeListEntryHeader::read_from_bytes(bytes).ok());
         let Some(h) = header else {
-            inspection.issue(number, None, OfflineIssue::MalformedAttributeList);
+            inspection.issue(number, None, MftIssue::MalformedAttributeList);
             break;
         };
         let len = h.record_length as usize;
@@ -218,7 +218,7 @@ pub(super) fn list_references(
             || h.lowest_vcn < 0
             || (name_len != 0 && (name_start < header_size || name_start + name_len > len))
         {
-            inspection.issue(number, None, OfflineIssue::MalformedAttributeList);
+            inspection.issue(number, None, MftIssue::MalformedAttributeList);
             break;
         }
         result.push(ListReference {

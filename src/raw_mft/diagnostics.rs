@@ -1,5 +1,5 @@
 //! Opt-in raw scan diagnostics. Successful iteration is not a completeness guarantee.
-use crate::{MftError, MftMetadata, OfflineDiagnostic, RawMftEntry};
+use crate::{MftError, MftMetadata, MftDiagnostic, RawMftEntry};
 
 /// One recoverable record-level failure observed during a raw scan.
 #[derive(Debug)]
@@ -51,5 +51,5 @@ pub struct RawMftDiagnosticRecord {
     /// Presence and completeness of inspected metadata categories.
     pub metadata: MftMetadata,
     /// Recoverable metadata limitations for this record.
-    pub diagnostics: Vec<OfflineDiagnostic>,
+    pub diagnostics: Vec<MftDiagnostic>,
 }

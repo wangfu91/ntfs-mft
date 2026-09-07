@@ -1,5 +1,11 @@
 # Offline MFT parsing
 
+An **offline MFT scan** parses an already extracted logical `$MFT` file or
+buffer. `MftStream` is the parser for that workflow, but it also accepts bytes
+from a live volume. Using `from_raw_mft()` or `byte_reader()` against a volume
+is still a **live volume scan**, with that source's consistency limitations.
+Single-record and byte operations are called **reads**.
+
 `MftStream<R: Read + Seek>` owns a reader (or a borrowed reader such as `&mut R`).
 `from_path` uses a read-only buffered file. `Cursor<Vec<u8>>` and `Cursor<&[u8]>`
 support owned and borrowed buffers. No device access or elevated privileges are required.
@@ -13,10 +19,9 @@ same parser works without an intermediate extracted file:
 ```rust,no_run
 use ntfs_mft::{MftResult, MftStream, MftStreamOptions, Volume};
 
-fn main() -> MftResult<()> {
-    let volume = Volume::from_drive_letter('C')?; // Windows; needs Administrator
+fn inspect(volume: &Volume) -> MftResult<()> {
     let raw = volume.raw_mft()?;
-    let options = MftStreamOptions::new(raw.file_record_size() as usize)?
+    let options = MftStreamOptions::new(raw.file_record_size())?
         .resolve_extensions(true);
     let mut parser = MftStream::from_reader(raw.byte_reader()?, options)?;
     for result in parser.iter_records().take(100) {
@@ -59,7 +64,7 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
   The source must remain unchanged until `into_inner` returns it.
 - `read_record(number)` takes `&mut self`. It addresses a physical slot at
   `number * record_size`. Slot numbering does not come from optional header fields.
-  `OfflineMftRecord::stream_offset` always refers to this stream, never the volume.
+  `MftStreamRecord::stream_offset` always refers to this stream, never the volume.
 - `iter_records()` starts at zero and yields every slot, including system records,
   unused records and extension records. A non-FILE slot is an item-level error.
   Parse errors allow iteration to continue. I/O errors terminate iteration after
@@ -71,7 +76,7 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
 
 ## Metadata and unavailable payloads
 
-`OfflineMftRecord.entry` reuses `RawMftEntry`. Its zero, empty and `None` defaults
+`MftStreamRecord.entry` reuses `RawMftEntry`. Its zero, empty and `None` defaults
 must be interpreted alongside `metadata`:
 
 | State | Meaning |

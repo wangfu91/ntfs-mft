@@ -1,9 +1,15 @@
 # Choosing an MFT API
 
-Use a raw scan for a best-effort base-record listing from a volume. Use a
-diagnostic raw scan when skipped-record counts and metadata evidence matter.
+Use a live volume scan for a best-effort base-record listing from a volume. Use a
+diagnostic live volume scan when skipped-record counts and metadata evidence matter.
 Use `MftStream` when each physical slot, including invalid or extension slots,
 needs an explicit outcome.
+
+A **live volume scan** reads directly from an NTFS volume/device. An **offline
+MFT scan** parses an extracted logical `$MFT` file or buffer. `read` denotes a
+single-record or byte operation, `scan` denotes traversal, and `parse` denotes
+record interpretation. `RawMft` and `MftStream` name the data access abstractions;
+`MftStream` can parse either source, so using it does not imply offline input.
 
 | Entry point | Result | Default selection | Error behavior |
 | --- | --- | --- | --- |
@@ -11,10 +17,10 @@ needs an explicit outcome.
 | `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
 | `raw.parallel().lean()` | Batches of `RawMftBatchEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
 | `raw.try_iter_diagnostic(options, limit)` | `RawMftDiagnosticRecord` plus final report | Supplied raw selection | Counts skipped categories, retains bounded parser errors; scan I/O error returned once, then stops |
-| `stream.iter_records()` | `OfflineMftRecord` per valid slot | All physical slots from zero, including unused and extensions | Parse errors returned per slot and iteration continues; I/O error stops iteration |
+| `stream.iter_records()` | `MftStreamRecord` per valid slot | All physical slots from zero, including unused and extensions | Parse errors returned per slot and iteration continues; I/O error stops iteration |
 
-Offline extension I/O failures are attached to the base record's diagnostics;
-the iterator yields that record and then stops. Ordinary raw scans use the
+MftStream extension I/O failures are attached to the base record's diagnostics;
+the iterator yields that record and then stops. Ordinary live volume scans use the
 bitmap for selection; if it is unavailable, inspect each entry's `is_used`.
 Neither a successful raw scan nor reaching the end of a diagnostic scan proves
 complete metadata. Live volumes are not atomic snapshots.
@@ -35,7 +41,7 @@ let options = RawMftScanOptions::builder()
     .build();
 ```
 
-Raw scan options default to `24..`; standalone `RawMftRecordRange::default()`
+Live volume scan options default to `24..`; standalone `RawMftRecordRange::default()`
 represents `0..`. All standard `u64` Rust ranges are accepted by `.range()`.
 The same rich options govern serial scanning and both planning and execution
 of rich parallel scans. `RawMftChunkPlanOptions` controls partition size only.

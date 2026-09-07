@@ -20,7 +20,7 @@ fn main() -> MftResult<()> {
     let mut output = JsonlWriter::new(BufWriter::new(io::stdout().lock()));
     for result in source.iter_records() {
         match result {
-            Ok(record) => output.write_offline(&record)?,
+            Ok(record) => output.write_stream(&record)?,
             Err(error) => output.write_error(&error)?,
         }
     }
@@ -45,7 +45,7 @@ mode starts at record zero, includes unused records, and collects ADS, run summa
 and DOS aliases. The scanner may skip non-FILE slots. Output contains only items
 the iterator yields, not an inventory of every physical slot. The example returns
 nonzero for top-level or item errors and for terminal extension I/O diagnostics.
-The latter can stop the offline iterator after an otherwise successful record;
+The latter can stop the stream iterator after an otherwise successful record;
 the example retains that record and counts the interrupted scan as a failure.
 Other partial metadata remains a record with diagnostics, not an item error.
 Consult those diagnostics even when the process succeeds.
@@ -98,9 +98,9 @@ validating caller-authored DTOs against NTFS invariants.
 
 ## Evidence, errors, and paths
 
-`from_offline` preserves category-level `present`, `partial`, `absent`, and
+`from_stream` preserves category-level `present`, `partial`, `absent`, and
 `unknown` states, stream offsets, external-payload headers, and structured
-diagnostics. The offline completeness definition covers supported metadata, not
+diagnostics. The stream parser's completeness definition covers supported metadata, not
 original name-byte fidelity or arbitrary file contents. Diagnostic codes are:
 `malformed_attribute`, `extensions_not_resolved`, `external_payload_unavailable`,
 `malformed_attribute_list`, `extension_read`, `extension_mismatch`,
@@ -150,3 +150,9 @@ states, short writes, output failure, flush failure, and iterator backpressure.
 Schemars only on DTOs and validate actual output with JSON Schema. To intentionally
 regenerate the reviewed contract, set `NTFS_MFT_UPDATE_EXPORT_SCHEMA=1` while
 running `schema_and_golden_contract`, then inspect the schema/golden diff.
+
+The `source` field identifies the exporting adapter: `entry` for a bare entry,
+`mft_stream` for a `MftStreamRecord`, and `volume_scan` for live volume diagnostic
+records. `mft_stream` does not establish offline provenance: its bytes may come
+from a live volume. Callers should retain their input-source information when
+that distinction matters.

@@ -1,7 +1,7 @@
 //! Export an extracted MFT or raw volume as JSONL. Diagnostics go to stderr.
 use ntfs_mft::export::JsonlWriter;
 use ntfs_mft::{
-    MftError, MftResult, MftStream, MftStreamOptions, OfflineIssue, OfflineMftRecord,
+    MftError, MftResult, MftStream, MftStreamOptions, MftIssue, MftStreamRecord,
     RawMftScanOptions,
 };
 use std::{
@@ -80,7 +80,7 @@ fn run() -> MftResult<bool> {
 }
 
 fn export_offline(
-    source: impl IntoIterator<Item = MftResult<OfflineMftRecord>>,
+    source: impl IntoIterator<Item = MftResult<MftStreamRecord>>,
     writer: &mut JsonlWriter<impl io::Write>,
 ) -> MftResult<(u64, u64)> {
     let (mut records, mut errors) = (0, 0);
@@ -90,10 +90,10 @@ fn export_offline(
                 let terminal = record.diagnostics.iter().any(|diagnostic| {
                     matches!(
                         &diagnostic.issue,
-                        OfflineIssue::ExtensionRead { error, .. } if error.is_io_error()
+                        MftIssue::ExtensionRead { error, .. } if error.is_io_error()
                     )
                 });
-                writer.write_offline(&record)?;
+                writer.write_stream(&record)?;
                 records += 1;
                 if terminal {
                     // The offline iterator stops here even though the item is Ok.

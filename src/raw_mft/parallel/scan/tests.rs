@@ -465,7 +465,7 @@ fn diagnostic_scan_marks_attribute_lists_unverified_and_stops_on_io() -> MftResu
         first
             .diagnostics
             .iter()
-            .any(|d| matches!(d.issue, crate::OfflineIssue::EnrichmentNotVerified))
+            .any(|d| matches!(d.issue, crate::MftIssue::EnrichmentNotVerified))
     );
     for _ in 1..32 {
         assert!(iter.next().unwrap().is_ok());
