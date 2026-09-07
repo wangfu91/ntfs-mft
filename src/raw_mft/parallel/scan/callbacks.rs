@@ -162,7 +162,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Lean> {
 
 impl RawMftParallelScan<'_, '_, Lean> {
     /// Execute deferred cached enrichment, preserving application callback
-    /// errors. Like the library-error convenience method, this always uses
+    /// errors. This always uses
     /// dynamic scheduling and visits worker accumulators followed by the
     /// second-phase accumulator.
     pub fn try_fold_records_cached_enrich<E, Init, Fold, T, V>(

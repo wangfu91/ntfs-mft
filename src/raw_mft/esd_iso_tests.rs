@@ -46,7 +46,7 @@ fn captured_bootstrap_reads_both_bitmap_extents() -> MftResult<()> {
 }
 
 #[test]
-fn captured_serial_matches_both_parallel_schedulers() -> MftResult<()> {
+fn captured_serial_matches_both_parallel_schedulers() -> Result<(), Box<dyn std::error::Error>> {
     let volume = source(true).open()?;
     let raw = volume.raw_mft()?;
     let options = RawMftScanOptions::builder().start_record(0).build();
@@ -86,15 +86,15 @@ fn captured_serial_matches_both_parallel_schedulers() -> MftResult<()> {
             serial
         );
         let mut folded = Vec::new();
-        rich.fold_chunks(
+        rich.try_fold_chunks(
             |_| Vec::new(),
             |entries, entry| {
                 entries.push(entry);
-                Ok(())
+                Ok::<_, std::convert::Infallible>(())
             },
             |entries| {
                 folded.extend(entries);
-                Ok(())
+                Ok::<_, std::convert::Infallible>(())
             },
         )?;
         assert_eq!(folded, serial);

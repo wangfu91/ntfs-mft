@@ -215,95 +215,6 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Lean> {
             self.scheduling.into(),
         )
     }
-
-    /// Parse chunks in parallel and visit ordered batches.
-    pub fn for_each_batch<F>(self, visit: F) -> Result<(), MftError>
-    where
-        F: FnMut(RawMftChunkBatch) -> Result<(), MftError>,
-    {
-        let worker_count = self.resolved_worker_count()?;
-        self.mft.for_each_chunk(
-            self.resolved_chunks()?,
-            self.scan_options,
-            worker_count,
-            self.scheduling.into(),
-            visit,
-        )
-    }
-
-    /// Parse chunks in parallel, map each batch on the worker thread, and visit mapped values in chunk order.
-    pub fn map_chunks<F, T, V>(self, map_chunk: F, visit: V) -> Result<(), MftError>
-    where
-        F: Fn(RawMftChunkBatch) -> Result<T, MftError> + Sync,
-        T: Send,
-        V: FnMut(T) -> Result<(), MftError>,
-    {
-        let worker_count = self.resolved_worker_count()?;
-        self.mft.for_each_mapped_chunk(
-            self.resolved_chunks()?,
-            self.scan_options,
-            worker_count,
-            self.scheduling.into(),
-            map_chunk,
-            visit,
-        )
-    }
-
-    /// Parse chunks in parallel and fold entries into one worker-local accumulator per chunk.
-    pub fn fold_chunks<Init, Fold, T, V>(
-        self,
-        init: Init,
-        fold_entry: Fold,
-        visit: V,
-    ) -> Result<(), MftError>
-    where
-        Init: Fn(RawMftWorkChunk) -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError> + Sync,
-        T: Send,
-        V: FnMut(T) -> Result<(), MftError>,
-    {
-        let worker_count = self.resolved_worker_count()?;
-        self.mft.for_each_folded_chunk(
-            self.resolved_chunks()?,
-            self.scan_options,
-            worker_count,
-            self.scheduling.into(),
-            init,
-            fold_entry,
-            visit,
-        )
-    }
-
-    /// Parse chunks in parallel with deferred, cache-backed `$ATTRIBUTE_LIST`
-    /// enrichment, folding entries into worker-local accumulators.
-    ///
-    /// Extension records are captured during the scan and used to enrich the
-    /// base records that need them in a second phase, avoiding the scattered
-    /// random reads that inline enrichment performs. `init` takes no chunk
-    /// because it also seeds the phase-2 accumulator. Worker scheduling is always
-    /// dynamic for this mode.
-    pub fn fold_records_cached_enrich<Init, Fold, T, V>(
-        self,
-        init: Init,
-        fold_entry: Fold,
-        visit: V,
-    ) -> Result<(), MftError>
-    where
-        Init: Fn() -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError> + Sync,
-        T: Send,
-        V: FnMut(T) -> Result<(), MftError>,
-    {
-        let worker_count = self.resolved_worker_count()?;
-        self.mft.fold_records_cached_enrich(
-            self.resolved_chunks()?,
-            self.scan_options,
-            worker_count,
-            init,
-            fold_entry,
-            visit,
-        )
-    }
 }
 
 impl<'v> RawMft<'v> {
@@ -326,75 +237,14 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Rich> {
     /// Collect full-metadata batches in supplied chunk order.
     pub fn collect_batches(self) -> Result<Vec<RawMftChunkBatch<RawMftEntry>>, MftError> {
         let mut result = Vec::new();
-        self.for_each_batch(|batch| {
+        match self.try_for_each_batch(|batch| {
             result.push(batch);
-            Ok(())
-        })?;
-        Ok(result)
-    }
-    /// Visit full-metadata batches in supplied chunk order on the calling thread.
-    pub fn for_each_batch<F>(self, visit: F) -> Result<(), MftError>
-    where
-        F: FnMut(RawMftChunkBatch<RawMftEntry>) -> Result<(), MftError>,
-    {
-        self.map_chunks(Ok, visit)
-    }
-    /// Execute full-metadata mapping on workers and visit mapped values in chunk order.
-    pub fn map_chunks<F, T, V>(self, map: F, visit: V) -> Result<(), MftError>
-    where
-        F: Fn(RawMftChunkBatch<RawMftEntry>) -> Result<T, MftError> + Sync,
-        T: Send,
-        V: FnMut(T) -> Result<(), MftError>,
-    {
-        let workers = self.resolved_worker_count()?;
-        executor::run_parallel_chunks_in_order(
-            self.mft,
-            self.resolved_chunks()?,
-            self.scan_options,
-            workers,
-            self.scheduling.into(),
-            |mft, chunk, options, reader, attr_reader| {
-                let entries = mft.fold_rich_chunk(
-                    chunk,
-                    options,
-                    reader,
-                    attr_reader,
-                    &|_| Vec::new(),
-                    &|entries, entry| {
-                        entries.push(entry);
-                        Ok::<_, MftError>(())
-                    },
-                )?;
-                map(RawMftChunkBatch { chunk, entries })
-            },
-            visit,
-        )
-    }
-    /// Fold full entries into a per-chunk accumulator without collecting a batch.
-    pub fn fold_chunks<Init, Fold, T, V>(
-        self,
-        init: Init,
-        fold: Fold,
-        visit: V,
-    ) -> Result<(), MftError>
-    where
-        Init: Fn(RawMftWorkChunk) -> T + Sync,
-        Fold: Fn(&mut T, RawMftEntry) -> Result<(), MftError> + Sync,
-        T: Send,
-        V: FnMut(T) -> Result<(), MftError>,
-    {
-        let workers = self.resolved_worker_count()?;
-        executor::run_parallel_chunks_in_order(
-            self.mft,
-            self.resolved_chunks()?,
-            self.scan_options,
-            workers,
-            self.scheduling.into(),
-            |mft, chunk, options, reader, attr_reader| {
-                mft.fold_rich_chunk(chunk, options, reader, attr_reader, &init, &fold)
-            },
-            visit,
-        )
+            Ok::<_, std::convert::Infallible>(())
+        }) {
+            Ok(()) => Ok(result),
+            Err(crate::ScanError::Scanner(error)) => Err(error),
+            Err(crate::ScanError::Consumer(never)) => match never {},
+        }
     }
 }
 

@@ -218,44 +218,6 @@ impl<'a> RawMft<'a> {
         )
     }
 
-    /// Parse logical work chunks in parallel and fold lean batch entries on worker threads.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn for_each_folded_chunk<Init, Fold, T, V>(
-        &self,
-        chunks: Vec<RawMftWorkChunk>,
-        options: RawMftScanOptions,
-        worker_count: NonZeroUsize,
-        scheduling: ChunkScheduling,
-        init: Init,
-        fold_entry: Fold,
-        visit: V,
-    ) -> Result<(), MftError>
-    where
-        Init: Fn(RawMftWorkChunk) -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError> + Sync,
-        T: Send,
-        V: FnMut(T) -> Result<(), MftError>,
-    {
-        executor::run_parallel_chunks_in_order(
-            self,
-            chunks,
-            options,
-            worker_count,
-            scheduling,
-            move |mft, chunk, options, reader, attr_reader| {
-                mft.fold_chunk_with_reused_readers(
-                    chunk,
-                    options,
-                    &init,
-                    &fold_entry,
-                    reader,
-                    attr_reader,
-                )
-            },
-            visit,
-        )
-    }
-
     /// Parse logical work chunks in parallel and visit batches in deterministic order.
     pub(crate) fn for_each_chunk<F>(
         &self,

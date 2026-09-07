@@ -50,9 +50,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .chunks(chunks)
         .scan_options(options.into_lean())
         .workers(worker_count)
-        .for_each_batch(|batch| {
+        .try_for_each_batch(|batch| {
             entry_count += batch.entries.len();
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         })?;
     let elapsed = start.elapsed();
 

@@ -237,12 +237,12 @@ fn push_unique_case(cases: &mut Vec<SummaryCase>, case: SummaryCase) {
     }
 }
 
-fn median_elapsed<F>(
+fn median_elapsed<F, E>(
     run_count: NonZeroUsize,
     mut f: F,
-) -> Result<Duration, ntfs_mft::errors::MftError>
+) -> Result<Duration, E>
 where
-    F: FnMut() -> Result<ingest_support::BenchSummary, ntfs_mft::errors::MftError>,
+    F: FnMut() -> Result<ingest_support::BenchSummary, E>,
 {
     let mut durations = Vec::with_capacity(run_count.get());
     for _ in 0..run_count.get() {

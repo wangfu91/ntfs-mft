@@ -51,9 +51,9 @@ discards the rich-only metadata choices.
 ```rust,no_run
 use ntfs_mft::{MftResult, RawMft, RawMftScanOptions};
 
-fn visit(raw: &RawMft<'_>) -> MftResult<()> {
+fn visit(raw: &RawMft<'_>) -> Result<(), ntfs_mft::ScanError<std::convert::Infallible>> {
     let options = RawMftScanOptions::builder().range(24..).build();
-    raw.parallel().rich().scan_options(options).for_each_batch(|batch| {
+    raw.parallel().rich().scan_options(options).try_for_each_batch(|batch| {
         for entry in batch.entries {
             println!("{}: {}", entry.file_reference, entry.file_name);
         }

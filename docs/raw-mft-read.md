@@ -91,7 +91,7 @@ unless the scan options include unused records.
 use ntfs_mft::{MftResult, RawMft, RawMftChunkPlanOptions, RawMftScanOptions};
 use std::num::NonZeroU64;
 
-fn scan(raw: &RawMft<'_>) -> MftResult<()> {
+fn scan(raw: &RawMft<'_>) -> Result<(), ntfs_mft::ScanError<std::convert::Infallible>> {
     let options = RawMftScanOptions::builder()
         .start_record(0)
         .end_record(Some(1000))
@@ -102,7 +102,7 @@ fn scan(raw: &RawMft<'_>) -> MftResult<()> {
         .chunk_plan(RawMftChunkPlanOptions::builder()
             .max_records_per_chunk(NonZeroU64::new(256).unwrap())
             .build())
-        .for_each_batch(|batch| {
+        .try_for_each_batch(|batch| {
             println!("{} entries", batch.entries.len());
             Ok(())
         })
@@ -136,8 +136,8 @@ Overlapping effective chunks now return an error; provide disjoint ranges.
 
 ## Parallel execution
 
-`RawMft::parallel()` requires `.rich()` or `.lean()` before execution. Both provide `collect_batches`, `for_each_batch`, `map_chunks`,
-and `fold_chunks`. One worker falls back to serial chunk processing.
+`RawMft::parallel()` requires `.rich()` or `.lean()` before execution. Both provide `collect_batches`, `try_for_each_batch`, `try_map_chunks_for_each`,
+and `try_fold_chunks`. One worker falls back to serial chunk processing.
 
 Each worker reopens the source and owns sequential and attribute readers.
 Boot geometry is cloned; the extent map and bitmap are shared through `Arc`.
@@ -150,7 +150,7 @@ Results may finish out of order. The coordinator buffers them and invokes the
 visitor in the supplied chunk order. Worker errors, unexpected channel closure,
 and worker panics fail the operation.
 
-`map_chunks` transforms each parsed batch on its worker. `fold_chunks` initializes
+`try_map_chunks_for_each` transforms each parsed batch on its worker. `try_fold_chunks` initializes
 an accumulator per chunk and folds entries into it, avoiding an intermediate
 batch vector. Both preserve ordered result delivery.
 
@@ -231,8 +231,8 @@ These are terminal operations returning `Result<_, ScanError<E>>`:
 application error. `E` must be `Send` because worker callbacks can fail.
 Annotate a callback's return type when inference cannot determine `E`.
 
-The original callback methods remain convenient when every callback uses
-`MftError`. Returning a callback error stops further result delivery, but
+The `try_*` methods are the only fallible callback entry points. Returning a
+callback error stops further result delivery, but
 already-running worker callbacks may finish before the call returns. No
 rollback of prior callback side effects is implied. Mapping and folding run
 on workers; ordered visitation runs on the calling thread.

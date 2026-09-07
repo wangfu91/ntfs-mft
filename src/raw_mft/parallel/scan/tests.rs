@@ -124,7 +124,8 @@ fn automatic_selection_matches_serial_for_ranges_usage_and_builder_order() -> Mf
 }
 
 #[test]
-fn explicit_chunks_intersect_selection_preserving_order() -> MftResult<()> {
+fn explicit_chunks_intersect_selection_preserving_order() -> Result<(), Box<dyn std::error::Error>>
+{
     let volume = volume()?;
     let raw = mft(&volume);
     let chunks = [(10, 40), (0, 6), (6, 6), (9, 3), (6, 9), (40, u64::MAX)]
@@ -166,43 +167,43 @@ fn explicit_chunks_intersect_selection_preserving_order() -> MftResult<()> {
     );
 
     let mut visited = Vec::new();
-    scan.clone().for_each_batch(|batch| {
+    scan.clone().try_for_each_batch(|batch| {
         visited.extend(batch.entries.into_iter().map(|e| e.record_number));
-        Ok(())
+        Ok::<_, std::convert::Infallible>(())
     })?;
     assert_eq!(visited, expected);
     let mut mapped = Vec::new();
-    scan.clone().map_chunks(
-        |batch| Ok(numbers(vec![batch])),
+    scan.clone().try_map_chunks_for_each(
+        |batch| Ok::<_, std::convert::Infallible>(numbers(vec![batch])),
         |part| {
             mapped.extend(part);
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         },
     )?;
     assert_eq!(mapped, expected);
     let mut folded = Vec::new();
-    scan.clone().fold_chunks(
+    scan.clone().try_fold_chunks(
         |_| Vec::new(),
         |part, entry| {
             part.push(entry.record_number);
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         },
         |part| {
             folded.extend(part);
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         },
     )?;
     assert_eq!(folded, expected);
     let mut cached = Vec::new();
-    scan.fold_records_cached_enrich(
+    scan.try_fold_records_cached_enrich(
         Vec::new,
         |part, entry| {
             part.push(entry.record_number);
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         },
         |part| {
             cached.extend(part);
-            Ok(())
+            Ok::<_, std::convert::Infallible>(())
         },
     )?;
     cached.sort_unstable();
@@ -278,11 +279,14 @@ fn explicit_overlaps_are_rejected_after_clipping_before_visiting() -> MftResult<
                 .chunks(chunks.clone())
                 .workers(NonZeroUsize::new(workers).unwrap());
             let mut visited = false;
-            let result = scan.for_each_batch(|_| {
+            let result = scan.try_for_each_batch(|_| {
                 visited = true;
-                Ok(())
+                Ok::<_, std::convert::Infallible>(())
             });
-            assert!(matches!(result, Err(MftError::InvalidOptions(_))));
+            assert!(matches!(
+                result,
+                Err(crate::ScanError::Scanner(MftError::InvalidOptions(_)))
+            ));
             assert!(!visited);
         }
     }

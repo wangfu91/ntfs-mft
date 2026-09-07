@@ -293,7 +293,7 @@ pub fn workload_shape(mft: &RawMft<'_>, config: &BenchConfig) -> BenchWorkloadSh
 pub fn run_parallel_ingest(
     mft: &RawMft<'_>,
     config: &BenchConfig,
-) -> Result<BenchSummary, MftError> {
+) -> Result<BenchSummary, ntfs_mft::ScanError<std::convert::Infallible>> {
     let iter_options = config.iter_options();
     let chunks = mft.plan_chunks_with_options(config.chunk_plan_options(), &iter_options);
     let record_table_len = record_count_hint(mft, config);
@@ -312,7 +312,7 @@ pub fn run_parallel_ingest(
             .scan_options(iter_options.into_lean())
             .workers(config.worker_count)
             .scheduling(config.scheduling)
-            .fold_chunks(
+            .try_fold_chunks(
                 new_partial_ingest,
                 |partial, entry| {
                     ingest_raw_entry_partial(entry, partial);
