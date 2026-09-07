@@ -28,7 +28,7 @@ fn main() -> MftResult<()> {
 }
 ```
 
-The example supports both merged offline parsing and existing volume scans:
+The CLI accepts offline streams or volumes:
 
 ```text
 cargo run --example raw_mft_export --features jsonl -- file extracted.MFT 1024
@@ -58,10 +58,8 @@ Each line is compact UTF-8 JSON followed by LF; embedded control characters are
 escaped. No header, footer, BOM, or whole-scan array is emitted. An empty iterator
 produces an empty file. Unknown schema versions fail DTO deserialization.
 
-The public DTOs are independent of scanner structs. Internal fields are mapped
-explicitly, so adding a scanner field cannot silently add a wire field. Schema
-and golden checks gate representation changes. Breaking changes require a new
-version. Readers should tolerate additional object fields within v1. DTO roundtrip
+DTO fields are mapped explicitly from scanner structs and checked against the
+schema and golden output. Breaking changes require a new version. Readers should tolerate additional object fields within v1. DTO roundtrip
 means preserving exported data, not reconstructing the original disk record or
 validating caller-authored DTOs against NTFS invariants.
 
@@ -140,9 +138,7 @@ writer, preventing further appends. Output is not transactional. Call `flush` or
 `finish` and check the result; dropping the writer is not a successful flush.
 Use `?` on each write so a failed sink stops scan consumption immediately.
 
-CSV is intentionally deferred: one row per record cannot faithfully represent
-arbitrary links, streams, and diagnostics. A follow-up should define separate
-record/link/stream tables or explicitly document its lossy flattening policy.
+CSV export is not supported.
 
 ## Validation
 
