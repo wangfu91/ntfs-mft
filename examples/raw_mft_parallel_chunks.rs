@@ -46,8 +46,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut entry_count = 0usize;
     raw_mft
         .parallel()
+        .lean()
         .chunks(chunks)
-        .scan_options(options)
+        .scan_options(options.into_lean())
         .workers(worker_count)
         .for_each_batch(|batch| {
             entry_count += batch.entries.len();

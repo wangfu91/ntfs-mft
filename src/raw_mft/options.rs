@@ -255,3 +255,95 @@ impl RawMftScanOptionsBuilder {
         self.inner
     }
 }
+
+/// Options for lean entry scanning. ADS and run-summary settings are deliberately
+/// unavailable because lean entries do not carry those fields.
+#[derive(Debug, Clone, Default)]
+pub struct RawMftLeanScanOptions {
+    pub(crate) inner: RawMftScanOptions,
+}
+
+impl RawMftLeanScanOptions {
+    /// Configure lean scan selection, buffers, and name-link retention.
+    pub fn builder() -> RawMftLeanScanOptionsBuilder {
+        RawMftLeanScanOptionsBuilder::default()
+    }
+    /// Read-buffer sizing.
+    pub fn buffers(&self) -> RawMftReadBuffers {
+        self.inner.buffers()
+    }
+    /// Logical record range.
+    pub fn range(&self) -> RawMftRecordRange {
+        self.inner.range()
+    }
+    /// Whether bitmap-unused records are included.
+    pub fn include_unused_records(&self) -> bool {
+        self.inner.include_unused_records()
+    }
+    /// Whether shadowed DOS links are retained.
+    pub fn collect_dos_file_name_links(&self) -> bool {
+        self.inner.entry.collect_dos_file_name_links
+    }
+}
+
+impl RawMftScanOptions {
+    /// Keep selection, buffers and DOS-link policy for a lean scan, explicitly
+    /// discarding ADS and data-run-summary materialization choices.
+    pub fn into_lean(self) -> RawMftLeanScanOptions {
+        RawMftLeanScanOptions { inner: self }
+    }
+}
+
+/// Fluent builder accepting only options applicable to lean entries.
+#[derive(Debug, Clone, Default)]
+#[must_use]
+pub struct RawMftLeanScanOptionsBuilder {
+    inner: RawMftScanOptionsBuilder,
+}
+
+impl RawMftLeanScanOptionsBuilder {
+    /// Set the main read buffer size.
+    pub fn buffer_bytes(mut self, value: NonZeroUsize) -> Self {
+        self.inner = self.inner.buffer_bytes(value);
+        self
+    }
+    /// Set the extension-read buffer size.
+    pub fn attr_buffer_bytes(mut self, value: NonZeroUsize) -> Self {
+        self.inner = self.inner.attr_buffer_bytes(value);
+        self
+    }
+    /// Set both read buffers.
+    pub fn buffers(mut self, value: RawMftReadBuffers) -> Self {
+        self.inner = self.inner.buffers(value);
+        self
+    }
+    /// Set the logical record range.
+    pub fn range(mut self, value: RawMftRecordRange) -> Self {
+        self.inner = self.inner.range(value);
+        self
+    }
+    /// Set the inclusive starting record.
+    pub fn start_record(mut self, value: u64) -> Self {
+        self.inner = self.inner.start_record(value);
+        self
+    }
+    /// Set the exclusive ending record.
+    pub fn end_record(mut self, value: Option<u64>) -> Self {
+        self.inner = self.inner.end_record(value);
+        self
+    }
+    /// Include records marked unused in the bitmap.
+    pub fn include_unused_records(mut self, value: bool) -> Self {
+        self.inner = self.inner.include_unused_records(value);
+        self
+    }
+    /// Retain shadowed DOS name links.
+    pub fn collect_dos_file_name_links(mut self, value: bool) -> Self {
+        self.inner = self.inner.collect_dos_file_name_links(value);
+        self
+    }
+    /// Finalize lean scan options.
+    pub fn build(self) -> RawMftLeanScanOptions {
+        self.inner.build().into_lean()
+    }
+}

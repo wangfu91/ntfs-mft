@@ -28,11 +28,11 @@ use super::{
 /// The `entries` preserve the record order produced by the underlying chunk
 /// scan so callers can fold or compare batches deterministically.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawMftChunkBatch {
+pub struct RawMftChunkBatch<E = RawMftBatchEntry> {
     /// Logical chunk that produced this batch.
     pub chunk: RawMftWorkChunk,
-    /// Lean entries parsed from the chunk in chunk order.
-    pub entries: Vec<RawMftBatchEntry>,
+    /// Entries parsed from the chunk in chunk order.
+    pub entries: Vec<E>,
 }
 
 /// Lean raw-MFT entry shape for high-throughput batch consumers.
@@ -50,6 +50,8 @@ pub struct RawMftBatchEntry {
     pub parent_reference: Fid,
     /// Base-record reference for extension records.
     pub base_record_reference: u64,
+    /// Whether the FILE header marks this record as in use.
+    pub is_used: bool,
     /// Whether the record is marked as a directory.
     pub is_directory: bool,
     /// Reparse tag when the file is a reparse point.
@@ -110,6 +112,7 @@ impl From<RawMftEntry> for RawMftBatchEntry {
             file_reference: entry.file_reference,
             parent_reference: entry.parent_reference,
             base_record_reference: entry.base_record_reference,
+            is_used: entry.is_used,
             is_directory: entry.is_directory,
             reparse_tag: entry.reparse_tag,
             namespace: entry.namespace,
@@ -138,6 +141,7 @@ impl RawMftBatchEntryBuilder {
                     file_reference: Fid::new(record.file_reference()),
                     parent_reference: Fid::new(0),
                     base_record_reference: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
+                    is_used: record.is_used(),
                     is_directory: record.is_directory(),
                     reparse_tag: None,
                     namespace: FileNameNamespace::Posix,

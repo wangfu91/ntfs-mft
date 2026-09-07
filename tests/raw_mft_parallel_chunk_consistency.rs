@@ -84,8 +84,9 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
     };
     let parallel_batches = raw_mft
         .parallel()
+        .lean()
         .chunks(chunks.clone())
-        .scan_options(options)
+        .scan_options(options.into_lean())
         .workers(worker_count)
         .collect_batches()
         .map_err(|error| format!("parallel collect_batches failed: {error}"))?;

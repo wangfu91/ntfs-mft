@@ -83,7 +83,7 @@ fn scan(raw: &RawMft<'_>) -> MftResult<()> {
         .end_record(Some(1000))
         .include_unused_records(true)
         .build();
-    raw.parallel()
+    raw.parallel().rich()
         .scan_options(options)
         .chunk_plan(RawMftChunkPlanOptions::builder()
             .max_records_per_chunk(NonZeroU64::new(256).unwrap())
@@ -122,7 +122,7 @@ Overlapping effective chunks now return an error; provide disjoint ranges.
 
 ## Parallel execution
 
-`RawMft::parallel()` provides `collect_batches`, `for_each_batch`, `map_chunks`,
+`RawMft::parallel()` requires `.rich()` or `.lean()` before execution. Both provide `collect_batches`, `for_each_batch`, `map_chunks`,
 and `fold_chunks`. One worker falls back to serial chunk processing.
 
 Each worker reopens the source and owns sequential and attribute readers.
@@ -153,3 +153,18 @@ and [serial measurements](raw_mft_serial_read_findings.md). The
 [ESD-ISO fixture](../tests/fixtures/esd-iso/README.md) tests bootstrapping,
 fragmented bitmap loading, and serial/parallel agreement without a device.
 The [module map](../src/raw_mft/README.md) locates the implementation.
+
+## Metadata projection migration
+
+Choose `.parallel().rich()` for the full `RawMftEntry` shape used by serial
+iteration, or `.parallel().lean()` for `RawMftBatchEntry`. Rich scans honor ADS,
+data-run-summary, and DOS-link collection settings. Lean scans accept
+`RawMftLeanScanOptions`, which exposes only selection, buffers, and DOS-link
+collection. Both entry shapes carry `is_used` from the FILE header.
+
+Existing parallel consumers can preserve their lean output by adding `.lean()`
+and using `RawMftLeanScanOptions::builder()`. When adapting an existing rich scan
+configuration intentionally, `.into_lean()` retains selection, buffers, and
+DOS-link policy while discarding rich-only collection choices. Cached enrichment
+remains a lean-only execution method. Rich parallel scans use the same inline
+materialization and enrichment implementation as rich serial scans.

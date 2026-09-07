@@ -95,13 +95,16 @@ fn automatic_selection_matches_serial_for_ranges_usage_and_builder_order() -> Mf
             ] {
                 let scan = raw
                     .parallel()
+                    .lean()
                     .workers(NonZeroUsize::new(workers).unwrap())
                     .scheduling(scheduling);
                 let first = scan
                     .clone()
-                    .scan_options(options.clone())
+                    .scan_options(options.clone().into_lean())
                     .chunk_plan(plan());
-                let second = scan.chunk_plan(plan()).scan_options(options.clone());
+                let second = scan
+                    .chunk_plan(plan())
+                    .scan_options(options.clone().into_lean());
                 assert_eq!(
                     first.resolved_chunks()?,
                     raw.plan_chunks_with_options(plan(), &options)
@@ -111,7 +114,7 @@ fn automatic_selection_matches_serial_for_ranges_usage_and_builder_order() -> Mf
             }
         }
     }
-    assert_eq!(numbers(raw.parallel().collect_batches()?), vec![26]);
+    assert_eq!(numbers(raw.parallel().lean().collect_batches()?), vec![26]);
     Ok(())
 }
 
@@ -132,8 +135,9 @@ fn explicit_chunks_intersect_selection_preserving_order() -> MftResult<()> {
         .build();
     let scan = raw
         .parallel()
+        .lean()
         .chunks(chunks.clone())
-        .scan_options(options.clone())
+        .scan_options(options.clone().into_lean())
         .workers(NonZeroUsize::new(3).unwrap());
     let expected = vec![10, 11, 4, 5, 6, 7, 8];
     let batches = scan.clone().collect_batches()?;
@@ -148,7 +152,8 @@ fn explicit_chunks_intersect_selection_preserving_order() -> MftResult<()> {
     assert_eq!(
         numbers(
             raw.parallel()
-                .scan_options(options)
+                .lean()
+                .scan_options(options.into_lean())
                 .chunks(chunks)
                 .collect_batches()?
         ),
@@ -211,13 +216,22 @@ fn explicit_chunks_filter_unused_and_clip_default_range_and_volume_end() -> MftR
         end_record: u64::MAX,
     };
     assert_eq!(
-        numbers(raw.parallel().chunks(vec![chunk]).collect_batches()?),
+        numbers(
+            raw.parallel()
+                .lean()
+                .chunks(vec![chunk])
+                .collect_batches()?
+        ),
         vec![26]
     );
     let options = RawMftScanOptions::builder()
         .include_unused_records(true)
         .build();
-    let scan = raw.parallel().scan_options(options).chunks(vec![chunk]);
+    let scan = raw
+        .parallel()
+        .lean()
+        .scan_options(options.into_lean())
+        .chunks(vec![chunk]);
     let batches = scan.collect_batches()?;
     assert_eq!(
         batches[0].chunk,
@@ -229,6 +243,7 @@ fn explicit_chunks_filter_unused_and_clip_default_range_and_volume_end() -> MftR
     assert_eq!(numbers(batches), (24..32).collect::<Vec<_>>());
     assert!(
         raw.parallel()
+            .lean()
             .chunks(Vec::new())
             .collect_batches()?
             .is_empty()
@@ -254,6 +269,7 @@ fn explicit_overlaps_are_rejected_after_clipping_before_visiting() -> MftResult<
         for workers in [1, 3] {
             let scan = raw
                 .parallel()
+                .lean()
                 .chunks(chunks.clone())
                 .workers(NonZeroUsize::new(workers).unwrap());
             let mut visited = false;
@@ -273,8 +289,51 @@ fn explicit_overlaps_are_rejected_after_clipping_before_visiting() -> MftResult<
         })
         .to_vec();
     assert_eq!(
-        numbers(raw.parallel().chunks(chunks).collect_batches()?),
+        numbers(raw.parallel().lean().chunks(chunks).collect_batches()?),
         vec![26]
+    );
+    Ok(())
+}
+
+#[test]
+fn lean_and_rich_preserve_usage_for_deleted_records() -> MftResult<()> {
+    let volume = volume()?;
+    let raw = mft(&volume);
+    let lean = raw
+        .parallel()
+        .lean()
+        .scan_options(
+            RawMftLeanScanOptions::builder()
+                .start_record(0)
+                .end_record(Some(4))
+                .include_unused_records(true)
+                .build(),
+        )
+        .collect_batches()?;
+    assert_eq!(
+        lean.into_iter()
+            .flat_map(|b| b.entries)
+            .map(|e| e.is_used)
+            .collect::<Vec<_>>(),
+        vec![false, false, true, false]
+    );
+    let rich = raw
+        .parallel()
+        .rich()
+        .scan_options(
+            RawMftScanOptions::builder()
+                .start_record(0)
+                .end_record(Some(4))
+                .include_unused_records(true)
+                .build(),
+        )
+        .collect_batches()?;
+    assert_eq!(
+        rich.into_iter()
+            .flat_map(|b| b.entries)
+            .map(|e| e.is_used)
+            .collect::<Vec<_>>(),
+        vec![false, false, true, false]
     );
     Ok(())
 }

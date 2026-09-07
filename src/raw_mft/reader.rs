@@ -47,6 +47,31 @@ pub(super) fn entry_build_options(options: &RawMftScanOptions) -> EntryBuildOpti
     }
 }
 
+/// Shared rich materialization for serial and parallel scans.
+pub(super) fn build_rich_entry(
+    mft: &RawMft<'_>,
+    record: &FileRecord<'_>,
+    attr_reader: &mut VolumeReader,
+    build_options: EntryBuildOptions,
+) -> RawMftEntry {
+    let record_number = record.number;
+    let (mut entry, attr_list) = RawMftEntry::from_record_with_attr_list(record, build_options);
+    if let Some(attr_list) = attr_list
+        && should_enrich_from_attr_list(&entry)
+    {
+        let _ = enrich_from_attr_list(
+            &mut entry,
+            attr_list,
+            record_number,
+            attr_reader,
+            &mft.boot,
+            mft.extent_map.as_ref(),
+            build_options,
+        );
+    }
+    entry
+}
+
 /// Look up, borrow, validate, and USA-fix-up one base FILE record.
 ///
 /// Returns `Ok(None)` when the record number maps to a sparse hole in the

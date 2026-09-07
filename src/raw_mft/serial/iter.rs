@@ -4,11 +4,10 @@ use crate::{
     errors::MftError,
     raw_mft::{
         RawMft,
-        attr_list::{enrich_from_attr_list, should_enrich_from_attr_list},
         entry_build::{EntryBuildOptions, RawMftEntry},
         io::VolumeReader,
         options::RawMftScanOptions,
-        reader::entry_build_options,
+        reader::{build_rich_entry, entry_build_options},
     },
 };
 
@@ -61,23 +60,12 @@ impl<'a> Iterator for RawMftIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match next_record_output(self.mft, &mut self.scan, &mut self.reader, |record| {
-            let record_number = record.number;
-            let (mut entry, attr_list) =
-                RawMftEntry::from_record_with_attr_list(record, self.build_options);
-            if let Some(attr_list) = attr_list
-                && should_enrich_from_attr_list(&entry)
-            {
-                let _ = enrich_from_attr_list(
-                    &mut entry,
-                    attr_list,
-                    record_number,
-                    &mut self.attr_reader,
-                    &self.mft.boot,
-                    self.mft.extent_map.as_ref(),
-                    self.build_options,
-                );
-            }
-            Ok(entry)
+            Ok(build_rich_entry(
+                self.mft,
+                record,
+                &mut self.attr_reader,
+                self.build_options,
+            ))
         }) {
             Ok(Some(entry)) => Some(Ok(entry)),
             Ok(None) => None,

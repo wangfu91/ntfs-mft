@@ -292,3 +292,36 @@ impl<'a> RawMft<'a> {
         Ok(ordered_batches)
     }
 }
+
+impl RawMft<'_> {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn fold_rich_chunk<T, Init, Fold>(
+        &self,
+        chunk: RawMftWorkChunk,
+        options: &RawMftScanOptions,
+        reader: &mut VolumeReader,
+        attr_reader: &mut VolumeReader,
+        init: &Init,
+        fold: &Fold,
+    ) -> Result<T, MftError>
+    where
+        Init: Fn(RawMftWorkChunk) -> T,
+        Fold: Fn(&mut T, crate::RawMftEntry) -> Result<(), MftError>,
+    {
+        let mut acc = init(chunk);
+        let build_options = super::super::reader::entry_build_options(options);
+        let mut scan =
+            SerialParseState::for_range(self, options, chunk.start_record, chunk.end_record);
+        while let Some(entry) = next_record_output(self, &mut scan, reader, |record| {
+            Ok(super::super::reader::build_rich_entry(
+                self,
+                record,
+                attr_reader,
+                build_options,
+            ))
+        })? {
+            fold(&mut acc, entry)?;
+        }
+        Ok(acc)
+    }
+}

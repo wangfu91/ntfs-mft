@@ -61,8 +61,9 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
     ] {
         let batches = raw
             .parallel()
+            .lean()
             .chunks(chunks.clone())
-            .scan_options(options.clone())
+            .scan_options(options.clone().into_lean())
             .workers(NonZeroUsize::new(4).unwrap())
             .scheduling(scheduling)
             .collect_batches()?;

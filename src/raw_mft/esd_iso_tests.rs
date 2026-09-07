@@ -66,10 +66,43 @@ fn captured_serial_matches_both_parallel_schedulers() -> MftResult<()> {
         RawMftParallelScheduling::Dynamic,
         RawMftParallelScheduling::Contiguous,
     ] {
+        let rich = raw
+            .parallel()
+            .rich()
+            .scan_options(options.clone())
+            .chunk_plan(
+                RawMftChunkPlanOptions::builder()
+                    .max_records_per_chunk(NonZeroU64::new(16).unwrap())
+                    .build(),
+            )
+            .workers(NonZeroUsize::new(4).unwrap())
+            .scheduling(scheduling);
+        assert_eq!(
+            rich.clone()
+                .collect_batches()?
+                .into_iter()
+                .flat_map(|b| b.entries)
+                .collect::<Vec<_>>(),
+            serial
+        );
+        let mut folded = Vec::new();
+        rich.fold_chunks(
+            |_| Vec::new(),
+            |entries, entry| {
+                entries.push(entry);
+                Ok(())
+            },
+            |entries| {
+                folded.extend(entries);
+                Ok(())
+            },
+        )?;
+        assert_eq!(folded, serial);
         let batches = raw
             .parallel()
+            .lean()
             .chunks(chunks.clone())
-            .scan_options(options.clone())
+            .scan_options(options.clone().into_lean())
             .workers(NonZeroUsize::new(4).unwrap())
             .scheduling(scheduling)
             .collect_batches()?;

@@ -78,11 +78,11 @@ pub use offline::{
     OfflineFieldState, OfflineIssue, OfflineMetadata, OfflineMftRecord,
 };
 pub use options::{
-    RawMftEntryOptions, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
-    RawMftScanOptionsBuilder,
+    RawMftEntryOptions, RawMftLeanScanOptions, RawMftLeanScanOptionsBuilder, RawMftReadBuffers,
+    RawMftRecordRange, RawMftScanOptions, RawMftScanOptionsBuilder,
 };
-pub use parallel::RawMftParallelScan;
 pub use parallel::RawMftParallelScheduling;
+pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
 pub use path_resolver::RawMftPathResolver;
 pub use serial::RawMftIter;
 

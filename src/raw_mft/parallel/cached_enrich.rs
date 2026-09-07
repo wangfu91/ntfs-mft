@@ -61,7 +61,7 @@ impl RawMft<'_> {
     /// re-reading them randomly from disk.
     ///
     /// `init`/`fold`/`visit` mirror
-    /// [`RawMftParallelScan::fold_chunks`](super::RawMftParallelScan::fold_chunks),
+    /// `RawMftParallelScan<Lean>::fold_chunks`,
     /// except `init` takes no chunk (it is also used for the phase-2 accumulator).
     pub(crate) fn fold_records_cached_enrich<Init, Fold, Visit, T>(
         &self,

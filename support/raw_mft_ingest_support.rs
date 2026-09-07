@@ -308,9 +308,9 @@ pub fn run_parallel_ingest(
             records: &mut records,
             children_by_parent: &mut children_by_parent,
         };
-        mft.parallel()
+        mft.parallel().lean()
             .chunks(chunks)
-            .scan_options(iter_options)
+            .scan_options(iter_options.into_lean())
             .workers(config.worker_count)
             .scheduling(config.scheduling)
             .fold_chunks(

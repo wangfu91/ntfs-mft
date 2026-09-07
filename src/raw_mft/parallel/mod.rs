@@ -6,4 +6,4 @@ mod executor;
 mod scan;
 
 pub(crate) use executor::ChunkScheduling;
-pub use scan::{RawMftParallelScan, RawMftParallelScheduling};
+pub use scan::{Lean, RawMftParallelScan, RawMftParallelScheduling, Rich, Unselected};
