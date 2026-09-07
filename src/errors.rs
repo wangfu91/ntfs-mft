@@ -6,6 +6,9 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MftError {
+    /// Caller supplied an invalid NTFS file reference.
+    #[error("Invalid file reference: {0}")]
+    InvalidFileReference(#[from] crate::FileReferenceError),
     /// Indexed path construction failed.
     #[error("Path index error: {0}")]
     PathIndex(#[from] crate::MftPathError),

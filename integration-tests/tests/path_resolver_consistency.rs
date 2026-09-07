@@ -24,8 +24,8 @@ use ntfs_mft_integration_tests::{
 
 fn as_live_entry(entry: &RawMftEntry) -> MftEntry {
     MftEntry {
-        fid: Fid::new(entry.file_reference.as_u64().expect("NTFS reference")),
-        parent_fid: Fid::new(entry.parent_reference.as_u64().expect("NTFS parent")),
+        fid: Fid::new(entry.file_reference.get()),
+        parent_fid: Fid::new(entry.parent_reference.get()),
         file_name: entry.file_name.clone(),
         file_attributes: entry.si_file_attributes,
     }

@@ -3,7 +3,7 @@ use super::{
     entry_build::{EntryBuildOptions, RawMftEntry},
     layout::record::FileRecord,
 };
-use crate::{Fid, Filetime, MftError, MftResult};
+use crate::{Filetime, MftError, MftResult, NtfsFileReference};
 const MFT: &[u8] = include_bytes!("../../tests/fixtures/omerbenamram-mft/MFT");
 const RECORD_SIZE: usize = 1024;
 
@@ -30,7 +30,7 @@ fn fixture_inventory_and_all_file_records_parse() -> MftResult<()> {
         files += 1;
         used += usize::from(parsed.is_used);
         directories += usize::from(parsed.is_directory);
-        extensions += usize::from(parsed.base_record_reference != 0);
+        extensions += usize::from(parsed.base_record_number != 0);
         assert_eq!(parsed.record_number, number as u64);
     }
     assert_eq!(
@@ -56,9 +56,12 @@ fn known_system_files_have_expected_metadata() -> MftResult<()> {
         assert_eq!(parsed.sequence_number, sequence);
         assert_eq!(
             parsed.file_reference,
-            Fid::from_parts(number as u64, sequence)
+            NtfsFileReference::try_from_parts(number as u64, sequence).unwrap()
         );
-        assert_eq!(parsed.parent_reference, Fid::from_parts(5, 5));
+        assert_eq!(
+            parsed.parent_reference,
+            NtfsFileReference::try_from_parts(5, 5).unwrap()
+        );
         assert_eq!(parsed.real_size, size);
         assert_eq!(parsed.allocated_size, allocated);
         assert_eq!(parsed.si_created, Filetime::new(128_276_814_522_523_952));
@@ -85,7 +88,7 @@ fn directory_parent_references_preserve_sequence_numbers() -> MftResult<()> {
         assert!(parsed.is_directory && parsed.is_used);
         assert_eq!(
             parsed.parent_reference,
-            Fid::from_parts(parent, parent_sequence)
+            NtfsFileReference::try_from_parts(parent, parent_sequence).unwrap()
         );
         assert!(!parsed.has_unnamed_data);
     }

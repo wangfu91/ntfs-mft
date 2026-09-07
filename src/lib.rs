@@ -22,14 +22,14 @@ pub mod volume;
 pub use errors::{MftError, ScanError};
 pub use raw_mft::*;
 pub use time::Filetime;
-pub use types::{Fid, FileAttributes, Usn};
+pub use types::{Fid, NtfsFileReference, FileReferenceError, FileAttributes, Usn};
 pub use volume::Volume;
 /// Result of an NTFS MFT operation.
 pub type MftResult<T> = std::result::Result<T, MftError>;
 /// Common imports for raw MFT scanning.
 pub mod prelude {
     pub use crate::{
-        Fid, FileAttributes, Filetime, MftError, MftResult, MftStream, MftStreamOptions, RawMft,
+        Fid, NtfsFileReference, FileAttributes, Filetime, MftError, MftResult, MftStream, MftStreamOptions, RawMft,
         RawMftEntry, RawMftPathResolver, RawMftScanOptions, Usn, Volume,
     };
 }

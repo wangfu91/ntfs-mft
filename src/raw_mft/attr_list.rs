@@ -12,7 +12,7 @@ use log::{debug, warn};
 use rustc_hash::FxHashSet;
 
 use crate::{
-    Fid,
+    NtfsFileReference,
     errors::MftError,
     raw_mft::{
         entry_build::{
@@ -69,7 +69,7 @@ struct LinkView<'a> {
     /// Existing boxed links, if the entry already materialized them.
     links: &'a [RawMftLink],
     /// Parent file reference paired with the inline file name.
-    parent_reference: Fid,
+    parent_reference: NtfsFileReference,
     /// Namespace paired with the inline file name.
     namespace: FileNameNamespace,
     /// Inline file name used when the entry has no boxed link list yet.
@@ -570,13 +570,13 @@ mod tests {
         let links = merged_links(
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(5),
+                parent_reference: NtfsFileReference::new(5),
                 namespace: FileNameNamespace::Win32,
                 file_name: base_name.as_os_str(),
             },
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(9),
+                parent_reference: NtfsFileReference::new(9),
                 namespace: FileNameNamespace::Win32,
                 file_name: ext_name.as_os_str(),
             },
@@ -584,8 +584,8 @@ mod tests {
         .expect("extension name should produce merged links");
 
         assert_eq!(links.len(), 2);
-        assert_eq!(links[0].parent_reference, Fid::new(5));
-        assert_eq!(links[1].parent_reference, Fid::new(9));
+        assert_eq!(links[0].parent_reference, NtfsFileReference::new(5));
+        assert_eq!(links[1].parent_reference, NtfsFileReference::new(9));
     }
 
     #[test]
@@ -596,13 +596,13 @@ mod tests {
         let result = merged_links(
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(5),
+                parent_reference: NtfsFileReference::new(5),
                 namespace: FileNameNamespace::Win32,
                 file_name: base_name.as_os_str(),
             },
             LinkView {
                 links: &[],
-                parent_reference: Fid::new(9),
+                parent_reference: NtfsFileReference::new(9),
                 namespace: FileNameNamespace::Win32,
                 file_name: std::ffi::OsStr::new(""),
             },
@@ -630,9 +630,9 @@ mod tests {
             collection_options: crate::RawMftEntryOptions::default(),
             record_number: 10,
             sequence_number: 1,
-            file_reference: Fid::new(10),
-            parent_reference: Fid::new(5),
-            base_record_reference: 0,
+            file_reference: NtfsFileReference::new(10),
+            parent_reference: NtfsFileReference::new(5),
+            base_record_number: 0,
             hard_link_count: 1,
             flags: 0,
             is_used: true,

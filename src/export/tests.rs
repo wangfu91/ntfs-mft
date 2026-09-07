@@ -73,7 +73,7 @@ fn schema_and_golden_contract() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn references_timestamps_and_unknown_bits_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let mut record = fixture()?;
-    record.entry.file_reference = Fid::new(u64::MAX);
+    record.entry.file_reference = crate::NtfsFileReference::new(u64::MAX);
     record.entry.si_file_attributes = FileAttributes::from_bits_retain(0x8000_0001);
     record.entry.real_size = u64::MAX;
     record.entry.has_unnamed_data = true;
@@ -144,12 +144,12 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
     entry.file_name = name.clone();
     entry.links = vec![
         RawMftLink {
-            parent_reference: Fid::from_parts(5, 7),
+            parent_reference: crate::NtfsFileReference::try_from_parts(5, 7).unwrap(),
             namespace: entry.namespace,
             file_name: name.clone(),
         },
         RawMftLink {
-            parent_reference: Fid::from_parts(6, 8),
+            parent_reference: crate::NtfsFileReference::try_from_parts(6, 8).unwrap(),
             namespace: entry.namespace,
             file_name: "second".into(),
         },

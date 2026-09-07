@@ -1,5 +1,5 @@
 //! Volume-independent path indexing with explicit identity and quality checks.
-use crate::{Fid, RawMftBatchEntry, RawMftEntry};
+use crate::{NtfsFileReference, RawMftBatchEntry, RawMftEntry};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     ffi::{OsStr, OsString},
@@ -12,24 +12,21 @@ use std::{
 pub enum MftPathError {
     /// A required record was not indexed.
     #[error("missing indexed reference {0}")]
-    MissingReference(Fid),
+    MissingReference(NtfsFileReference),
     /// A slot contains a different generation of a file.
     #[error("reference {requested} was replaced by {indexed}")]
     SequenceMismatch {
         /// Reference requested by the record or caller.
-        requested: Fid,
+        requested: NtfsFileReference,
         /// Reference currently indexed at that slot.
-        indexed: Fid,
+        indexed: NtfsFileReference,
     },
     /// Parent links form a cycle.
     #[error("cycle at reference {0}")]
-    Cycle(Fid),
+    Cycle(NtfsFileReference),
     /// The parent walk exceeded its defensive bound.
     #[error("path exceeds 256 parent steps")]
     DepthLimit,
-    /// The supplied reference is not an NTFS reference.
-    #[error("not an NTFS reference: {0}")]
-    UnsupportedReference(Fid),
     /// A leaf name would be interpreted as a path instead of one component.
     #[error("invalid path component")]
     InvalidName,
@@ -62,8 +59,8 @@ pub struct MftPathResolution {
 
 #[derive(Debug, Clone)]
 struct Node {
-    reference: Fid,
-    parent: Fid,
+    reference: NtfsFileReference,
+    parent: NtfsFileReference,
     name: OsString,
 }
 
@@ -112,16 +109,11 @@ impl MftPathIndex {
     /// must be one normal path component, except the root's conventional `.`.
     pub fn insert_reference(
         &mut self,
-        reference: Fid,
-        parent: Fid,
+        reference: NtfsFileReference,
+        parent: NtfsFileReference,
         name: &OsStr,
     ) -> Result<bool, MftPathError> {
-        let number = reference
-            .record_number()
-            .ok_or(MftPathError::UnsupportedReference(reference))?;
-        parent
-            .record_number()
-            .ok_or(MftPathError::UnsupportedReference(parent))?;
+        let number = reference.record_number();
         if name.is_empty() {
             return Ok(false);
         }
@@ -144,7 +136,7 @@ impl MftPathIndex {
         Ok(true)
     }
     /// Reconstruct a root-relative path, checking every full reference.
-    pub fn resolve_strict(&self, reference: Fid) -> Result<PathBuf, MftPathError> {
+    pub fn resolve_strict(&self, reference: NtfsFileReference) -> Result<PathBuf, MftPathError> {
         let result = self.walk(reference, false);
         match result.error {
             Some(error) => Err(error),
@@ -153,20 +145,17 @@ impl MftPathIndex {
     }
     /// Reconstruct as much as possible, explicitly allowing record-number
     /// fallback. Partial paths are suffixes and must not be treated as rooted.
-    pub fn resolve_best_effort(&self, reference: Fid) -> MftPathResolution {
+    pub fn resolve_best_effort(&self, reference: NtfsFileReference) -> MftPathResolution {
         self.walk(reference, true)
     }
 
-    fn walk(&self, mut reference: Fid, allow_fallback: bool) -> MftPathResolution {
+    fn walk(&self, mut reference: NtfsFileReference, allow_fallback: bool) -> MftPathResolution {
         let mut names = Vec::new();
         let mut seen = FxHashSet::default();
         let mut fallback = false;
         let mut failure = Some(MftPathError::DepthLimit);
         for _ in 0..256 {
-            let Some(number) = reference.record_number() else {
-                failure = Some(MftPathError::UnsupportedReference(reference));
-                break;
-            };
+            let number = reference.record_number();
             if !seen.insert(number) {
                 failure = Some(MftPathError::Cycle(reference));
                 break;

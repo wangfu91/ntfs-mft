@@ -158,7 +158,7 @@ fn captured_record_inventory_matches_independent_decoder() -> MftResult<()> {
         let record = FileRecord::parse(number as u64, None, &mut bytes)?;
         let entry = RawMftEntry::from_record_with_attr_list(&record, EntryBuildOptions::full()).0;
         assert!(entry.is_used);
-        assert_eq!(entry.base_record_reference, 0);
+        assert_eq!(entry.base_record_number, 0);
         files += 1;
         dirs += usize::from(entry.is_directory);
     }
@@ -183,7 +183,7 @@ fn captured_known_files_match_independently_decoded_text_fixture() -> MftResult<
         let reference = item["parent_reference"].as_u64().unwrap();
         assert_eq!(
             entry.parent_reference,
-            crate::Fid::from_parts(reference & 0xffff_ffff_ffff, (reference >> 48) as u16)
+            crate::NtfsFileReference::new(reference)
         );
         assert_eq!(entry.is_directory, item["directory"].as_bool().unwrap());
         assert_eq!(entry.has_unnamed_data, !item["data_size"].is_null());

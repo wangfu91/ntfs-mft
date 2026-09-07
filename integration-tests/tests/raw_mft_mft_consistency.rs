@@ -152,8 +152,8 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
 
             compared += 1;
 
-            let same_fid = raw_entry.file_reference.as_u64() == entry.fid.as_u64();
-            let same_parent = raw_entry.parent_reference.as_u64() == entry.parent_fid.as_u64();
+            let same_fid = Some(raw_entry.file_reference.get()) == entry.fid.as_u64();
+            let same_parent = Some(raw_entry.parent_reference.get()) == entry.parent_fid.as_u64();
             let same_dir = raw_entry.is_directory == entry.is_dir;
             let same_name = raw_entry
                 .file_name
@@ -351,8 +351,8 @@ fn raw_mft_and_mft_api_record_parity_standard_ids() {
 
         compared += 1;
 
-        let same_fid = raw_entry.file_reference.as_u64() == entry.fid.as_u64();
-        let same_parent = raw_entry.parent_reference.as_u64() == entry.parent_fid.as_u64();
+        let same_fid = Some(raw_entry.file_reference.get()) == entry.fid.as_u64();
+        let same_parent = Some(raw_entry.parent_reference.get()) == entry.parent_fid.as_u64();
         let same_dir = raw_entry.is_directory == entry.is_dir;
         // Case-insensitive: NTFS is case-insensitive and the two APIs may
         // normalise differently for short names vs long names.

@@ -11,7 +11,7 @@ use std::{
 };
 
 use ntfs_mft::{
-    Fid,
+    NtfsFileReference,
     errors::MftError,
     raw_mft::{
         FileNameNamespace, RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftEntry,
@@ -452,7 +452,7 @@ fn merge_partial_ingest(partial: PartialIngest, targets: &mut BenchTargets<'_>) 
 
 /// Convert a batch entry into the compact benchmark representation.
 fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest) {
-    if entry.base_record_reference != 0 {
+    if entry.base_record_number != 0 {
         return;
     }
 
@@ -477,9 +477,7 @@ fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest
         entry.file_name.as_os_str(),
         &entry.links,
         |parent_reference, _file_name| {
-            let Some(parent_record) = parent_reference.record_number() else {
-                return;
-            };
+            let parent_record = parent_reference.record_number();
             partial.child_links.push((
                 parent_record,
                 BenchChildLink {
@@ -492,7 +490,7 @@ fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest
 
 /// Convert a full iterator entry into the compact benchmark representation.
 fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
-    if entry.base_record_reference != 0 {
+    if entry.base_record_number != 0 {
         return;
     }
 
@@ -519,9 +517,7 @@ fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
         entry.file_name.as_os_str(),
         &entry.links,
         |parent_reference, _file_name| {
-            let Some(parent_record) = parent_reference.record_number() else {
-                return;
-            };
+            let parent_record = parent_reference.record_number();
             targets
                 .children_by_parent
                 .entry(parent_record)
@@ -535,13 +531,13 @@ fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
 
 /// Visit the visible file-name links for a record and suppress shadowed names.
 fn for_each_visible_link<F>(
-    parent_reference: Fid,
+    parent_reference: NtfsFileReference,
     _namespace: FileNameNamespace,
     file_name: &OsStr,
     all_links: &[RawMftLink],
     mut visit: F,
 ) where
-    F: FnMut(Fid, &OsStr),
+    F: FnMut(NtfsFileReference, &OsStr),
 {
     let mut emitted_any = false;
     for (index, link) in all_links.iter().enumerate() {

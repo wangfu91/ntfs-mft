@@ -18,15 +18,15 @@ fn options_defaults_are_sensible() {
 
 #[test]
 fn raw_mft_entry_display_is_compact() {
-    use crate::{Fid, FileAttributes, Filetime};
+    use crate::{FileAttributes, Filetime, NtfsFileReference};
 
     let entry = RawMftEntry {
         collection_options: crate::RawMftEntryOptions::default(),
         record_number: 42,
         sequence_number: 1,
-        file_reference: Fid::from_parts(42, 1),
-        parent_reference: Fid::from_parts(5, 1),
-        base_record_reference: 0,
+        file_reference: NtfsFileReference::from_parts(42, 1),
+        parent_reference: NtfsFileReference::from_parts(5, 1),
+        base_record_number: 0,
         hard_link_count: 2,
         flags: 0,
         is_used: true,

@@ -233,3 +233,19 @@ The original callback methods remain convenient when every callback uses
 already-running worker callbacks may finish before the call returns. No
 rollback of prior callback side effects is implied. Mapping and folding run
 on workers; ordered visitation runs on the calling thread.
+
+## NTFS reference migration
+
+Raw rich/lean entries, name links, and path indexes now use `NtfsFileReference`
+for file and parent references. `record_number()` returns `u64`, `sequence()`
+returns `u16`, and `get()` returns the packed `u64`, without optional branches.
+`try_from_parts(record_number, sequence)` rejects numbers above 48 bits instead
+of silently truncating them. `new(raw)` preserves all bits of an existing NTFS
+reference. Convert to legacy generic `Fid` with `.into()`, or back with
+`NtfsFileReference::try_from(fid)`; extended IDs are rejected even if their
+numeric value fits in 64 bits.
+
+The old `base_record_reference` field was already a truncated record number;
+it is now named `base_record_number` to state that meaning. Its zero value does
+not distinguish a base record from an extension of record zero. The versioned
+export DTO retains its existing `base_record_number` wire representation.

@@ -12,7 +12,7 @@ use super::{
 };
 
 use crate::{
-    Fid, FileAttributes, Filetime,
+    FileAttributes, Filetime, NtfsFileReference,
     raw_mft::layout::{
         attribute::{
             FileNameNamespace, NtfsAttribute, attr_header_flags, file_attr_flags,
@@ -75,7 +75,7 @@ pub struct AdsInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawMftLink {
     /// Parent directory file reference for this link.
-    pub parent_reference: Fid,
+    pub parent_reference: NtfsFileReference,
     /// Namespace of this specific `$FILE_NAME` attribute.
     pub namespace: FileNameNamespace,
     /// Leaf name carried by this link.
@@ -93,11 +93,12 @@ pub struct RawMftEntry {
     /// Record sequence number.
     pub sequence_number: u16,
     /// Full file reference for this record.
-    pub file_reference: Fid,
+    pub file_reference: NtfsFileReference,
     /// Parent directory file reference from `$FILE_NAME`.
-    pub parent_reference: Fid,
-    /// Base-record reference for extension records.
-    pub base_record_reference: u64,
+    pub parent_reference: NtfsFileReference,
+    /// Base-record number for extension records, excluding sequence bits.
+    /// Zero for base records and also for extensions of record zero.
+    pub base_record_number: u64,
     /// Number of hard links to the file.
     pub hard_link_count: u16,
     /// Raw FILE-record flags.
@@ -236,9 +237,9 @@ impl RawMftEntryBuilder {
                 },
                 record_number: record.number,
                 sequence_number: record.sequence_value(),
-                file_reference: Fid::new(record.file_reference()),
-                parent_reference: Fid::new(0),
-                base_record_reference: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
+                file_reference: NtfsFileReference::new(record.file_reference()),
+                parent_reference: NtfsFileReference::new(0),
+                base_record_number: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
                 hard_link_count: record.link_count(),
                 flags: record.header.flags,
                 is_used: record.is_used(),
@@ -294,7 +295,7 @@ impl RawMftEntryBuilder {
                 return;
             };
             let ns = FileNameNamespace::from_u8(header.namespace);
-            let parent_reference = Fid::new(header.parent_directory_reference);
+            let parent_reference = NtfsFileReference::new(header.parent_directory_reference);
             let should_replace = self.file_names.consider(
                 current_file_name(
                     self.entry.namespace,
@@ -671,9 +672,15 @@ mod tests {
         );
         assert_eq!(entry.alternate_data_streams[0].real_size, 3);
         assert!(entry.si_created.raw() != 0);
-        assert_eq!(entry.parent_reference, Fid::new((5u64 << 48) | 5));
+        assert_eq!(
+            entry.parent_reference,
+            NtfsFileReference::new((5u64 << 48) | 5)
+        );
         assert!(entry.links.is_empty());
-        assert_eq!(entry.parent_reference, Fid::new((5u64 << 48) | 5));
+        assert_eq!(
+            entry.parent_reference,
+            NtfsFileReference::new((5u64 << 48) | 5)
+        );
         assert_eq!(entry.file_name.to_string_lossy(), "hello.txt");
     }
 
@@ -683,9 +690,15 @@ mod tests {
         let rec = FileRecord::parse(42, None, &mut buf).expect("parse");
         let (entry, _) = RawMftEntry::from_record_with_attr_list(&rec, EntryBuildOptions::full());
         // file_reference = (seq << 48) | record_number; with seq=1, record=42
-        assert_eq!(entry.file_reference, Fid::new((1u64 << 48) | 42));
+        assert_eq!(
+            entry.file_reference,
+            NtfsFileReference::new((1u64 << 48) | 42)
+        );
         // parent_directory_reference was built as (5 << 48) | 5
-        assert_eq!(entry.parent_reference, Fid::new((5u64 << 48) | 5));
+        assert_eq!(
+            entry.parent_reference,
+            NtfsFileReference::new((5u64 << 48) | 5)
+        );
         assert_eq!(entry.file_name, OsString::from("hello.txt"));
         assert!(!entry.is_directory);
     }

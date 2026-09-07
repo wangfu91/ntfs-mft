@@ -106,7 +106,7 @@ fn fixture_public_iteration_and_random_access() -> MftResult<()> {
             Ok(r) => {
                 counts.0 += 1;
                 counts.2 += usize::from(r.entry.is_used);
-                counts.3 += usize::from(r.entry.base_record_reference != 0);
+                counts.3 += usize::from(r.entry.base_record_number != 0);
                 assert_eq!(r.stream_offset, r.entry.record_number * 1024);
             }
             Err(e) => {
@@ -500,7 +500,10 @@ fn selected_extension_file_name_uses_shared_builder() -> MftResult<()> {
     let row = stream.read_record(0)?;
     assert_eq!(row.entry.file_name, "name");
     assert_eq!(row.entry.fn_created.raw(), 123);
-    assert_eq!(row.entry.parent_reference, ntfs_mft::Fid::from_parts(5, 5));
+    assert_eq!(
+        row.entry.parent_reference,
+        ntfs_mft::NtfsFileReference::try_from_parts(5, 5).unwrap()
+    );
     assert_eq!(row.metadata.file_names, State::Present { complete: true });
     Ok(())
 }

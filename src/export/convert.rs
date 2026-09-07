@@ -138,7 +138,7 @@ impl ExportRecordV1 {
             record_number: entry.record_number.to_string(),
             sequence_number: entry.sequence_number,
             reference: entry.file_reference.into(),
-            base_record_number: entry.base_record_reference.to_string(),
+            base_record_number: entry.base_record_number.to_string(),
             base_sequence_number: None,
             stream_offset: None,
             hard_link_count: entry.hard_link_count,
@@ -311,5 +311,11 @@ impl ExportRecordV1 {
                 }
             })
             .collect();
+    }
+}
+
+impl From<crate::NtfsFileReference> for ExportReference {
+    fn from(reference: crate::NtfsFileReference) -> Self {
+        Fid::from(reference).into()
     }
 }

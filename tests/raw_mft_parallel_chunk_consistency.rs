@@ -8,7 +8,7 @@
 use std::num::{NonZeroU64, NonZeroUsize};
 
 use ntfs_mft::{
-    Fid,
+    NtfsFileReference,
     errors::MftError,
     raw_mft::{RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftScanOptions},
     volume::Volume,
@@ -118,11 +118,13 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
     Ok(())
 }
 
-fn entry_identity(entry: &RawMftBatchEntry) -> (u64, Fid, u64, Fid, bool) {
+fn entry_identity(
+    entry: &RawMftBatchEntry,
+) -> (u64, NtfsFileReference, u64, NtfsFileReference, bool) {
     (
         entry.record_number,
         entry.file_reference,
-        entry.base_record_reference,
+        entry.base_record_number,
         entry.parent_reference,
         entry.is_directory,
     )

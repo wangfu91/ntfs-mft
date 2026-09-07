@@ -1,8 +1,8 @@
 use super::*;
-use crate::Fid;
+use crate::NtfsFileReference;
 use std::{ffi::OsStr, path::PathBuf};
-fn fid(n: u64, seq: u16) -> Fid {
-    Fid::from_parts(n, seq)
+fn fid(n: u64, seq: u16) -> NtfsFileReference {
+    NtfsFileReference::try_from_parts(n, seq).unwrap()
 }
 fn index() -> MftPathIndex {
     let mut index = MftPathIndex::new();
