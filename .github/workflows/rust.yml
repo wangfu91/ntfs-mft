@@ -13,6 +13,8 @@ jobs:
       - run: cargo build
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test
+      - run: cargo test --features serde
+      - run: cargo test --features jsonl
       - run: cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
       - run: cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets --all-features -- -D warnings
       - run: cargo package
