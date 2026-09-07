@@ -1,5 +1,5 @@
 //! Export an extracted MFT or raw volume as JSONL. Diagnostics go to stderr.
-use ntfs_mft::export::{ExportContext, JsonlWriter};
+use ntfs_mft::export::JsonlWriter;
 use ntfs_mft::{
     MftError, MftResult, MftStream, MftStreamOptions, OfflineIssue, OfflineMftRecord,
     RawMftScanOptions,
@@ -59,13 +59,10 @@ fn run() -> MftResult<bool> {
                 .collect_data_run_summary(true)
                 .collect_dos_file_name_links(true)
                 .build();
-            let context = ExportContext {
-                entry_options: Some(options.entry()),
-            };
             for result in mft.try_iter_with_options(options)? {
                 match result {
                     Ok(entry) => {
-                        writer.write_entry(&entry, &context)?;
+                        writer.write_entry(&entry)?;
                         records += 1;
                     }
                     Err(error) => {

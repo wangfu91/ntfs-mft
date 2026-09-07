@@ -139,8 +139,8 @@ fn observed(collected: Option<bool>, nonempty: bool) -> FieldState {
 
 impl ExportRecordV1 {
     /// Export an existing scan result. This cannot recover discarded parser evidence.
-    pub fn from_entry(entry: &RawMftEntry, context: &ExportContext) -> Self {
-        let options = context.entry_options;
+    pub fn from_entry(entry: &RawMftEntry) -> Self {
+        let options = entry.collection_options;
         Self {
             source: "raw_scan".into(),
             record_number: entry.record_number.to_string(),
@@ -210,15 +210,15 @@ impl ExportRecordV1 {
                 file_names: observed(None, !entry.file_name.is_empty() || !entry.links.is_empty()),
                 unnamed_data: observed(Some(true), entry.has_unnamed_data),
                 alternate_data_streams: observed(
-                    options.map(|o| o.collect_alternate_data_streams()),
+                    Some(options.collect_alternate_data_streams()),
                     !entry.alternate_data_streams.is_empty(),
                 ),
                 reparse_point: FieldState::Unknown,
                 data_run_summary: observed(
-                    options.map(|o| o.collect_data_run_summary()),
+                    Some(options.collect_data_run_summary()),
                     entry.data_run_summary.is_some(),
                 ),
-                dos_links_collected: options.map(|o| o.collect_dos_file_name_links()),
+                dos_links_collected: Some(options.collect_dos_file_name_links()),
             },
             path: ExportPath::NotRequested,
             diagnostics: Vec::new(),
@@ -229,7 +229,7 @@ impl ExportRecordV1 {
 
     /// Preserve the merged offline API's explicit evidence and diagnostic structure.
     pub fn from_offline(record: &OfflineMftRecord) -> Self {
-        let mut dto = Self::from_entry(&record.entry, &ExportContext::default());
+        let mut dto = Self::from_entry(&record.entry);
         dto.source = "offline_stream".into();
         dto.stream_offset = Some(record.stream_offset.to_string());
         dto.apply_inspection(record.metadata, &record.diagnostics);
@@ -248,12 +248,7 @@ impl ExportRecordV1 {
     /// unverified extensions are complete.
     pub fn from_diagnostic(record: &crate::RawMftDiagnosticRecord) -> Self {
         let options = record.entry.collection_options;
-        let mut dto = Self::from_entry(
-            &record.entry,
-            &ExportContext {
-                entry_options: Some(options),
-            },
-        );
+        let mut dto = Self::from_entry(&record.entry);
         dto.apply_inspection(record.metadata, &record.diagnostics);
         dto.metadata.dos_links_collected = Some(options.collect_dos_file_name_links());
         if !options.collect_data_run_summary() {

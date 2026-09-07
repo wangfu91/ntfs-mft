@@ -1,4 +1,4 @@
-use super::{ExportContext, ExportError, ExportItem, ExportItemV1, ExportRecordV1};
+use super::{ExportError, ExportItem, ExportItemV1, ExportRecordV1};
 use crate::{MftError, MftResult, OfflineMftRecord, RawMftEntry};
 use std::io::{self, Write};
 
@@ -37,8 +37,8 @@ impl<W: Write> JsonlWriter<W> {
     }
 
     /// Convert and write an existing scan entry without retaining it.
-    pub fn write_entry(&mut self, entry: &RawMftEntry, context: &ExportContext) -> MftResult<()> {
-        self.write_record(ExportRecordV1::from_entry(entry, context))
+    pub fn write_entry(&mut self, entry: &RawMftEntry) -> MftResult<()> {
+        self.write_record(ExportRecordV1::from_entry(entry))
     }
 
     /// Convert and write a raw record with diagnostic metadata evidence.

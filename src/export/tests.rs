@@ -222,12 +222,10 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
         .collect_alternate_data_streams(false)
         .collect_data_run_summary(false)
         .build();
-    let raw = ExportRecordV1::from_entry(
-        &record.entry,
-        &ExportContext {
-            entry_options: Some(options.entry()),
-        },
-    );
+    record.entry.collection_options = options.entry();
+    record.entry.alternate_data_streams = Box::default();
+    record.entry.data_run_summary = None;
+    let raw = ExportRecordV1::from_entry(&record.entry);
     assert_eq!(
         raw.metadata.alternate_data_streams,
         FieldState::NotCollected
@@ -235,6 +233,24 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
     assert_eq!(raw.metadata.data_run_summary, FieldState::NotCollected);
     assert_eq!(raw.metadata.standard_information, FieldState::Unknown);
     assert!(raw.diagnostics.is_empty());
+    record.entry.collection_options = crate::RawMftEntryOptions::default();
+    let collected = ExportRecordV1::from_entry(&record.entry);
+    assert_eq!(
+        collected.metadata.alternate_data_streams,
+        FieldState::NotObserved
+    );
+    assert_eq!(collected.metadata.data_run_summary, FieldState::NotObserved);
+    #[cfg(feature = "jsonl")]
+    {
+        let mut bytes = Vec::new();
+        JsonlWriter::new(&mut bytes).write_entry(&record.entry)?;
+        let item: ExportItem = serde_json::from_slice(&bytes)?;
+        assert_eq!(
+            item,
+            ExportItem::V1(ExportItemV1::Record(Box::new(collected)))
+        );
+    }
+
     Ok(())
 }
 

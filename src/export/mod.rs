@@ -10,15 +10,7 @@ mod writer;
 #[cfg(feature = "jsonl")]
 pub use writer::JsonlWriter;
 
-use crate::RawMftEntryOptions;
 use serde::{Deserialize, Serialize};
-
-/// Evidence supplied alongside a raw scan entry. Omission never implies completeness.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ExportContext {
-    /// Actual materialization options used to produce the entry, if known.
-    pub entry_options: Option<RawMftEntryOptions>,
-}
 
 /// Presence and completeness of the supported metadata, not file contents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

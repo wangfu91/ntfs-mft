@@ -107,9 +107,9 @@ original name-byte fidelity or arbitrary file contents. Diagnostic codes are:
 `nested_attribute_list`, `split_data_stream`, and `extension_record_only`.
 Extension-read issues retain the full requested reference and nested error.
 
-`from_entry(&entry, &ExportContext)` and `write_entry` support existing serial,
-parallel, or caller-owned results. Supply the actual `RawMftEntryOptions` when
-known. `not_collected` means disabled, `not_observed` does not establish absence,
+`from_entry(&entry)` and `write_entry` support existing serial,
+parallel, or caller-owned results. Collection policy comes directly from
+`entry.collection_options`; there is no separate context or override. `not_collected` means disabled, `not_observed` does not establish absence,
 and `partial` indicates an observed value without completeness evidence. SI and
 reparse-attribute evidence remain unknown. No timestamp-zero or empty-vector
 heuristic establishes absence. Empty raw diagnostics do not establish success of
