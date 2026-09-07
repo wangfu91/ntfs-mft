@@ -51,15 +51,15 @@ impl Inspection {
         });
     }
 
-    pub fn metadata(&self) -> OfflineMetadata {
+    pub fn metadata(&self) -> MftMetadata {
         let state = |i| match (self.present[i], self.incomplete[i]) {
-            (true, incomplete) => OfflineFieldState::Present {
+            (true, incomplete) => MftFieldState::Present {
                 complete: !incomplete,
             },
-            (false, false) => OfflineFieldState::Absent,
-            (false, true) => OfflineFieldState::Unknown,
+            (false, false) => MftFieldState::Absent,
+            (false, true) => MftFieldState::Unknown,
         };
-        OfflineMetadata {
+        MftMetadata {
             standard_information: state(0),
             file_names: state(1),
             unnamed_data: state(2),

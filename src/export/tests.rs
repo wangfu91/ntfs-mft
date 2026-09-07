@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     AdsInfo, FileAttributes, Filetime, MftError, MftStream, MftStreamOptions,
-    OfflineDiagnostic, OfflineFieldState, OfflineIssue, RawMftLink, RawMftScanOptions,
+    OfflineDiagnostic, MftFieldState, OfflineIssue, RawMftLink, RawMftScanOptions,
 };
 use std::{ffi::OsString, io::Cursor};
 
@@ -184,9 +184,9 @@ fn lossless_names_links_and_streams() -> Result<(), Box<dyn std::error::Error>> 
 #[test]
 fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error::Error>> {
     let mut record = fixture()?;
-    record.metadata.standard_information = OfflineFieldState::Absent;
-    record.metadata.file_names = OfflineFieldState::Unknown;
-    record.metadata.alternate_data_streams = OfflineFieldState::Present { complete: false };
+    record.metadata.standard_information = MftFieldState::Absent;
+    record.metadata.file_names = MftFieldState::Unknown;
+    record.metadata.alternate_data_streams = MftFieldState::Present { complete: false };
     record.diagnostics.push(OfflineDiagnostic {
         record_number: 5,
         attribute_type: Some(0x20),

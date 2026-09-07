@@ -13,7 +13,15 @@ use crate::{
 
 use super::engine::{SerialParseState, next_record_output};
 
-/// Streaming iterator over MFT records.
+/// Streaming best-effort iterator over base records in a live volume scan.
+///
+/// Default selection starts at record 24 and excludes bitmap-unused slots.
+/// Sparse, non-FILE, malformed, and extension records are skipped. Scan I/O
+/// errors are returned as items; a caller that continues may visit later slots.
+/// Attribute-list enrichment errors are not returned. Successful collection
+/// does not establish complete metadata. Use [`RawMft::try_iter_diagnostic`]
+/// for skip counts and evidence, or [`crate::MftStream`] for per-slot outcomes.
+/// A live volume scan is not an atomic snapshot.
 pub struct RawMftIter<'a> {
     /// Parent raw-MFT reader.
     mft: &'a RawMft<'a>,
@@ -29,13 +37,13 @@ pub struct RawMftIter<'a> {
 }
 
 impl<'a> RawMft<'a> {
-    /// Begin iteration with default options.
+    /// Begin a live volume scan with default selection and the error policy of [`RawMftIter`].
     #[must_use = "iterators are lazy and do nothing unless consumed"]
     pub fn try_iter(&self) -> Result<RawMftIter<'_>, MftError> {
         self.try_iter_with_options(RawMftScanOptions::default())
     }
 
-    /// Begin iteration with custom options.
+    /// Begin a live volume scan with custom selection and the error policy of [`RawMftIter`].
     #[must_use = "iterators are lazy and do nothing unless consumed"]
     pub fn try_iter_with_options(
         &self,
@@ -119,7 +127,7 @@ impl Iterator for RawMftDiagnosticIter<'_> {
         let inner = &mut self.inner;
         let result = next_record_output(inner.mft, &mut inner.scan, &mut inner.reader, |record| {
             use crate::raw_mft::offline::inspect::{Inspection, inspect_view};
-            use crate::{OfflineFieldState, OfflineIssue};
+            use crate::{MftFieldState, OfflineIssue};
             let mut inspection = Inspection::default();
             let attrs = inspect_view(record, &mut inspection);
             if attrs.iter().any(|a| a.type_id() == 0x20) {
@@ -133,20 +141,20 @@ impl Iterator for RawMftDiagnosticIter<'_> {
             );
             let mut metadata = inspection.metadata();
             if !entry.collection_options.collect_alternate_data_streams() {
-                metadata.alternate_data_streams = OfflineFieldState::NotCollected;
+                metadata.alternate_data_streams = MftFieldState::NotCollected;
             }
             // A requested run summary may be unavailable; avoid claiming complete
             // unnamed metadata when its summary was deliberately not inspected.
             if !entry.collection_options.collect_data_run_summary()
-                && matches!(metadata.unnamed_data, OfflineFieldState::Present { .. })
+                && matches!(metadata.unnamed_data, MftFieldState::Present { .. })
                 && !entry.is_resident
             {
-                metadata.unnamed_data = OfflineFieldState::Present { complete: false };
+                metadata.unnamed_data = MftFieldState::Present { complete: false };
             }
             if !entry.collection_options.collect_dos_file_name_links()
-                && matches!(metadata.file_names, OfflineFieldState::Present { .. })
+                && matches!(metadata.file_names, MftFieldState::Present { .. })
             {
-                metadata.file_names = OfflineFieldState::Present { complete: false };
+                metadata.file_names = MftFieldState::Present { complete: false };
             }
             Ok(crate::RawMftDiagnosticRecord {
                 entry,

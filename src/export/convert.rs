@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    Filetime, MftError, NtfsFileReference, OfflineFieldState, OfflineIssue, OfflineMftRecord,
+    Filetime, MftError, NtfsFileReference, MftFieldState, OfflineIssue, OfflineMftRecord,
     RawMftEntry,
 };
 use chrono::{Datelike, TimeZone, Utc};
@@ -76,14 +76,14 @@ impl From<Filetime> for ExportTimestamp {
     }
 }
 
-impl From<OfflineFieldState> for FieldState {
-    fn from(value: OfflineFieldState) -> Self {
+impl From<MftFieldState> for FieldState {
+    fn from(value: MftFieldState) -> Self {
         match value {
-            OfflineFieldState::NotCollected => Self::NotCollected,
-            OfflineFieldState::Present { complete: true } => Self::Present,
-            OfflineFieldState::Present { complete: false } => Self::Partial,
-            OfflineFieldState::Absent => Self::Absent,
-            OfflineFieldState::Unknown => Self::Unknown,
+            MftFieldState::NotCollected => Self::NotCollected,
+            MftFieldState::Present { complete: true } => Self::Present,
+            MftFieldState::Present { complete: false } => Self::Partial,
+            MftFieldState::Absent => Self::Absent,
+            MftFieldState::Unknown => Self::Unknown,
         }
     }
 }
@@ -258,7 +258,7 @@ impl ExportRecordV1 {
     }
     fn apply_inspection(
         &mut self,
-        metadata: crate::OfflineMetadata,
+        metadata: crate::MftMetadata,
         diagnostics: &[crate::OfflineDiagnostic],
     ) {
         let m = metadata;
@@ -270,7 +270,7 @@ impl ExportRecordV1 {
             reparse_point: m.reparse_point.into(),
             data_run_summary: if self.data_runs.is_some() {
                 m.unnamed_data.into()
-            } else if m.unnamed_data == OfflineFieldState::Absent {
+            } else if m.unnamed_data == MftFieldState::Absent {
                 FieldState::Absent
             } else {
                 FieldState::NotObserved

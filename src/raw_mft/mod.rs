@@ -38,6 +38,8 @@ mod bootstrap;
 mod byte_reader;
 mod chunk_plan;
 mod diagnostics;
+mod metadata;
+pub use metadata::{MftFieldState, MftMetadata};
 pub use diagnostics::{RawMftDiagnosticRecord, RawMftScanDiagnostic, RawMftScanReport};
 // Enabled only by the non-publishable differential test package's build script.
 #[cfg(all(test, ntfs_mft_differential))]
@@ -77,10 +79,8 @@ pub use layout::attribute::FileNameNamespace;
 pub use layout::data_run::{DataRun as DataRunInfo, DataRunSummary};
 pub use offline::{
     MftStream, MftStreamIter, MftStreamOptions, OfflineDiagnostic, OfflineExternalPayload,
-    OfflineFieldState, OfflineIssue, OfflineMetadata, OfflineMftRecord,
+    OfflineIssue, OfflineMftRecord,
 };
-/// Shared metadata presence vocabulary for raw diagnostic and offline records.
-pub use offline::{OfflineFieldState as MftFieldState, OfflineMetadata as MftMetadata};
 pub use options::{
     RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions, RawMftLeanScanOptionsBuilder, RawMftReadBuffers,
     RawMftRecordRange, RawMftScanOptions, RawMftScanOptionsBuilder,

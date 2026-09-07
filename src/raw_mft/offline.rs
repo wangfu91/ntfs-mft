@@ -5,7 +5,7 @@ use super::{
     RawMftEntry,
     layout::{attribute::NtfsAttribute, record::FileRecord},
 };
-use crate::{MftError, MftResult};
+use crate::{MftError, MftResult, MftFieldState, MftMetadata};
 use inspect::{Inspection, RecordData, inspect_record, list_references};
 use std::{
     collections::BTreeMap,
@@ -49,40 +49,6 @@ impl MftStreamOptions {
     pub const fn record_size(self) -> usize {
         self.record_size
     }
-}
-
-/// Whether metadata was observed and whether its supported attributes were inspected.
-///
-/// This describes metadata, never the availability of arbitrary file contents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OfflineFieldState {
-    /// Collection was explicitly disabled for this metadata category.
-    NotCollected,
-    /// At least one valid attribute was observed. `complete` is false when more
-    /// metadata may be missing or a split stream could not be fully summarized.
-    Present {
-        /// All relevant supported metadata was inspected successfully.
-        complete: bool,
-    },
-    /// No such attribute exists in the fully inspected record set.
-    Absent,
-    /// No valid attribute was observed, but inspection was incomplete.
-    Unknown,
-}
-
-/// Completeness of the metadata categories represented by [`RawMftEntry`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OfflineMetadata {
-    /// `$STANDARD_INFORMATION` timestamps and flags.
-    pub standard_information: OfflineFieldState,
-    /// `$FILE_NAME` names, links, and timestamps.
-    pub file_names: OfflineFieldState,
-    /// Unnamed `$DATA` metadata, including its run summary.
-    pub unnamed_data: OfflineFieldState,
-    /// Named `$DATA` stream metadata.
-    pub alternate_data_streams: OfflineFieldState,
-    /// `$REPARSE_POINT` tag metadata (not a tag copied from `$FILE_NAME`).
-    pub reparse_point: OfflineFieldState,
 }
 
 /// An attribute whose payload is outside the extracted MFT stream.
@@ -147,7 +113,7 @@ pub struct OfflineMftRecord {
     /// Offset in the supplied stream, not an offset in the original volume.
     pub stream_offset: u64,
     /// Per-category presence and completeness.
-    pub metadata: OfflineMetadata,
+    pub metadata: MftMetadata,
     /// Recoverable parsing and extension-resolution limitations.
     pub diagnostics: Vec<OfflineDiagnostic>,
     /// Observed non-resident attribute payloads unavailable in an MFT-only stream.

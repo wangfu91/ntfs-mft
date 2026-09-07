@@ -389,11 +389,11 @@ fn diagnostic_scan_counts_skips_bounds_errors_and_retains_metadata_evidence() ->
     );
     assert_eq!(
         first.metadata.standard_information,
-        crate::OfflineFieldState::Absent
+        crate::MftFieldState::Absent
     );
     assert_eq!(
         first.metadata.alternate_data_streams,
-        crate::OfflineFieldState::NotCollected
+        crate::MftFieldState::NotCollected
     );
     assert!(!iter.report().reached_end);
     assert_eq!(
@@ -459,7 +459,7 @@ fn diagnostic_scan_marks_attribute_lists_unverified_and_stops_on_io() -> MftResu
     let first = iter.next().unwrap()?;
     assert_eq!(
         first.metadata.standard_information,
-        crate::OfflineFieldState::Unknown
+        crate::MftFieldState::Unknown
     );
     assert!(
         first
