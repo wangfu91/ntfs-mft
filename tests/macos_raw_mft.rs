@@ -14,8 +14,8 @@ use std::{
 
 #[test]
 fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
-    let Some(source) = std::env::var_os("USN_TEST_VOLUME") else {
-        eprintln!("SKIP: set USN_TEST_VOLUME to an NTFS mount root or /dev/diskNsM");
+    let Some(source) = std::env::var_os("NTFS_MFT_TEST_VOLUME") else {
+        eprintln!("SKIP: set NTFS_MFT_TEST_VOLUME to an NTFS mount root or /dev/diskNsM");
         return Ok(());
     };
     let source = Path::new(&source);

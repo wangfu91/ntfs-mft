@@ -24,10 +24,10 @@
 //! cargo flamegraph -o raw_mft_serial_read.svg --example raw_mft_serial_read_profile
 //! ```
 //!
-//! On Windows, set `USN_TEST_DRIVE` to choose the drive letter (default `C`).
-//! On Linux and macOS, set `USN_TEST_VOLUME` to an NTFS mount or device path. All benches
+//! On Windows, set `NTFS_MFT_TEST_DRIVE` to choose the drive letter (default `C`).
+//! On Linux and macOS, set `NTFS_MFT_TEST_VOLUME` to an NTFS mount or device path. All benches
 //! skip gracefully when the source isn't NTFS or cannot be read.
-//! Set `USN_RAW_MFT_SERIAL_MAX_RECORDS` to cap the per-run record count for
+//! Set `NTFS_MFT_SERIAL_MAX_RECORDS` to cap the per-run record count for
 //! faster optimization-loop iterations.
 
 use std::{num::NonZeroUsize, time::Duration};
@@ -130,7 +130,7 @@ fn run_with_buffer(
 
 /// Whether the optional buffer-size sweep group should run.
 fn buffer_sweep_enabled() -> bool {
-    std::env::var_os("USN_RAW_MFT_SERIAL_BUFFER_SWEEP").is_some()
+    std::env::var_os("NTFS_MFT_SERIAL_BUFFER_SWEEP").is_some()
 }
 
 /// Print the warm-up workload summary so each run records its shape.

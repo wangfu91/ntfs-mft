@@ -73,30 +73,30 @@ impl BenchConfig {
         Self {
             drive: pick_drive(),
             worker_count: parse_env_nonzero_usize(
-                "USN_RAW_MFT_BENCH_WORKERS",
+                "NTFS_MFT_BENCH_WORKERS",
                 default_worker_count(),
             ),
             main_buffer_bytes: parse_env_nonzero_usize(
-                "USN_RAW_MFT_BENCH_BUFFER_BYTES",
+                "NTFS_MFT_BENCH_BUFFER_BYTES",
                 nonzero_usize(DEFAULT_MAIN_BUFFER_BYTES),
             ),
             attr_buffer_bytes: parse_env_nonzero_usize(
-                "USN_RAW_MFT_BENCH_ATTR_BUFFER_BYTES",
+                "NTFS_MFT_BENCH_ATTR_BUFFER_BYTES",
                 nonzero_usize(DEFAULT_ATTR_BUFFER_BYTES),
             ),
             chunk_records: parse_env_nonzero_u64(
-                "USN_RAW_MFT_BENCH_CHUNK_RECORDS",
+                "NTFS_MFT_BENCH_CHUNK_RECORDS",
                 nonzero_u64(DEFAULT_CHUNK_RECORDS),
             ),
-            start_record: env::var("USN_RAW_MFT_BENCH_START_RECORD")
+            start_record: env::var("NTFS_MFT_BENCH_START_RECORD")
                 .ok()
                 .and_then(|value| value.parse::<u64>().ok())
                 .unwrap_or(FIRST_NORMAL_RECORD),
-            end_record: env::var("USN_RAW_MFT_BENCH_END_RECORD")
+            end_record: env::var("NTFS_MFT_BENCH_END_RECORD")
                 .ok()
                 .and_then(|value| value.parse::<u64>().ok()),
             scheduling: parse_bench_scheduling(
-                env::var("USN_RAW_MFT_BENCH_SCHEDULING").ok().as_deref(),
+                env::var("NTFS_MFT_BENCH_SCHEDULING").ok().as_deref(),
                 BenchScheduling::Dynamic,
             )
             .as_executor_mode(),
@@ -227,7 +227,7 @@ pub fn print_bench_config(config: &BenchConfig) {
     let source = config.drive.to_string();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let source =
-        env::var("USN_TEST_VOLUME").unwrap_or_else(|_| "<unset: set USN_TEST_VOLUME>".to_owned());
+        env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
     eprintln!(
         "raw_mft_ingest bench config: volume={} workers={} chunk_records={} main_buffer={} attr_buffer={} start_record={} end_record={}",
         source,
@@ -249,12 +249,12 @@ pub fn print_bench_config(config: &BenchConfig) {
 
 /// Parse a comma-separated worker sweep list from the environment.
 pub fn worker_sweep_values() -> Vec<NonZeroUsize> {
-    parse_nonzero_usize_list("USN_RAW_MFT_BENCH_WORKERS_LIST")
+    parse_nonzero_usize_list("NTFS_MFT_BENCH_WORKERS_LIST")
 }
 
 /// Parse a comma-separated scheduling sweep list from the environment.
 pub fn scheduling_sweep_values() -> Vec<BenchScheduling> {
-    env::var("USN_RAW_MFT_BENCH_SCHEDULING_LIST")
+    env::var("NTFS_MFT_BENCH_SCHEDULING_LIST")
         .ok()
         .map(|value| {
             value
@@ -268,17 +268,17 @@ pub fn scheduling_sweep_values() -> Vec<BenchScheduling> {
 
 /// Return whether the serial ingest benchmark should also be run.
 pub fn include_serial_bench() -> bool {
-    env::var_os("USN_RAW_MFT_BENCH_INCLUDE_SERIAL").is_some()
+    env::var_os("NTFS_MFT_BENCH_INCLUDE_SERIAL").is_some()
 }
 
 /// Return whether the benchmark harness should print an extra one-shot summary table.
 pub fn print_summary_enabled() -> bool {
-    env::var_os("USN_RAW_MFT_BENCH_PRINT_SUMMARY").is_some()
+    env::var_os("NTFS_MFT_BENCH_PRINT_SUMMARY").is_some()
 }
 
 /// Return how many one-shot runs should be used when printing the summary table.
 pub fn summary_run_count() -> NonZeroUsize {
-    parse_env_nonzero_usize("USN_RAW_MFT_BENCH_SUMMARY_RUNS", NonZeroUsize::MIN)
+    parse_env_nonzero_usize("NTFS_MFT_BENCH_SUMMARY_RUNS", NonZeroUsize::MIN)
 }
 
 /// Describe the workload shape produced by the current benchmark config.
@@ -361,10 +361,10 @@ pub fn open_volume(drive: char) -> Option<Volume> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let result = {
         let _ = drive;
-        let source = match env::var("USN_TEST_VOLUME") {
+        let source = match env::var("NTFS_MFT_TEST_VOLUME") {
             Ok(source) => source,
             Err(_) => {
-                eprintln!("skipping bench: set USN_TEST_VOLUME to an NTFS mount or device");
+                eprintln!("skipping bench: set NTFS_MFT_TEST_VOLUME to an NTFS mount or device");
                 return None;
             }
         };
@@ -604,9 +604,9 @@ fn link_namespace_is_visible(link: &RawMftLink, all_links: &[RawMftLink]) -> boo
 
 /// Pick the default drive from the environment, falling back to `C:`.
 fn pick_drive() -> char {
-    env::var("USN_RAW_MFT_BENCH_DRIVE")
+    env::var("NTFS_MFT_BENCH_DRIVE")
         .ok()
-        .or_else(|| env::var("USN_TEST_DRIVE").ok())
+        .or_else(|| env::var("NTFS_MFT_TEST_DRIVE").ok())
         .and_then(|value| value.chars().next())
         .map(|value| value.to_ascii_uppercase())
         .unwrap_or('C')

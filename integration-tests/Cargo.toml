@@ -4,6 +4,8 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
-[target.'cfg(windows)'.dev-dependencies]
+[dependencies]
 ntfs-mft = { path = ".." }
-usn-journal-rs = { path = "../../usn-journal-rs" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_Ioctl"] }

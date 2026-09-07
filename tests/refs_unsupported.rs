@@ -8,14 +8,14 @@
 //!   * D: does not exist or cannot be opened (no drive or no privileges).
 //!   * D: is actually NTFS (in which case the assertion is not exercised).
 //!
-//! The `USN_REFS_TEST_DRIVE` environment variable may override the drive
+//! The `NTFS_MFT_REFS_TEST_DRIVE` environment variable may override the drive
 //! letter (default: `D`).
 
 use ntfs_mft::{errors::MftError, raw_mft::RawMft, volume::Volume};
 
 #[test]
 fn refs_volume_returns_unsupported_filesystem() {
-    let drive = std::env::var("USN_REFS_TEST_DRIVE")
+    let drive = std::env::var("NTFS_MFT_REFS_TEST_DRIVE")
         .ok()
         .and_then(|s| s.chars().next())
         .map(|c| c.to_ascii_uppercase())

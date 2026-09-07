@@ -38,7 +38,7 @@ Use `benches/raw_mft.rs` for Criterion measurements and
 comparison used Criterion 0.8.2 with 20 samples, 3 seconds of warm-up, and
 30 seconds of measurement. Profiling used cargo-flamegraph with the
 blondie/ETW backend in an administrator process. Linux profiling used `perf`;
-select its source with `USN_TEST_VOLUME=<mount-or-device>`.
+select its source with `NTFS_MFT_TEST_VOLUME=<mount-or-device>`.
 
 Re-profile after changes to name/link ownership or enrichment. Separate timing
 runs from tracing, and control background I/O before attributing a gain to parsing.

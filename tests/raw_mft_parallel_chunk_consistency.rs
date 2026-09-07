@@ -15,7 +15,7 @@ use ntfs_mft::{
 };
 
 fn pick_drive() -> char {
-    std::env::var("USN_TEST_DRIVE")
+    std::env::var("NTFS_MFT_TEST_DRIVE")
         .ok()
         .and_then(|s| s.chars().next())
         .map(|c| c.to_ascii_uppercase())

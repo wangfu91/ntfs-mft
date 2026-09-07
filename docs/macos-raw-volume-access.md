@@ -34,10 +34,10 @@ cargo test --test macos_raw_mft --no-run
 For the test, use the exact executable filename printed by Cargo:
 
 ```sh
-sudo env USN_TEST_VOLUME=/Volumes/ESD-ISO ./target/debug/deps/macos_raw_mft-EXACT_HASH --nocapture
+sudo env NTFS_MFT_TEST_VOLUME=/Volumes/ESD-ISO ./target/debug/deps/macos_raw_mft-EXACT_HASH --nocapture
 ```
 
-Repeat with `USN_TEST_VOLUME=/dev/diskNsM` for direct-device access. The test checks
+Repeat with `NTFS_MFT_TEST_VOLUME=/dev/diskNsM` for direct-device access. The test checks
 serial scans, both parallel schedulers, root-record lookup, independent cursors,
 and stream ownership. It skips without a selected source and fails on errors
 when one is supplied. Use a stable volume: live scans are not atomic snapshots.

@@ -32,6 +32,7 @@ jobs:
           workspaces: |
             . -> target
             differential-tests -> target
+            integration-tests -> target
       - run: cargo build --locked
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked
@@ -39,6 +40,8 @@ jobs:
       - run: cargo test --locked --features jsonl
       - run: cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
       - run: cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --manifest-path integration-tests/Cargo.toml --locked
+      - run: cargo clippy --manifest-path integration-tests/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo package --locked
       - name: Show sccache statistics
         if: always()

@@ -69,7 +69,7 @@ mod integration_tests {
     use std::env;
 
     fn pick_drive() -> char {
-        env::var("USN_TEST_DRIVE")
+        env::var("NTFS_MFT_TEST_DRIVE")
             .ok()
             .and_then(|s| s.chars().next())
             .map(|c| c.to_ascii_uppercase())
@@ -123,9 +123,9 @@ mod integration_tests {
 
     #[test]
     fn raw_mft_refs_returns_unsupported() {
-        // D: is ReFS on the developer machine; skip unless USN_TEST_DRIVE
+        // D: is ReFS on the developer machine; skip unless NTFS_MFT_REFS_TEST_DRIVE
         // explicitly points at a non-NTFS drive or D: exists.
-        let drive = env::var("USN_REFS_TEST_DRIVE")
+        let drive = env::var("NTFS_MFT_REFS_TEST_DRIVE")
             .ok()
             .and_then(|s| s.chars().next())
             .unwrap_or('D')

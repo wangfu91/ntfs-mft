@@ -4,8 +4,8 @@ use ntfs_mft::{raw_mft::RawMft, volume::Volume};
 
 #[test]
 fn mounted_ntfs_raw_mft_smoke_test() {
-    let Some(source) = std::env::var_os("USN_TEST_VOLUME") else {
-        eprintln!("linux_raw_mft: skipping; set USN_TEST_VOLUME to an NTFS mount or device");
+    let Some(source) = std::env::var_os("NTFS_MFT_TEST_VOLUME") else {
+        eprintln!("linux_raw_mft: skipping; set NTFS_MFT_TEST_VOLUME to an NTFS mount or device");
         return;
     };
     let source = std::path::Path::new(&source);

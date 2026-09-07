@@ -19,20 +19,20 @@ Use 10 samples, 3 seconds of warm-up, and 10 seconds of measurement for the
 sweeps below. Results from different sweeps are separate runs.
 
 ```powershell
-$env:USN_RAW_MFT_BENCH_DRIVE='C'
-$env:USN_RAW_MFT_BENCH_SCHEDULING='dynamic'
-$env:USN_RAW_MFT_BENCH_CHUNK_RECORDS='2048'
-$env:USN_RAW_MFT_BENCH_BUFFER_BYTES='262144'
-$env:USN_RAW_MFT_BENCH_ATTR_BUFFER_BYTES='16384'
-$env:USN_RAW_MFT_BENCH_WORKERS_LIST='1,2,4,6,8,10,11,12'
+$env:NTFS_MFT_BENCH_DRIVE='C'
+$env:NTFS_MFT_BENCH_SCHEDULING='dynamic'
+$env:NTFS_MFT_BENCH_CHUNK_RECORDS='2048'
+$env:NTFS_MFT_BENCH_BUFFER_BYTES='262144'
+$env:NTFS_MFT_BENCH_ATTR_BUFFER_BYTES='16384'
+$env:NTFS_MFT_BENCH_WORKERS_LIST='1,2,4,6,8,10,11,12'
 cargo bench --bench raw_mft_ingest -- --sample-size 10 --warm-up-time 3 --measurement-time 10
 ```
 
-For scheduling sweeps, set `USN_RAW_MFT_BENCH_WORKERS=11` and
-`USN_RAW_MFT_BENCH_SCHEDULING_LIST=dynamic,contiguous`, clearing the worker list.
-`USN_RAW_MFT_BENCH_PRINT_SUMMARY=1` enables a summary;
-`USN_RAW_MFT_BENCH_SUMMARY_RUNS` controls its repetitions. Linux and macOS select
-sources with `USN_TEST_VOLUME=<mount-or-device>`.
+For scheduling sweeps, set `NTFS_MFT_BENCH_WORKERS=11` and
+`NTFS_MFT_BENCH_SCHEDULING_LIST=dynamic,contiguous`, clearing the worker list.
+`NTFS_MFT_BENCH_PRINT_SUMMARY=1` enables a summary;
+`NTFS_MFT_BENCH_SUMMARY_RUNS` controls its repetitions. Linux and macOS select
+sources with `NTFS_MFT_TEST_VOLUME=<mount-or-device>`.
 
 ## Windows sweeps
 

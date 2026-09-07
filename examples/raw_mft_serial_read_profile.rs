@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     println!(
         "  volume:          {}",
-        std::env::var("USN_TEST_VOLUME").unwrap_or_else(|_| "<default mount>".to_owned())
+        std::env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<default mount>".to_owned())
     );
     println!("  records:         {}", summary.records);
     println!("  errors:          {}", summary.errors);

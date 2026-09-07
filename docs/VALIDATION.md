@@ -29,6 +29,4 @@ and Linux library Clippy passed. The cross-repository harness ran but skipped
 all three live tests without elevation, so it did not establish live parity.
 Linux all-target checking lacked `x86_64-linux-gnu-gcc`.
 
-The original source revision and retained scope are recorded in
-[extraction provenance](EXTRACTION.md). No crates.io publication was part of
-these checks.
+No crates.io publication was part of these checks.

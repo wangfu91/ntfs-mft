@@ -5,14 +5,14 @@
 //! MFT enumeration edge cases.
 //!
 //! Each accessor must be equivalent to the explicit constructor it wraps.
-//! Tests run against the `USN_TEST_DRIVE` volume (default `C`) and skip
+//! Tests run against the `NTFS_MFT_TEST_DRIVE` volume (default `C`) and skip
 //! gracefully when the process is not elevated or the drive is unavailable.
 
 use ntfs_mft::{errors::MftError, raw_mft::RawMft, volume::Volume};
 
-/// Pick the NTFS test volume, honoring `USN_TEST_DRIVE` (default `C`).
+/// Pick the NTFS test volume, honoring `NTFS_MFT_TEST_DRIVE` (default `C`).
 fn pick_drive() -> char {
-    std::env::var("USN_TEST_DRIVE")
+    std::env::var("NTFS_MFT_TEST_DRIVE")
         .ok()
         .and_then(|s| s.chars().next())
         .map(|c| c.to_ascii_uppercase())

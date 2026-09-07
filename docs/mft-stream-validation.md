@@ -3,7 +3,7 @@
 ## Live Windows test
 
 I ran the `mft_byte_reader` integration test in an independent administrator
-PowerShell with `USN_TEST_DRIVE=C` on Windows 11. It passed with a 3,420,454,912-byte
+PowerShell with `NTFS_MFT_TEST_DRIVE=C` on Windows 11. It passed with a 3,420,454,912-byte
 MFT, 1,024-byte records, and 28 valid records among the first 32 slots.
 
 The test covered logical length, EOF, independent handles, ownership after
