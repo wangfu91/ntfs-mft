@@ -24,11 +24,18 @@ fn main() -> ExitCode {
 
 fn run() -> MftResult<bool> {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    let usage = || {
+        MftError::InvalidOptions(
+            "usage: raw_mft_export file <MFT-path> <record-size> | volume <drive/mount/device>",
+        )
+    };
+    let (command, arguments) = args.split_first().ok_or_else(usage)?;
+
     let mut writer = JsonlWriter::new(BufWriter::new(io::stdout().lock()));
     let mut errors = 0u64;
     let mut records = 0u64;
-    match args.as_slice() {
-        [mode, path, size] if mode == "file" => {
+    match (command.to_str(), arguments) {
+        (Some("file"), [path, size]) => {
             let size = size
                 .to_str()
                 .and_then(|s| s.parse::<usize>().ok())
@@ -37,7 +44,7 @@ fn run() -> MftResult<bool> {
             let mut stream = MftStream::from_path(path, options)?;
             (records, errors) = export_offline(stream.iter_records(), &mut writer)?;
         }
-        [mode, source] if mode == "volume" => {
+        (Some("volume"), [source]) => {
             let source = source
                 .to_str()
                 .ok_or(MftError::InvalidOptions("volume source must be Unicode"))?;
@@ -68,11 +75,7 @@ fn run() -> MftResult<bool> {
                 }
             }
         }
-        _ => {
-            return Err(MftError::InvalidOptions(
-                "usage: raw_mft_export file <MFT-path> <record-size> | volume <drive/mount/device>",
-            ));
-        }
+        _ => return Err(usage()),
     }
     writer.flush()?;
     eprintln!("Exported {records} records; {errors} failures (including terminal diagnostics).");
