@@ -82,9 +82,11 @@ name = "raw_mft_serial_read"
 # Benchmark-matching executables for flamegraphs and ETW captures.
 [[example]]
 name = "raw_mft_parallel_ingest_profile"
+path = "tools/profiling/raw_mft_parallel_ingest.rs"
 
 [[example]]
 name = "raw_mft_serial_read_profile"
+path = "tools/profiling/raw_mft_serial_read.rs"
 
 [[bench]]
 name = "raw_mft"
@@ -109,11 +111,11 @@ lto = "thin"
 debug = true
 
 [features]
-windows-examples = []
+windows-path-resolver-bench = []
 serde = ["dep:serde", "dep:chrono"]
 jsonl = ["serde", "dep:serde_json"]
 
 [[bench]]
 name = "path_resolver"
 harness = false
-required-features = ["windows-examples"]
+required-features = ["windows-path-resolver-bench"]

@@ -136,7 +136,7 @@ cargo run --example raw_mft_parallel_chunks -- C
 cargo run --example deletion_forensic -- C
 cargo bench --bench raw_mft
 cargo bench --bench raw_mft_ingest
-cargo bench --features windows-examples --bench path_resolver
+cargo bench --features windows-path-resolver-bench --bench path_resolver
 ```
 
 On Linux and macOS, pass an NTFS mount point or `/dev/...` device instead of `C`.

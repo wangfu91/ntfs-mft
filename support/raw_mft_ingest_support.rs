@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // The benchmark and profiler intentionally use different API subsets.
 
 //! Shared helpers for the raw-MFT parallel ingest benchmark and profiling example.
 
@@ -16,8 +16,11 @@ use ntfs_mft::{
         FileNameNamespace, RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftEntry,
         RawMftLink, RawMftParallelScheduling, RawMftScanOptions, RawMftWorkChunk,
     },
-    volume::Volume,
 };
+
+#[path = "benchmark_volume.rs"]
+mod benchmark_volume;
+pub use benchmark_volume::open_volume;
 use rustc_hash::FxHashMap;
 
 /// Default main read buffer size for the parallel ingest path.
@@ -62,6 +65,14 @@ impl BenchScheduling {
         match self {
             Self::Dynamic => RawMftParallelScheduling::Dynamic,
             Self::Contiguous => RawMftParallelScheduling::Contiguous,
+        }
+    }
+
+    /// Stable label used in benchmark identifiers and reports.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Dynamic => "dynamic",
+            Self::Contiguous => "contiguous",
         }
     }
 }
@@ -138,12 +149,12 @@ impl BenchConfig {
         config
     }
 
-    /// Human-readable scheduling label for benchmark output.
+    /// Scheduling mode selected for this workload.
     #[must_use]
-    pub fn scheduling_label(&self) -> &'static str {
+    pub fn scheduling(&self) -> BenchScheduling {
         match self.scheduling {
-            RawMftParallelScheduling::Dynamic => "dynamic",
-            RawMftParallelScheduling::Contiguous => "contiguous",
+            RawMftParallelScheduling::Dynamic => BenchScheduling::Dynamic,
+            RawMftParallelScheduling::Contiguous => BenchScheduling::Contiguous,
         }
     }
 }
@@ -236,7 +247,7 @@ pub fn print_bench_config(config: &BenchConfig) {
     );
     eprintln!(
         "raw_mft_ingest bench scheduling: {}",
-        config.scheduling_label()
+        config.scheduling().label()
     );
 }
 
@@ -346,39 +357,6 @@ pub fn run_serial_ingest(mft: &RawMft<'_>, config: &BenchConfig) -> Result<Bench
     }
 
     Ok(summarize_targets(&records, &children_by_parent))
-}
-
-/// Open the requested drive, or report why the bench should be skipped.
-pub fn open_volume(drive: char) -> Option<Volume> {
-    #[cfg(windows)]
-    let result = Volume::from_drive_letter(drive);
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let result = {
-        let _ = drive;
-        let source = match env::var("NTFS_MFT_TEST_VOLUME") {
-            Ok(source) => source,
-            Err(_) => {
-                eprintln!("skipping bench: set NTFS_MFT_TEST_VOLUME to an NTFS mount or device");
-                return None;
-            }
-        };
-        if source.starts_with("/dev/") {
-            Volume::from_device_path(source)
-        } else {
-            Volume::from_mount_point(source)
-        }
-    };
-    match result {
-        Ok(volume) => Some(volume),
-        Err(MftError::NotElevated) => {
-            eprintln!("skipping bench: requires admin privileges");
-            None
-        }
-        Err(error) => {
-            eprintln!("skipping bench: {error}");
-            None
-        }
-    }
 }
 
 /// Estimate the record-table size for the configured scan range.

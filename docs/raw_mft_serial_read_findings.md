@@ -38,7 +38,8 @@ own workload measurements before adoption.
 ## Reproduction
 
 Use `benches/raw_mft.rs` for Criterion measurements and
-`examples/raw_mft_serial_read_profile.rs` for matching profiles. The Windows
+`tools/profiling/raw_mft_serial_read.rs` (the `raw_mft_serial_read_profile`
+example target) for matching profiles. The Windows
 comparison used Criterion 0.8.2 with 20 samples, 3 seconds of warm-up, and
 30 seconds of measurement. Profiling used cargo-flamegraph with the
 blondie/ETW backend in an administrator process. Linux profiling used `perf`;

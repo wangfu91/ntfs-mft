@@ -7,7 +7,7 @@ use std::{error::Error, time::Instant};
 
 use ntfs_mft::raw_mft::RawMft;
 
-#[path = "../support/raw_mft_ingest_support.rs"]
+#[path = "../../support/raw_mft_ingest_support.rs"]
 mod ingest_support;
 
 use ingest_support::{bench_config, open_volume, print_bench_config, run_parallel_ingest};
@@ -16,9 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let config = bench_config().clone();
     print_bench_config(&config);
 
-    let Some(volume) = open_volume(config.drive) else {
-        return Ok(());
-    };
+    let volume = open_volume(config.drive)?;
     let raw_mft = RawMft::new(&volume)?;
 
     let start = Instant::now();
@@ -26,25 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let elapsed = start.elapsed();
 
     println!("raw_mft parallel ingest profile");
-    #[cfg(windows)]
-    println!("  drive:                    {}:", config.drive);
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    println!(
-        "  volume:                   {}",
-        std::env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<default mount>".to_owned())
-    );
-    println!("  worker_count:             {}", config.worker_count);
-    println!("  max_records_per_chunk:    {}", config.chunk_records);
-    println!("  main_buffer_bytes:        {}", config.main_buffer_bytes);
-    println!("  attr_buffer_bytes:        {}", config.attr_buffer_bytes);
-    println!("  start_record:             {}", config.start_record);
-    println!(
-        "  end_record:               {}",
-        config
-            .end_record
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "full".to_owned())
-    );
+
     println!("  records:                  {}", summary.records);
     println!("  parent_buckets:           {}", summary.parent_buckets);
     println!("  child_links:              {}", summary.child_links);

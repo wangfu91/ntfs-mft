@@ -11,7 +11,7 @@ use std::{error::Error, time::Instant};
 
 use ntfs_mft::raw_mft::RawMft;
 
-#[path = "../support/raw_mft_serial_support.rs"]
+#[path = "../../support/raw_mft_serial_support.rs"]
 mod serial_support;
 
 use serial_support::{SerialConfig, open_volume, print_serial_config, run_serial_read};
@@ -20,9 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let config = SerialConfig::from_env();
     print_serial_config(&config);
 
-    let Some(volume) = open_volume(config.drive) else {
-        return Ok(());
-    };
+    let volume = open_volume(config.drive)?;
     let mft = RawMft::new(&volume)?;
 
     // Warm the cache so the timed pass measures parser CPU, matching the bench.
@@ -33,13 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let elapsed = start.elapsed();
 
     println!("raw_mft serial read profile");
-    #[cfg(windows)]
-    println!("  drive:           {}:", config.drive);
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    println!(
-        "  volume:          {}",
-        std::env::var("NTFS_MFT_TEST_VOLUME").unwrap_or_else(|_| "<default mount>".to_owned())
-    );
+
     println!("  records:         {}", summary.records);
     println!("  errors:          {}", summary.errors);
     println!("  name_chars:      {}", summary.name_chars);

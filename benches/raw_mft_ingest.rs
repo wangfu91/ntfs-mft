@@ -54,8 +54,12 @@ struct SummaryCase {
 fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
     let config = bench_config().clone();
     print_bench_config(&config);
-    let Some(volume) = open_volume(config.drive) else {
-        return;
+    let volume = match open_volume(config.drive) {
+        Ok(volume) => volume,
+        Err(error) => {
+            eprintln!("skipping bench: {error}");
+            return;
+        }
     };
     let mft = match RawMft::new(&volume) {
         Ok(mft) => mft,
@@ -128,7 +132,7 @@ fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
         let mut scheduling_group = c.benchmark_group("raw_mft_ingest_scheduling");
         for scheduling in scheduling_sweep {
             let sweep_config = config.with_scheduling(scheduling);
-            let bench_id = BenchmarkId::new("parallel_ingest", scheduling_label(scheduling));
+            let bench_id = BenchmarkId::new("parallel_ingest", scheduling.label());
             scheduling_group.bench_with_input(bench_id, &sweep_config, |b, sweep_config| {
                 b.iter(|| {
                     let summary = match run_parallel_ingest(&mft, sweep_config) {
@@ -143,13 +147,6 @@ fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
             });
         }
         scheduling_group.finish();
-    }
-}
-
-fn scheduling_label(scheduling: BenchScheduling) -> &'static str {
-    match scheduling {
-        BenchScheduling::Dynamic => "dynamic",
-        BenchScheduling::Contiguous => "contiguous",
     }
 }
 
@@ -176,7 +173,7 @@ fn maybe_print_summary_table(mft: &RawMft<'_>, config: &ingest_support::BenchCon
                 eprintln!(
                     "| {} | {} | {} |",
                     case.workers,
-                    scheduling_label(case.scheduling),
+                    case.scheduling.label(),
                     format_duration(elapsed),
                 );
             }
@@ -184,7 +181,7 @@ fn maybe_print_summary_table(mft: &RawMft<'_>, config: &ingest_support::BenchCon
                 eprintln!(
                     "| {} | {} | error: {} |",
                     case.workers,
-                    scheduling_label(case.scheduling),
+                    case.scheduling.label(),
                     error,
                 );
             }
@@ -198,10 +195,7 @@ fn summary_cases(config: &ingest_support::BenchConfig) -> Vec<SummaryCase> {
         &mut cases,
         SummaryCase {
             workers: config.worker_count,
-            scheduling: match config.scheduling_label() {
-                "contiguous" => BenchScheduling::Contiguous,
-                _ => BenchScheduling::Dynamic,
-            },
+            scheduling: config.scheduling(),
         },
     );
 
@@ -210,10 +204,7 @@ fn summary_cases(config: &ingest_support::BenchConfig) -> Vec<SummaryCase> {
             &mut cases,
             SummaryCase {
                 workers: worker_count,
-                scheduling: match config.scheduling_label() {
-                    "contiguous" => BenchScheduling::Contiguous,
-                    _ => BenchScheduling::Dynamic,
-                },
+                scheduling: config.scheduling(),
             },
         );
     }

@@ -30,10 +30,10 @@
 //! Set `NTFS_MFT_SERIAL_MAX_RECORDS` to cap the per-run record count for
 //! faster optimization-loop iterations.
 
-use std::{num::NonZeroUsize, time::Duration};
+use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use ntfs_mft::raw_mft::{RawMft, RawMftScanOptions};
+use ntfs_mft::raw_mft::RawMft;
 
 #[path = "../support/raw_mft_serial_support.rs"]
 mod serial_support;
@@ -49,8 +49,12 @@ fn raw_mft_serial_benchmarks(c: &mut Criterion) {
     let config = SerialConfig::from_env();
     print_serial_config(&config);
 
-    let Some(volume) = open_volume(config.drive) else {
-        return;
+    let volume = match open_volume(config.drive) {
+        Ok(volume) => volume,
+        Err(error) => {
+            eprintln!("skipping bench: {error}");
+            return;
+        }
     };
     let mft = match RawMft::new(&volume) {
         Ok(mft) => mft,
@@ -86,46 +90,14 @@ fn raw_mft_serial_benchmarks(c: &mut Criterion) {
             let bench_id = BenchmarkId::new("read", bytes);
             sweep.bench_with_input(bench_id, &buffer_bytes, |b, &buffer_bytes| {
                 b.iter(|| {
-                    let summary = run_with_buffer(&mft, &config, buffer_bytes).unwrap_or_default();
+                    let sweep_config = config.with_buffer_bytes(buffer_bytes);
+                    let summary = run_serial_read(&mft, &sweep_config).unwrap_or_default();
                     std::hint::black_box(summary)
                 });
             });
         }
         sweep.finish();
     }
-}
-
-/// Run the serial read with an overridden main-buffer size.
-fn run_with_buffer(
-    mft: &RawMft<'_>,
-    config: &SerialConfig,
-    buffer_bytes: NonZeroUsize,
-) -> Result<SerialSummary, ntfs_mft::errors::MftError> {
-    let options: RawMftScanOptions = RawMftScanOptions::builder()
-        .buffer_bytes(buffer_bytes)
-        .include_unused_records(config.include_unused_records)
-        .collect_alternate_data_streams(config.collect_alternate_data_streams)
-        .collect_data_run_summary(config.collect_data_run_summary)
-        .collect_dos_file_name_links(config.collect_dos_file_name_links)
-        .start_record(config.start_record)
-        .end_record(config.end_record)
-        .build();
-
-    let mut summary = SerialSummary::default();
-    let limit = config.max_records.unwrap_or(usize::MAX);
-    for item in mft.try_iter_with_options(options)?.take(limit) {
-        match item {
-            Ok(entry) => {
-                summary.records += 1;
-                summary.name_chars += entry.file_name.as_utf16().len() as u64;
-                summary.links += entry.links.len() as u64;
-                summary.ads += entry.alternate_data_streams.len() as u64;
-                summary.size_checksum ^= entry.real_size ^ entry.allocated_size;
-            }
-            Err(_) => summary.errors += 1,
-        }
-    }
-    Ok(summary)
 }
 
 /// Whether the optional buffer-size sweep group should run.

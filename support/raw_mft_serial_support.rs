@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code)] // The benchmark and profiler intentionally use different API subsets.
 
 //! Shared helpers for the serial raw-`$MFT` read benchmark and its
 //! exact-match profiling example.
@@ -13,8 +13,11 @@ use std::{env, num::NonZeroUsize};
 use ntfs_mft::{
     errors::MftError,
     raw_mft::{RawMft, RawMftScanOptions},
-    volume::Volume,
 };
+
+#[path = "benchmark_volume.rs"]
+mod benchmark_volume;
+pub use benchmark_volume::open_volume;
 
 /// First normal FILE record number in the NTFS `$MFT`.
 const FIRST_NORMAL_RECORD: u64 = 24;
@@ -38,6 +41,8 @@ pub struct SerialConfig {
     pub collect_dos_file_name_links: bool,
     /// Whether to include records the `$MFT` `$BITMAP` marks unused.
     pub include_unused_records: bool,
+    /// Optional main read-buffer override used by buffer-size sweeps.
+    buffer_bytes: Option<NonZeroUsize>,
 }
 
 impl SerialConfig {
@@ -53,19 +58,32 @@ impl SerialConfig {
             collect_data_run_summary: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_RUNS", true),
             collect_dos_file_name_links: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_DOS", true),
             include_unused_records: parse_env_bool("NTFS_MFT_SERIAL_INCLUDE_UNUSED", false),
+            buffer_bytes: None,
         }
+    }
+
+    /// Return a copy with a different main read-buffer size.
+    #[must_use]
+    pub fn with_buffer_bytes(&self, buffer_bytes: NonZeroUsize) -> Self {
+        let mut config = self.clone();
+        config.buffer_bytes = Some(buffer_bytes);
+        config
     }
 
     /// Build the scan options that drive [`RawMft::try_iter_with_options`].
     pub fn scan_options(&self) -> RawMftScanOptions {
-        RawMftScanOptions::builder()
+        let builder = RawMftScanOptions::builder()
             .include_unused_records(self.include_unused_records)
             .collect_alternate_data_streams(self.collect_alternate_data_streams)
             .collect_data_run_summary(self.collect_data_run_summary)
             .collect_dos_file_name_links(self.collect_dos_file_name_links)
             .start_record(self.start_record)
-            .end_record(self.end_record)
-            .build()
+            .end_record(self.end_record);
+        let builder = match self.buffer_bytes {
+            Some(buffer_bytes) => builder.buffer_bytes(buffer_bytes),
+            None => builder,
+        };
+        builder.build()
     }
 }
 
@@ -96,39 +114,6 @@ pub fn pick_drive() -> char {
         .and_then(|value| value.chars().next())
         .map(|c| c.to_ascii_uppercase())
         .unwrap_or('C')
-}
-
-/// Open the requested drive, or report why the bench should be skipped.
-pub fn open_volume(drive: char) -> Option<Volume> {
-    #[cfg(windows)]
-    let result = Volume::from_drive_letter(drive);
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let result = {
-        let _ = drive;
-        let source = match env::var("NTFS_MFT_TEST_VOLUME") {
-            Ok(source) => source,
-            Err(_) => {
-                eprintln!("skipping bench: set NTFS_MFT_TEST_VOLUME to an NTFS mount or device");
-                return None;
-            }
-        };
-        if source.starts_with("/dev/") {
-            Volume::from_device_path(source)
-        } else {
-            Volume::from_mount_point(source)
-        }
-    };
-    match result {
-        Ok(volume) => Some(volume),
-        Err(MftError::NotElevated) => {
-            eprintln!("skipping bench: requires admin privileges");
-            None
-        }
-        Err(error) => {
-            eprintln!("skipping bench: {error}");
-            None
-        }
-    }
 }
 
 /// Print the serial read configuration to stderr.
