@@ -10,7 +10,6 @@ fn options_defaults_are_sensible() {
     assert_eq!(o.buffers().attr(), DEFAULT_ATTR_BUFFER_BYTES);
     assert!(!o.include_unused_records());
     assert!(o.entry().collect_alternate_data_streams());
-    assert!(o.entry().collect_data_run_summary());
     assert!(o.entry().collect_dos_file_name_links());
     assert_eq!(
         o.range().start_record(),
@@ -54,7 +53,6 @@ fn raw_mft_entry_display_is_compact() -> Result<(), crate::FileReferenceError> {
         is_sparse: false,
         is_compressed: false,
         is_encrypted: false,
-        data_run_summary: None,
         alternate_data_streams: Box::default(),
         links: Box::default(),
     };

@@ -32,7 +32,6 @@ use ntfs_mft::{RawMftEntryOptions, RawMftScanOptions};
 
 let metadata = RawMftEntryOptions::builder()
     .collect_alternate_data_streams(false)
-    .collect_data_run_summary(false)
     .build();
 let options = RawMftScanOptions::builder()
     .range(0..1000)
@@ -48,9 +47,9 @@ of rich parallel scans. `RawMftChunkPlanOptions` controls partition size only.
 Explicit chunks are clipped to selection and volume bounds; overlapping chunks
 are rejected. Results are delivered in supplied chunk order.
 
-Rich entries include timestamps, attributes, ADS, and data-run summaries,
-subject to `collection_options`. Lean entries keep names, references, sizes,
-links, and basic flags; their options expose no ADS or run-summary toggles.
+Rich entries include timestamps, attributes, and ADS, subject to
+`collection_options`. Lean entries keep names, references, sizes,
+links, and basic flags; their options expose no ADS toggle.
 `options.into_lean()` explicitly retains selection/buffers/DOS-link policy and
 discards the rich-only metadata choices.
 

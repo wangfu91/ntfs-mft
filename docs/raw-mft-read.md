@@ -80,7 +80,7 @@ Use [MftStream](offline-mft.md) to inspect every physical slot and its errors.
 The entry builder collects standard information, names, data streams, reparse
 information, and attribute-list references. Name selection prefers
 `Win32AndDos`, then `Win32`, `Posix`, and `Dos`. Collection options control
-shadowed DOS aliases, alternate streams, and data-run summaries. Unnamed DATA
+shadowed DOS aliases and alternate streams. Unnamed DATA
 supplies primary size/storage metadata; named DATA supplies alternate streams.
 
 Overflow attributes live in extension records referenced by `$ATTRIBUTE_LIST`.
@@ -200,7 +200,7 @@ The [module map](../src/raw_mft/README.md) locates the implementation.
 
 Choose `.parallel().rich()` for the full `RawMftEntry` shape used by serial
 iteration, or `.parallel().lean()` for `RawMftBatchEntry`. Rich scans honor ADS,
-data-run-summary, and DOS-link collection settings. Lean scans accept
+and DOS-link collection settings. Lean scans accept
 `RawMftLeanScanOptions`, which exposes only selection, buffers, and DOS-link
 collection. Both entry shapes carry `is_used` from the FILE header.
 

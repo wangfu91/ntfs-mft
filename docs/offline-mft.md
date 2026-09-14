@@ -123,8 +123,8 @@ the base list is checked against the base's own attribute, not read recursively.
 Non-resident lists cannot be resolved without the original volume.
 
 Split data streams are only partially represented: the first segment supplies
-sizes and its run summary, continuation segments do not overwrite them, and
-`SplitDataStream` marks data completeness false. Continuation runlists are not aggregated.
+sizes, continuation segments do not overwrite them, and `SplitDataStream`
+marks data completeness false. Continuation runlists are not aggregated.
 
 ## Tests and downstream integration
 

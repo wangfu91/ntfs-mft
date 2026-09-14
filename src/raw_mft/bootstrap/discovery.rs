@@ -279,7 +279,7 @@ fn materialize_attribute_list(
             runs_data,
             data_size,
         } => {
-            let (runs, _) = decode_runs(&runs_data)?;
+            let runs = decode_runs(&runs_data)?;
             read_nonresident(reader, &runs, cluster_size, data_size)
         }
     }
@@ -380,7 +380,7 @@ fn decode_nonresident_runs(attr: &NtfsAttribute<'_>, label: &'static str) -> Opt
     }
 
     match decode_runs(&attr_data[runs_offset..]) {
-        Ok((runs, _)) => Some(runs),
+        Ok(runs) => Some(runs),
         Err(error) => {
             warn!("{label} decode_runs failed: {error}");
             None

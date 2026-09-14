@@ -193,10 +193,6 @@
           "$ref": "#/$defs/FieldState",
           "description": "Named data evidence."
         },
-        "data_run_summary": {
-          "$ref": "#/$defs/FieldState",
-          "description": "Run summary evidence."
-        },
         "dos_links_collected": {
           "description": "Whether DOS aliases were requested; null means unknown.",
           "type": [
@@ -226,8 +222,7 @@
         "file_names",
         "unnamed_data",
         "alternate_data_streams",
-        "reparse_point",
-        "data_run_summary"
+        "reparse_point"
       ],
       "type": "object"
     },
@@ -344,17 +339,6 @@
         "compressed": {
           "description": "Scanner's unnamed-stream compressed indicator.",
           "type": "boolean"
-        },
-        "data_runs": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ExportRuns"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Summary when available; see metadata for completeness."
         },
         "diagnostics": {
           "description": "Parsing diagnostics; empty entry diagnostics do not prove completeness.",
@@ -543,27 +527,6 @@
         "raw",
         "record_number",
         "sequence_number"
-      ],
-      "type": "object"
-    },
-    "ExportRuns": {
-      "description": "Run summary of the represented unnamed stream segment.",
-      "properties": {
-        "run_count": {
-          "description": "Number of runs.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "total_clusters": {
-          "description": "Logical clusters, as a decimal string.",
-          "pattern": "^(0|[1-9][0-9]*)$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "run_count",
-        "total_clusters"
       ],
       "type": "object"
     },

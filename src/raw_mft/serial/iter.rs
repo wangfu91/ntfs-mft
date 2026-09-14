@@ -143,14 +143,6 @@ impl Iterator for RawMftDiagnosticIter<'_> {
             if !entry.collection_options.collect_alternate_data_streams() {
                 metadata.alternate_data_streams = MftFieldState::NotCollected;
             }
-            // A requested run summary may be unavailable; avoid claiming complete
-            // unnamed metadata when its summary was deliberately not inspected.
-            if !entry.collection_options.collect_data_run_summary()
-                && matches!(metadata.unnamed_data, MftFieldState::Present { .. })
-                && !entry.is_resident
-            {
-                metadata.unnamed_data = MftFieldState::Present { complete: false };
-            }
             if !entry.collection_options.collect_dos_file_name_links()
                 && matches!(metadata.file_names, MftFieldState::Present { .. })
             {

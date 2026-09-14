@@ -12,7 +12,7 @@ use crate::errors::MftError;
 
 /// One decoded data run.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum DataRun {
+pub(crate) enum DataRun {
     /// Allocated clusters starting at `lcn`.
     Data {
         /// Starting logical cluster number on disk.
@@ -25,15 +25,6 @@ pub enum DataRun {
         /// Number of logical clusters represented by the hole.
         clusters: u64,
     },
-}
-
-/// Aggregated information about an attribute's runs.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct DataRunSummary {
-    /// Number of runs present in the attribute.
-    pub run_count: u32,
-    /// Total number of logical clusters covered by all runs.
-    pub total_clusters: u64,
 }
 
 /// Maximum byte width of an NTFS run length or offset field.
@@ -58,30 +49,22 @@ fn read_var_i64_le(bytes: &[u8]) -> i64 {
 
 /// Decode a sequence of data-run records starting at `runs`.
 ///
-/// Returns the sequence of runs alongside a [`DataRunSummary`].
-pub(crate) fn decode_runs(runs: &[u8]) -> Result<(Vec<DataRun>, DataRunSummary), MftError> {
+/// Returns the decoded sequence of runs.
+pub(crate) fn decode_runs(runs: &[u8]) -> Result<Vec<DataRun>, MftError> {
     let mut out: Vec<DataRun> = Vec::new();
-    let summary = visit_runs(runs, |run| {
+    visit_runs(runs, |run| {
         out.push(run);
         Ok(())
     })?;
 
-    Ok((out, summary))
+    Ok(out)
 }
 
-/// Decode runs but only produce the summary, without allocating a `Vec`
-/// for each individual run. Used in the hot path of `RawMftEntry`
-/// construction where the per-run details aren't needed.
-pub(crate) fn summarize_runs(runs: &[u8]) -> Result<DataRunSummary, MftError> {
-    visit_runs(runs, |_| Ok(()))
-}
-
-/// Visit each decoded run in sequence and accumulate a summary.
-fn visit_runs<F>(runs: &[u8], mut visitor: F) -> Result<DataRunSummary, MftError>
+/// Visit each decoded run in sequence.
+fn visit_runs<F>(runs: &[u8], mut visitor: F) -> Result<(), MftError>
 where
     F: FnMut(DataRun) -> Result<(), MftError>,
 {
-    let mut summary = DataRunSummary::default();
     let mut prev_lcn: i128 = 0;
     let mut cursor = 0usize;
 
@@ -135,12 +118,9 @@ where
             None => DataRun::Sparse { clusters },
         };
         visitor(run)?;
-
-        summary.run_count = summary.run_count.saturating_add(1);
-        summary.total_clusters = summary.total_clusters.saturating_add(clusters);
     }
 
-    Ok(summary)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -152,7 +132,7 @@ mod tests {
         // header 0x21: 1 byte length, 2 byte offset
         // length = 0x05, offset = 0x0234 -> LCN 564
         let runs = [0x21u8, 0x05, 0x34, 0x02, 0x00];
-        let (rs, sum) = decode_runs(&runs).unwrap();
+        let rs = decode_runs(&runs).unwrap();
         assert_eq!(
             rs,
             vec![DataRun::Data {
@@ -160,8 +140,6 @@ mod tests {
                 clusters: 5
             }]
         );
-        assert_eq!(sum.run_count, 1);
-        assert_eq!(sum.total_clusters, 5);
     }
 
     #[test]
@@ -169,7 +147,7 @@ mod tests {
         // first run: 0x21 len=5 off=10 -> lcn 10
         // second run: 0x21 len=3 off=-3 -> lcn 7
         let runs = [0x21u8, 0x05, 0x0A, 0x00, 0x21, 0x03, 0xFD, 0xFF, 0x00];
-        let (rs, _sum) = decode_runs(&runs).unwrap();
+        let rs = decode_runs(&runs).unwrap();
         assert_eq!(
             rs,
             vec![
@@ -189,9 +167,8 @@ mod tests {
     fn decodes_sparse_run() {
         // header 0x01: 1 byte length, 0 byte offset -> sparse hole
         let runs = [0x01u8, 0x07, 0x00];
-        let (rs, sum) = decode_runs(&runs).unwrap();
+        let rs = decode_runs(&runs).unwrap();
         assert_eq!(rs, vec![DataRun::Sparse { clusters: 7 }]);
-        assert_eq!(sum.total_clusters, 7);
     }
 
     #[test]
@@ -214,43 +191,9 @@ mod tests {
     }
 
     #[test]
-    fn summarize_matches_decode_for_valid_runs() {
-        let cases: &[&[u8]] = &[
-            &[0x21, 0x05, 0x34, 0x02, 0x00],
-            &[0x21, 0x05, 0x0A, 0x00, 0x21, 0x03, 0xFD, 0xFF, 0x00],
-            &[0x01, 0x07, 0x00],
-        ];
-
-        for runs in cases {
-            let (_, decoded_summary) = decode_runs(runs).unwrap();
-            let summary_only = summarize_runs(runs).unwrap();
-            assert_eq!(summary_only, decoded_summary);
-        }
-    }
-
-    #[test]
-    fn summarize_matches_decode_errors() {
-        let cases: &[&[u8]] = &[
-            &[0x21, 0x05],
-            &[0x11, 0x00, 0x00, 0x00],
-            &[0x11, 0x01, 0xFB, 0x00],
-            &[0x10, 0x00],
-            &[0x19, 0x01, 0x00],
-        ];
-
-        for runs in cases {
-            let decode_error = decode_runs(runs).unwrap_err().to_string();
-            let summary_error = summarize_runs(runs).unwrap_err().to_string();
-            assert_eq!(summary_error, decode_error);
-        }
-    }
-
-    #[test]
     fn lone_terminator_decodes_to_no_runs() {
-        let (runs, summary) = decode_runs(&[0x00]).expect("terminator only is valid");
+        let runs = decode_runs(&[0x00]).expect("terminator only is valid");
         assert!(runs.is_empty());
-        assert_eq!(summary, DataRunSummary::default());
-        assert_eq!(summarize_runs(&[0x00]).unwrap(), summary);
     }
 
     #[test]
@@ -267,7 +210,7 @@ mod tests {
         // header 0x12: 2-byte length, 1-byte offset.
         // length = 0x0100 (256 clusters), offset = 0x05 -> LCN 5.
         let runs = [0x12u8, 0x00, 0x01, 0x05, 0x00];
-        let (decoded, summary) = decode_runs(&runs).expect("valid multi-byte length run");
+        let decoded = decode_runs(&runs).expect("valid multi-byte length run");
         assert_eq!(
             decoded,
             vec![DataRun::Data {
@@ -275,7 +218,6 @@ mod tests {
                 clusters: 256
             }]
         );
-        assert_eq!(summary.total_clusters, 256);
     }
 
     #[test]
@@ -285,7 +227,7 @@ mod tests {
         let runs = [
             0x81u8, 0x02, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
-        let (decoded, _) = decode_runs(&runs).expect("valid 8-byte offset run");
+        let decoded = decode_runs(&runs).expect("valid 8-byte offset run");
         assert_eq!(
             decoded,
             vec![DataRun::Data {
@@ -302,7 +244,7 @@ mod tests {
         let runs = [
             0x31u8, 0x02, 0x00, 0x00, 0x10, 0x31, 0x01, 0xFF, 0xFF, 0xFF, 0x00,
         ];
-        let (decoded, summary) = decode_runs(&runs).expect("valid signed offset chain");
+        let decoded = decode_runs(&runs).expect("valid signed offset chain");
         assert_eq!(
             decoded,
             vec![
@@ -316,8 +258,6 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(summary.run_count, 2);
-        assert_eq!(summary.total_clusters, 3);
     }
 
     #[test]
@@ -326,7 +266,7 @@ mod tests {
         // following data run's delta is relative to LCN 0.
         // 0x01 len=4 -> sparse(4); 0x21 len=2 off=0x000A -> Data{lcn:10}.
         let runs = [0x01u8, 0x04, 0x21, 0x02, 0x0A, 0x00, 0x00];
-        let (decoded, summary) = decode_runs(&runs).expect("valid sparse-then-data chain");
+        let decoded = decode_runs(&runs).expect("valid sparse-then-data chain");
         assert_eq!(
             decoded,
             vec![
@@ -337,6 +277,5 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(summary.total_clusters, 6);
     }
 }

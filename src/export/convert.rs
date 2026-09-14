@@ -190,10 +190,6 @@ impl ExportRecordV1 {
             sparse: entry.is_sparse,
             compressed: entry.is_compressed,
             encrypted: entry.is_encrypted,
-            data_runs: entry.data_run_summary.as_ref().map(|runs| ExportRuns {
-                run_count: runs.run_count,
-                total_clusters: runs.total_clusters.to_string(),
-            }),
             alternate_streams: entry
                 .alternate_data_streams
                 .iter()
@@ -213,10 +209,6 @@ impl ExportRecordV1 {
                     !entry.alternate_data_streams.is_empty(),
                 ),
                 reparse_point: FieldState::Unknown,
-                data_run_summary: observed(
-                    Some(options.collect_data_run_summary()),
-                    entry.data_run_summary.is_some(),
-                ),
                 dos_links_collected: Some(options.collect_dos_file_name_links()),
             },
             path: ExportPath::NotRequested,
@@ -251,9 +243,6 @@ impl ExportRecordV1 {
         dto.source = "volume_scan".into();
         dto.apply_inspection(record.metadata, &record.diagnostics);
         dto.metadata.dos_links_collected = Some(options.collect_dos_file_name_links());
-        if !options.collect_data_run_summary() {
-            dto.metadata.data_run_summary = FieldState::NotCollected;
-        }
         dto
     }
     fn apply_inspection(
@@ -268,13 +257,6 @@ impl ExportRecordV1 {
             unnamed_data: m.unnamed_data.into(),
             alternate_data_streams: m.alternate_data_streams.into(),
             reparse_point: m.reparse_point.into(),
-            data_run_summary: if self.data_runs.is_some() {
-                m.unnamed_data.into()
-            } else if m.unnamed_data == MftFieldState::Absent {
-                FieldState::Absent
-            } else {
-                FieldState::NotObserved
-            },
             dos_links_collected: Some(true),
         };
         self.diagnostics = diagnostics

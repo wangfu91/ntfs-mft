@@ -41,7 +41,7 @@ pub struct RawMftChunkBatch<E = RawMftBatchEntry> {
 ///
 /// Compared with [`super::RawMftEntry`], this form keeps only the metadata
 /// needed by the chunk/batch APIs and omits richer fields such as timestamps
-/// from `$FILE_NAME`, alternate data stream details, and data-run summaries.
+/// from `$FILE_NAME` and alternate data stream details.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawMftBatchEntry {
     /// Record number in the `$MFT`.

@@ -117,7 +117,6 @@ impl BenchConfig {
             .attr_buffer_bytes(self.attr_buffer_bytes)
             .include_unused_records(false)
             .collect_alternate_data_streams(false)
-            .collect_data_run_summary(false)
             .collect_dos_file_name_links(false)
             .start_record(self.start_record)
             .end_record(self.end_record)

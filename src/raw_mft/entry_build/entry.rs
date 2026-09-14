@@ -3,8 +3,6 @@
 use crate::NtfsName;
 use std::fmt;
 
-use log::warn;
-
 use super::{
     capture::resident_reparse_tag,
     fold::{AttributeConsumer, fold_record_attributes},
@@ -18,7 +16,6 @@ use crate::{
             FileNameNamespace, NtfsAttribute, attr_header_flags, file_attr_flags,
             ntfs_name_from_utf16le,
         },
-        data_run::{DataRunSummary, summarize_runs},
         record::FileRecord,
     },
 };
@@ -26,7 +23,6 @@ use crate::{
 #[derive(Clone, Copy)]
 pub(crate) struct EntryBuildOptions {
     pub(crate) collect_alternate_data_streams: bool,
-    pub(crate) collect_data_run_summary: bool,
     pub(crate) collect_dos_file_name_links: bool,
 }
 
@@ -34,7 +30,6 @@ impl EntryBuildOptions {
     pub(crate) const fn full() -> Self {
         Self {
             collect_alternate_data_streams: true,
-            collect_data_run_summary: true,
             collect_dos_file_name_links: true,
         }
     }
@@ -151,9 +146,6 @@ pub struct RawMftEntry {
     pub is_compressed: bool,
     /// Whether the unnamed data stream is encrypted.
     pub is_encrypted: bool,
-    /// Summary of the unnamed data stream's runs when non-resident.
-    pub data_run_summary: Option<DataRunSummary>,
-
     /// Named alternate data streams attached to the record.
     pub alternate_data_streams: Box<[AdsInfo]>,
     /// All `$FILE_NAME` links observed on this record and any loaded extension records.
@@ -221,8 +213,6 @@ struct RawMftEntryBuilder {
     attr_list: Option<AttributeListInfo>,
     /// Whether to collect alternate data stream names and sizes.
     collect_alternate_data_streams: bool,
-    /// Whether to compute non-resident data run summaries.
-    collect_data_run_summary: bool,
 }
 
 impl RawMftEntryBuilder {
@@ -232,7 +222,6 @@ impl RawMftEntryBuilder {
             entry: RawMftEntry {
                 collection_options: crate::RawMftEntryOptions {
                     collect_alternate_data_streams: options.collect_alternate_data_streams,
-                    collect_data_run_summary: options.collect_data_run_summary,
                     collect_dos_file_name_links: options.collect_dos_file_name_links,
                 },
                 record_number: record.number,
@@ -264,7 +253,6 @@ impl RawMftEntryBuilder {
                 is_sparse: false,
                 is_compressed: false,
                 is_encrypted: false,
-                data_run_summary: None,
                 alternate_data_streams: Box::default(),
                 links: Box::default(),
             },
@@ -273,7 +261,6 @@ impl RawMftEntryBuilder {
             have_unnamed_data: false,
             attr_list: None,
             collect_alternate_data_streams: options.collect_alternate_data_streams,
-            collect_data_run_summary: options.collect_data_run_summary,
         }
     }
 
@@ -345,11 +332,6 @@ impl RawMftEntryBuilder {
         data_size: u64,
         attr: &NtfsAttribute<'_>,
     ) {
-        let summary = if self.collect_data_run_summary {
-            self.nonresident_data_run_summary(attr)
-        } else {
-            None
-        };
         let attr_flags = attr.flags();
         let is_compressed = attr_flags & attr_header_flags::COMPRESSED != 0;
         let is_encrypted = attr_flags & attr_header_flags::ENCRYPTED != 0;
@@ -365,7 +347,6 @@ impl RawMftEntryBuilder {
                     self.entry.is_compressed |= is_compressed;
                     self.entry.is_encrypted |= is_encrypted;
                     self.entry.is_sparse |= is_sparse;
-                    self.entry.data_run_summary = summary;
                 }
             }
             Some(name_bytes) => {
@@ -415,28 +396,6 @@ impl RawMftEntryBuilder {
                         is_resident: true,
                     });
                 }
-            }
-        }
-    }
-
-    /// Summarize the data runs of a non-resident `$DATA` attribute.
-    fn nonresident_data_run_summary(&self, attr: &NtfsAttribute<'_>) -> Option<DataRunSummary> {
-        let h = attr.nonresident_header()?;
-        let runs_off = h.data_runs_offset as usize;
-        let attr_data = attr.data();
-        let runs_slice = if runs_off <= attr_data.len() {
-            &attr_data[runs_off..]
-        } else {
-            &[][..]
-        };
-        match summarize_runs(runs_slice) {
-            Ok(s) => Some(s),
-            Err(e) => {
-                warn!(
-                    "summarize_runs failed for record {}: {e}",
-                    self.entry.record_number
-                );
-                None
             }
         }
     }

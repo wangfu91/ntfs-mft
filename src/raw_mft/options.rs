@@ -84,8 +84,6 @@ impl RawMftReadBuffers {
 pub struct RawMftEntryOptions {
     /// When false, skip collecting named alternate data streams.
     pub(crate) collect_alternate_data_streams: bool,
-    /// When false, skip summarizing non-resident data runs.
-    pub(crate) collect_data_run_summary: bool,
     /// When false, omit DOS 8.3 `$FILE_NAME` links shadowed by a better same-parent name.
     pub(crate) collect_dos_file_name_links: bool,
 }
@@ -94,7 +92,6 @@ impl Default for RawMftEntryOptions {
     fn default() -> Self {
         Self {
             collect_alternate_data_streams: true,
-            collect_data_run_summary: true,
             collect_dos_file_name_links: true,
         }
     }
@@ -110,12 +107,6 @@ impl RawMftEntryOptions {
     #[must_use]
     pub const fn collect_alternate_data_streams(&self) -> bool {
         self.collect_alternate_data_streams
-    }
-
-    /// Whether non-resident unnamed data computes a run summary.
-    #[must_use]
-    pub const fn collect_data_run_summary(&self) -> bool {
-        self.collect_data_run_summary
     }
 
     /// Whether shadowed DOS 8.3 `$FILE_NAME` links are retained.
@@ -136,12 +127,6 @@ impl RawMftEntryOptionsBuilder {
     /// Whether named alternate data streams are collected.
     pub fn collect_alternate_data_streams(mut self, value: bool) -> Self {
         self.inner.collect_alternate_data_streams = value;
-        self
-    }
-
-    /// Whether unnamed non-resident data computes a run summary.
-    pub fn collect_data_run_summary(mut self, value: bool) -> Self {
-        self.inner.collect_data_run_summary = value;
         self
     }
 
@@ -262,12 +247,6 @@ impl RawMftScanOptionsBuilder {
         self
     }
 
-    /// Whether non-resident unnamed data should compute a run summary.
-    pub fn collect_data_run_summary(mut self, v: bool) -> Self {
-        self.inner.entry.collect_data_run_summary = v;
-        self
-    }
-
     /// Whether DOS 8.3 `$FILE_NAME` links shadowed by better same-parent names should be collected.
     pub fn collect_dos_file_name_links(mut self, v: bool) -> Self {
         self.inner.entry.collect_dos_file_name_links = v;
@@ -299,8 +278,8 @@ impl RawMftScanOptionsBuilder {
     }
 }
 
-/// Options for lean entry scanning. ADS and run-summary settings are deliberately
-/// unavailable because lean entries do not carry those fields.
+/// Options for lean entry scanning. ADS settings are deliberately unavailable
+/// because lean entries do not carry those fields.
 #[derive(Debug, Clone, Default)]
 pub struct RawMftLeanScanOptions {
     pub(crate) inner: RawMftScanOptions,
@@ -331,7 +310,7 @@ impl RawMftLeanScanOptions {
 
 impl RawMftScanOptions {
     /// Keep selection, buffers and DOS-link policy for a lean scan, explicitly
-    /// discarding ADS and data-run-summary materialization choices.
+    /// discarding ADS materialization choices.
     pub fn into_lean(self) -> RawMftLeanScanOptions {
         RawMftLeanScanOptions { inner: self }
     }
@@ -481,11 +460,9 @@ mod entry_options_tests {
         );
         let entry = RawMftEntryOptions::builder()
             .collect_alternate_data_streams(false)
-            .collect_data_run_summary(false)
             .collect_dos_file_name_links(false)
             .build();
         assert!(!entry.collect_alternate_data_streams());
-        assert!(!entry.collect_data_run_summary());
         assert!(!entry.collect_dos_file_name_links());
         assert_eq!(
             RawMftScanOptions::builder().entry(entry).build().entry(),

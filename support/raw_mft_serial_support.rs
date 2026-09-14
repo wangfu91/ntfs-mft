@@ -35,8 +35,6 @@ pub struct SerialConfig {
     pub max_records: Option<usize>,
     /// Whether to collect named alternate data streams.
     pub collect_alternate_data_streams: bool,
-    /// Whether to summarize non-resident data runs.
-    pub collect_data_run_summary: bool,
     /// Whether to retain shadowed DOS 8.3 `$FILE_NAME` links.
     pub collect_dos_file_name_links: bool,
     /// Whether to include records the `$MFT` `$BITMAP` marks unused.
@@ -55,7 +53,6 @@ impl SerialConfig {
             end_record: parse_env_u64("NTFS_MFT_SERIAL_END_RECORD"),
             max_records: parse_env_usize("NTFS_MFT_SERIAL_MAX_RECORDS"),
             collect_alternate_data_streams: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_ADS", true),
-            collect_data_run_summary: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_RUNS", true),
             collect_dos_file_name_links: parse_env_bool("NTFS_MFT_SERIAL_COLLECT_DOS", true),
             include_unused_records: parse_env_bool("NTFS_MFT_SERIAL_INCLUDE_UNUSED", false),
             buffer_bytes: None,
@@ -75,7 +72,6 @@ impl SerialConfig {
         let builder = RawMftScanOptions::builder()
             .include_unused_records(self.include_unused_records)
             .collect_alternate_data_streams(self.collect_alternate_data_streams)
-            .collect_data_run_summary(self.collect_data_run_summary)
             .collect_dos_file_name_links(self.collect_dos_file_name_links)
             .start_record(self.start_record)
             .end_record(self.end_record);
@@ -124,7 +120,7 @@ pub fn print_serial_config(config: &SerialConfig) {
     let source = env::var("NTFS_MFT_TEST_VOLUME")
         .unwrap_or_else(|_| "<unset: set NTFS_MFT_TEST_VOLUME>".to_owned());
     eprintln!(
-        "raw_mft serial read config: volume={} start_record={} end_record={} max_records={} ads={} runs={} dos={} unused={}",
+        "raw_mft serial read config: volume={} start_record={} end_record={} max_records={} ads={} dos={} unused={}",
         source,
         config.start_record,
         config
@@ -136,7 +132,6 @@ pub fn print_serial_config(config: &SerialConfig) {
             .map(|value| value.to_string())
             .unwrap_or_else(|| "all".to_owned()),
         config.collect_alternate_data_streams,
-        config.collect_data_run_summary,
         config.collect_dos_file_name_links,
         config.include_unused_records,
     );

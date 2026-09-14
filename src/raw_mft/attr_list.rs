@@ -291,7 +291,7 @@ fn materialize_attr_list(
             data_size,
         } => {
             let runs = match crate::raw_mft::layout::data_run::decode_runs(&runs_data) {
-                Ok((runs, _)) => runs,
+                Ok(runs) => runs,
                 Err(error) => {
                     warn!(
                         "raw_mft: record {base_record_number}: \
@@ -416,7 +416,6 @@ fn merge_extension_data(entry: &mut RawMftEntry, ext_entry: &RawMftEntry, needs:
         entry.allocated_size = ext_entry.allocated_size;
         entry.has_unnamed_data = ext_entry.has_unnamed_data;
         entry.is_resident = ext_entry.is_resident;
-        entry.data_run_summary = ext_entry.data_run_summary.clone();
     }
     if needs.data {
         entry.is_sparse |= ext_entry.is_sparse;
@@ -681,7 +680,6 @@ mod tests {
             is_sparse: false,
             is_compressed: false,
             is_encrypted: false,
-            data_run_summary: None,
             alternate_data_streams: Box::default(),
             links: Box::default(),
         }

@@ -3,7 +3,7 @@
 use super::*;
 use crate::raw_mft::layout::{
     attribute::{AttributeListEntryHeader, for_each_attribute_checked},
-    data_run::summarize_runs,
+    data_run::decode_runs,
     record::FileRecordHeader,
 };
 use zerocopy::FromBytes;
@@ -123,7 +123,7 @@ impl Inspection {
                         // The existing builder uses the first segment's sizes; do not
                         // replace them with continuation-header placeholder values.
                     }
-                    if summarize_runs(&attr.data()[header.data_runs_offset as usize..]).is_err() {
+                    if decode_runs(&attr.data()[header.data_runs_offset as usize..]).is_err() {
                         self.issue(number, Some(kind), MftIssue::MalformedAttribute);
                     }
                 }

@@ -57,7 +57,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let options = RawMftScanOptions::builder()
         .include_unused_records(false)
         .collect_alternate_data_streams(false)
-        .collect_data_run_summary(false)
         .collect_dos_file_name_links(false)
         .build();
 

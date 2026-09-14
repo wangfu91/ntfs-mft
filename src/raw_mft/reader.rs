@@ -42,7 +42,6 @@ impl<'a> RawMft<'a> {
 pub(super) fn entry_build_options(options: &RawMftScanOptions) -> EntryBuildOptions {
     EntryBuildOptions {
         collect_alternate_data_streams: options.entry.collect_alternate_data_streams,
-        collect_data_run_summary: options.entry.collect_data_run_summary,
         collect_dos_file_name_links: options.entry.collect_dos_file_name_links,
     }
 }

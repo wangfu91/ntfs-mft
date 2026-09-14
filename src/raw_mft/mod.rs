@@ -4,7 +4,7 @@
 //! each FILE record to expose rich per-record metadata that the USN-based
 //! the Windows FSCTL-based `Mft` enumerator cannot surface (full timestamps, real
 //! and allocated size, hard link count, alternate data streams, sparse
-//! / compressed flags, data-run summary, file-name namespace, etc.).
+//! / compressed flags, file-name namespace, etc.).
 //!
 //! Quick start:
 //!
@@ -76,7 +76,6 @@ pub use byte_reader::MftByteReader;
 pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawMftWorkChunk};
 pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
-pub use layout::data_run::{DataRun as DataRunInfo, DataRunSummary};
 pub use offline::{MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord};
 pub use options::{
     RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions,

@@ -356,7 +356,7 @@ fn malformed_attributes_never_imply_absence() -> MftResult<()> {
 }
 
 #[test]
-fn split_data_is_not_reported_as_a_complete_summary() -> MftResult<()> {
+fn split_data_is_not_reported_as_complete_metadata() -> MftResult<()> {
     let bytes = record(1024, 0, &[nonresident(0x80, 1, 0), nonresident(0x80, 2, 1)]);
     let mut stream = MftStream::from_reader(Cursor::new(bytes), options()?)?;
     let row = stream.read_record(0)?;
