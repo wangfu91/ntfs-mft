@@ -1,6 +1,6 @@
 # macOS raw NTFS access
 
-`Volume::from_mount_point("/Volumes/ESD-ISO")` resolves an exact mount root
+`Volume::from_mount_point("/Volumes/Windows")` resolves an exact mount root
 through `statfs`, requires filesystem type `ntfs`, and opens the backing raw
 character device read-only. Symlinks and trailing separators are canonicalized;
 child directories are rejected. Path bytes are preserved without shell commands.
@@ -27,14 +27,14 @@ Build as the ordinary user, then run in a context allowed to read the device:
 
 ```sh
 cargo build --example raw_mft_serial_read
-sudo ./target/debug/examples/raw_mft_serial_read /Volumes/ESD-ISO
+sudo ./target/debug/examples/raw_mft_serial_read /Volumes/Windows
 cargo test --test macos_raw_mft --no-run
 ```
 
 For the test, use the exact executable filename printed by Cargo:
 
 ```sh
-sudo env NTFS_MFT_TEST_VOLUME=/Volumes/ESD-ISO ./target/debug/deps/macos_raw_mft-EXACT_HASH --nocapture
+sudo env NTFS_MFT_TEST_VOLUME=/Volumes/Windows ./target/debug/deps/macos_raw_mft-EXACT_HASH --nocapture
 ```
 
 Repeat with `NTFS_MFT_TEST_VOLUME=/dev/diskNsM` for direct-device access. The test checks

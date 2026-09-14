@@ -1,10 +1,10 @@
 //! Expectations independently decoded from the fixture's raw little-endian bytes.
-use super::{
+use super::super::{
     entry_build::{EntryBuildOptions, RawMftEntry},
     layout::record::FileRecord,
 };
 use crate::{Filetime, MftError, MftResult, NtfsFileReference};
-const MFT: &[u8] = include_bytes!("../../tests/fixtures/omerbenamram-mft/MFT");
+const MFT: &[u8] = include_bytes!("../../../tests/fixtures/omerbenamram-mft/MFT");
 const RECORD_SIZE: usize = 1024;
 
 fn entry(number: usize) -> MftResult<RawMftEntry> {

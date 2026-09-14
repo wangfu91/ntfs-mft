@@ -192,7 +192,7 @@ at 10 workers. These are workload-specific benchmark settings.
 
 See [parallel measurements and commands](raw_mft_parallel_ingest_findings.md)
 and [serial measurements](raw_mft_serial_read_findings.md). The
-[ESD-ISO fixture](../tests/fixtures/esd-iso/README.md) tests bootstrapping,
+[captured-volume fixture](../tests/fixtures/captured-volume/README.md) tests bootstrapping,
 fragmented bitmap loading, and serial/parallel agreement without a device.
 The [module map](../src/raw_mft/README.md) locates the implementation.
 

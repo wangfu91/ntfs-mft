@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "source": "My ESD-ISO Windows installation USB",
+  "source": "Windows installation USB used for the captured-volume fixture",
   "partition_start_on_disk": 1048576,
   "ranges": [
     {

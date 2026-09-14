@@ -1,5 +1,5 @@
 //! Real boot sector, MFT and fragmented MFT bitmap; no device permissions needed.
-use super::{
+use super::super::{
     entry_build::{EntryBuildOptions, RawMftEntry},
     layout::record::FileRecord,
 };
@@ -13,10 +13,10 @@ use std::{
     sync::Arc,
 };
 
-const BOOT: &[u8] = include_bytes!("../../tests/fixtures/esd-iso/boot.bin");
-const MFT: &[u8] = include_bytes!("../../tests/fixtures/esd-iso/mft.bin");
-const BITMAP0: &[u8] = include_bytes!("../../tests/fixtures/esd-iso/mft-bitmap-0.bin");
-const BITMAP1: &[u8] = include_bytes!("../../tests/fixtures/esd-iso/mft-bitmap-1.bin");
+const BOOT: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/boot.bin");
+const MFT: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/mft.bin");
+const BITMAP0: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/mft-bitmap-0.bin");
+const BITMAP1: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/mft-bitmap-1.bin");
 
 fn source(with_bitmap_tail: bool) -> Arc<CapturedVolume> {
     let mut ranges = vec![
@@ -168,8 +168,10 @@ fn captured_record_inventory_matches_independent_decoder() -> MftResult<()> {
 
 #[test]
 fn captured_known_files_match_independently_decoded_text_fixture() -> MftResult<()> {
-    let expected: serde_json::Value =
-        serde_json::from_str(include_str!("../../tests/fixtures/esd-iso/expected.json")).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/captured-volume/expected.json"
+    ))
+    .unwrap();
     let volume = source(true).open()?;
     let raw = volume.raw_mft()?;
     for item in expected.as_array().unwrap() {

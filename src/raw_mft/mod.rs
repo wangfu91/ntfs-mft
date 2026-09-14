@@ -55,7 +55,7 @@ mod parallel;
 mod path_resolver;
 mod reader;
 mod serial;
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests;
 
 use std::num::NonZeroUsize;
@@ -198,9 +198,3 @@ impl Volume {
         RawMft::new(self)
     }
 }
-
-#[cfg(test)]
-mod fixture_tests;
-
-#[cfg(test)]
-mod esd_iso_tests;

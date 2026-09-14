@@ -1,4 +1,4 @@
-# ESD-ISO NTFS fixture
+# Captured NTFS volume fixture
 
 I extracted this fixture read-only from my Windows installation USB, which
 contains no personal files. The bytes are unchanged, including resident file
@@ -32,6 +32,6 @@ From the repository root, fetch the Git LFS files and verify:
 
 ```sh
 git lfs pull
-python3 tests/fixtures/esd-iso/verify.py
-cargo test --lib esd_iso
+python3 tests/fixtures/captured-volume/verify.py
+cargo test --lib raw_mft::tests::captured_volume
 ```

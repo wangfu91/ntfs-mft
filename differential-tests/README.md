@@ -40,7 +40,7 @@ the same physical slot number. Comparisons retain:
 No failed attributes are discarded or names sorted, deduplicated, or ranked by
 these low-level comparisons. The corpus contains 13,068 FILE records, 13,064 SI,
 18,506 FN, and 12,089 DATA attributes, plus 20 zero slots. Counts guard coverage;
-`fixture_tests.rs` supplies independent expected metadata.
+`src/raw_mft/tests/fixture.rs` supplies independent expected metadata.
 
 ## Investigated differences
 

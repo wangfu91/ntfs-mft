@@ -1,5 +1,8 @@
 use super::*;
 
+mod captured_volume;
+mod fixture;
+
 #[test]
 fn options_defaults_are_sensible() {
     let o = RawMftScanOptions::default();
@@ -65,7 +68,8 @@ fn raw_mft_entry_display_is_compact() -> Result<(), crate::types::FileReferenceE
     Ok(())
 }
 
-mod integration_tests {
+#[cfg(windows)]
+mod windows_live {
     use super::super::*;
     use crate::volume::Volume;
     use std::env;
