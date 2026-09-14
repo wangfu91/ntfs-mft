@@ -49,8 +49,6 @@ fn run() -> MftResult<bool> {
             let source = source
                 .to_str()
                 .ok_or(MftError::InvalidOptions("volume source must be Unicode"))?;
-            #[cfg(windows)]
-            validate_drive(source)?;
             let (volume, _) = raw_volume::open_raw_volume(Some(source.to_owned()))?;
             let mft = volume.raw_mft()?;
             let options = RawMftScanOptions::builder()
@@ -115,40 +113,10 @@ fn export_offline(
     Ok((records, errors))
 }
 
-#[cfg(windows)]
-fn validate_drive(source: &str) -> MftResult<()> {
-    match source.as_bytes() {
-        [letter] | [letter, b':'] if letter.is_ascii_alphabetic() => Ok(()),
-        _ => Err(MftError::InvalidOptions(
-            "Windows volume source must be a drive letter such as C or C:",
-        )),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Cursor, Read, Seek, SeekFrom};
-
-    #[cfg(windows)]
-    #[test]
-    fn drive_syntax_rejects_paths_and_words_before_device_access() {
-        for source in ["C", "c:", "Z:"] {
-            assert!(validate_drive(source).is_ok());
-        }
-        for source in [
-            "",
-            "data",
-            "C:\\snapshot.MFT",
-            "C:/",
-            "1",
-            "é",
-            "\\\\.\\C:",
-            " C",
-        ] {
-            assert!(validate_drive(source).is_err(), "accepted {source:?}");
-        }
-    }
 
     struct FailsOnExtension(Cursor<Vec<u8>>);
     impl Read for FailsOnExtension {

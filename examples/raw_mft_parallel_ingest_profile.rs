@@ -1,3 +1,8 @@
+//! Profiling target for the parallel ingest workload in `benches/raw_mft_ingest.rs`.
+//!
+//! Configure it with the `NTFS_MFT_TEST_*` and `NTFS_MFT_BENCH_*` environment
+//! variables documented in the repository's performance notes.
+
 use std::{error::Error, time::Instant};
 
 use ntfs_mft::raw_mft::RawMft;

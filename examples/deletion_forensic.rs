@@ -10,6 +10,8 @@
 //!   bits and use the current snapshot occupant of that record number.
 //! - `partial`: the chain broke before reaching the root, so the printed path
 //!   includes an unresolved-parent marker.
+//!
+//! Usage: `deletion_forensic <drive/mount/device> [result-limit]`.
 
 use std::env;
 
@@ -25,7 +27,7 @@ const DEFAULT_LIMIT: usize = 1_000;
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("Error: {error}");
+        eprintln!("error: {error}");
         std::process::exit(1);
     }
 }
@@ -33,10 +35,20 @@ fn main() {
 fn run() -> Result<(), MftError> {
     let mut args = env::args().skip(1);
     let (volume, source) = raw_volume::open_raw_volume(args.next())?;
-    let limit = env::args()
-        .nth(2)
-        .and_then(|value| value.parse::<usize>().ok())
+    let limit = args
+        .next()
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .map_err(|_| MftError::InvalidOptions("result limit must be an integer"))
+        })
+        .transpose()?
         .unwrap_or(DEFAULT_LIMIT);
+    if args.next().is_some() {
+        return Err(MftError::InvalidOptions(
+            "usage: deletion_forensic <drive/mount/device> [result-limit]",
+        ));
+    }
 
     let mft = RawMft::new(&volume)?;
     let options = RawMftScanOptions::builder()

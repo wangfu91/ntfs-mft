@@ -25,14 +25,20 @@ const MAX_ENTRIES: usize = 1_000;
 /// Run the example and print any top-level error.
 fn main() {
     if let Err(e) = run() {
-        eprintln!("Error: {e}");
+        eprintln!("error: {e}");
         std::process::exit(1);
     }
 }
 
 /// Open the raw `$MFT`, iterate records, and print a compact metadata summary.
 fn run() -> Result<(), MftError> {
-    let (volume, _) = raw_volume::open_raw_volume(env::args().nth(1))?;
+    let mut args = env::args().skip(1);
+    let (volume, _) = raw_volume::open_raw_volume(args.next())?;
+    if args.next().is_some() {
+        return Err(MftError::InvalidOptions(
+            "usage: raw_mft_serial_read <drive/mount/device>",
+        ));
+    }
     let mft = RawMft::new(&volume)?;
     let resolver = mft.path_resolver()?;
 

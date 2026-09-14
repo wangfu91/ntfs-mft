@@ -1,3 +1,7 @@
+//! Scan a raw NTFS `$MFT` in parallel and report chunk throughput.
+//!
+//! Usage: `raw_mft_parallel_chunks <drive/mount/device> [records-per-chunk] [workers]`.
+
 use std::{
     env,
     error::Error,
@@ -12,21 +16,38 @@ use ntfs_mft::raw_mft::{RawMft, RawMftChunkPlanOptions, RawMftScanOptions};
 mod raw_volume;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let source_arg = env::args().nth(1);
-    let max_records_per_chunk = env::args()
-        .nth(2)
-        .and_then(|arg| arg.parse::<u64>().ok())
-        .and_then(NonZeroU64::new)
+    let mut args = env::args().skip(1);
+    let source_arg = args.next();
+    let max_records_per_chunk = args
+        .next()
+        .map(|arg| {
+            arg.parse::<u64>()
+                .ok()
+                .and_then(NonZeroU64::new)
+                .ok_or("records per chunk must be a positive integer")
+        })
+        .transpose()?
         .unwrap_or(NonZeroU64::new(16 * 1024).unwrap_or(NonZeroU64::MIN));
-    let worker_count = env::args()
-        .nth(3)
-        .and_then(|arg| arg.parse::<usize>().ok())
-        .and_then(NonZeroUsize::new)
+    let worker_count = args
+        .next()
+        .map(|arg| {
+            arg.parse::<usize>()
+                .ok()
+                .and_then(NonZeroUsize::new)
+                .ok_or("worker count must be a positive integer")
+        })
+        .transpose()?
         .unwrap_or(
             thread::available_parallelism()
                 .ok()
                 .unwrap_or(NonZeroUsize::MIN),
         );
+    if args.next().is_some() {
+        return Err(
+            "usage: raw_mft_parallel_chunks <drive/mount/device> [records-per-chunk] [workers]"
+                .into(),
+        );
+    }
 
     let (volume, source) = raw_volume::open_raw_volume(source_arg)?;
     let raw_mft = RawMft::new(&volume)?;

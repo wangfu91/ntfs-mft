@@ -64,17 +64,27 @@ serde_json = "1"
 schemars = "1"
 jsonschema = { version = "0.33", default-features = false }
 
+# User-facing examples.
+[[example]]
+name = "deletion_forensic"
+
+[[example]]
+name = "raw_mft_export"
+required-features = ["jsonl"]
+test = true
+
+[[example]]
+name = "raw_mft_parallel_chunks"
 
 [[example]]
 name = "raw_mft_serial_read"
-[[example]]
-name = "raw_mft_serial_read_profile"
-[[example]]
-name = "raw_mft_parallel_chunks"
+
+# Benchmark-matching executables for flamegraphs and ETW captures.
 [[example]]
 name = "raw_mft_parallel_ingest_profile"
+
 [[example]]
-name = "deletion_forensic"
+name = "raw_mft_serial_read_profile"
 
 [[bench]]
 name = "raw_mft"
@@ -102,11 +112,6 @@ debug = true
 windows-examples = []
 serde = ["dep:serde", "dep:chrono"]
 jsonl = ["serde", "dep:serde_json"]
-
-[[example]]
-name = "raw_mft_export"
-required-features = ["jsonl"]
-test = true
 
 [[bench]]
 name = "path_resolver"
