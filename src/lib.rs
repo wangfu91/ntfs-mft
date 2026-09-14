@@ -30,7 +30,6 @@
 //! derives record size and opens an independently owned byte reader.
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 compile_error!("ntfs-mft supports only Windows, Linux, and macOS targets");
-mod display;
 mod ntfs_name;
 pub use ntfs_name::NtfsName;
 pub mod errors;
@@ -46,9 +45,10 @@ mod time;
 pub mod types;
 pub mod volume;
 pub use errors::{MftError, ScanError};
+pub use file_attributes::FileAttributes;
 pub use raw_mft::*;
 pub use time::Filetime;
-pub use types::{FileAttributes, FileReferenceError, NtfsFileReference, Usn};
+pub use types::{FileReferenceError, NtfsFileReference, Usn};
 pub use volume::Volume;
 /// Result of an NTFS MFT operation.
 pub type MftResult<T> = std::result::Result<T, MftError>;
