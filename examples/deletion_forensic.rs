@@ -13,6 +13,7 @@
 
 use std::env;
 
+#[path = "../support/raw_volume.rs"]
 mod raw_volume;
 
 use ntfs_mft::{

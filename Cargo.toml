@@ -64,9 +64,6 @@ serde_json = "1"
 schemars = "1"
 jsonschema = { version = "0.33", default-features = false }
 
-[[example]]
-name = "raw_mft_read"
-path = "examples/raw_mft_read.rs"
 
 [[example]]
 name = "raw_mft_serial_read"

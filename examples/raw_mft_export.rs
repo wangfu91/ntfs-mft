@@ -8,6 +8,8 @@ use std::{
     io::{self, BufWriter},
     process::ExitCode,
 };
+
+#[path = "../support/raw_volume.rs"]
 mod raw_volume;
 
 fn main() -> ExitCode {

@@ -8,6 +8,7 @@ use std::{
 
 use ntfs_mft::raw_mft::{RawMft, RawMftChunkPlanOptions, RawMftScanOptions};
 
+#[path = "../support/raw_volume.rs"]
 mod raw_volume;
 
 fn main() -> Result<(), Box<dyn Error>> {
