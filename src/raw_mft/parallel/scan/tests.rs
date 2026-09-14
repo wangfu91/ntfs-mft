@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     MftResult, Volume,
     raw_mft::layout::{boot::BootSector, data_run::DataRun, extent::ExtentMap},
-    volume::captured::CapturedVolume,
+    volume::sparse_fixture::SparseVolumeFixture,
 };
 use std::{num::NonZeroU64, sync::Arc};
 
@@ -29,7 +29,7 @@ fn volume_with(edit: impl FnOnce(&mut [u8])) -> MftResult<Volume> {
         record[1022..1024].copy_from_slice(&0xabcd_u16.to_le_bytes());
     }
     edit(&mut bytes);
-    Arc::new(CapturedVolume::new(vec![(0, bytes)])).open()
+    Arc::new(SparseVolumeFixture::new(vec![(0, bytes)])).open()
 }
 
 fn mft(volume: &Volume) -> RawMft<'_> {

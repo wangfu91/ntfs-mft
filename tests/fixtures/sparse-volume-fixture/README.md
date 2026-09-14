@@ -1,4 +1,4 @@
-# Captured NTFS volume fixture
+# Sparse NTFS volume fixture
 
 I extracted this fixture read-only from my Windows installation USB, which
 contains no personal files. The bytes are unchanged, including resident file
@@ -23,7 +23,7 @@ contains independently decoded metadata for 19 known records.
 
 Tests cover bootstrapping, both bitmap fragments, 1,116 active records, serial
 scanning, both parallel schedulers, and independently owned MFT byte streams.
-Uncaptured reads fail. These offline tests require no device or elevated
+Omitted reads fail. These offline tests require no device or elevated
 privileges on Windows, Linux, or macOS; device access still needs live testing.
 I kept the [upstream fixture](../omerbenamram-mft/README.md) for additional
 coverage of unused records, extension records, and streams.
@@ -32,6 +32,6 @@ From the repository root, fetch the Git LFS files and verify:
 
 ```sh
 git lfs pull
-python3 tests/fixtures/captured-volume/verify.py
-cargo test --lib raw_mft::tests::captured_volume
+python3 tests/fixtures/sparse-volume-fixture/verify.py
+cargo test --lib raw_mft::tests::sparse_volume_fixture
 ```

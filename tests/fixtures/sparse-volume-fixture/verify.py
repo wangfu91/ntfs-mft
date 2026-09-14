@@ -122,7 +122,7 @@ def main():
         assert uint(data, 16, 2) == item["sequence"], number
         assert bool(uint(data, 22, 2) & 2) == item["directory"], number
         assert size == item["data_size"], number
-    print(f"Verified 4 captured ranges, 1280 record slots and {len(expected)} known records")
+    print(f"Verified 4 supplied ranges, 1280 record slots and {len(expected)} known records")
 
 if __name__ == "__main__":
     main()

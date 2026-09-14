@@ -28,7 +28,7 @@ pub const DEFAULT_BUFFER_BYTES: usize = 256 * 1024;
 /// copied into the caller's buffer.
 pub(crate) struct VolumeReader {
     #[cfg(test)]
-    captured: Option<std::sync::Arc<crate::volume::captured::CapturedVolume>>,
+    sparse_fixture: Option<std::sync::Arc<crate::volume::sparse_fixture::SparseVolumeFixture>>,
     /// Borrowed raw volume handle.
     #[cfg(windows)]
     handle: HANDLE,
@@ -71,7 +71,7 @@ impl VolumeReader {
         let cap = (sectors * sector_size) as usize;
         Ok(Self {
             #[cfg(test)]
-            captured: volume.captured().cloned(),
+            sparse_fixture: volume.sparse_fixture().cloned(),
             #[cfg(windows)]
             handle: volume.handle,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -104,7 +104,7 @@ impl VolumeReader {
     /// Refill the internal buffer starting at a sector-aligned volume offset.
     fn refill(&mut self, sector_pos: u64) -> io::Result<()> {
         #[cfg(test)]
-        if let Some(source) = &self.captured {
+        if let Some(source) = &self.sparse_fixture {
             let count = source.read_at(&mut self.buf, sector_pos)?;
             self.buf_pos = sector_pos;
             self.buf_len = count;

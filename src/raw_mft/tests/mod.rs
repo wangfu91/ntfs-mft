@@ -1,7 +1,7 @@
 use super::*;
 
-mod captured_volume;
 mod fixture;
+mod sparse_volume_fixture;
 
 #[test]
 fn options_defaults_are_sensible() {

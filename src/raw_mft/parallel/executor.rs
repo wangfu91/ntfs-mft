@@ -31,7 +31,7 @@ pub(crate) enum ChunkScheduling {
 #[derive(Debug, Clone)]
 pub(in crate::raw_mft) enum ParallelVolumeSource {
     #[cfg(test)]
-    Captured(Arc<crate::volume::captured::CapturedVolume>),
+    SparseFixture(Arc<crate::volume::sparse_fixture::SparseVolumeFixture>),
     /// Reopen by drive letter (e.g. `C`).
     #[cfg(windows)]
     DriveLetter(char),
@@ -237,8 +237,8 @@ pub(in crate::raw_mft) fn reusable_parallel_volume_source(
     volume: &Volume,
 ) -> Result<ParallelVolumeSource, MftError> {
     #[cfg(test)]
-    if let Some(source) = volume.captured() {
-        return Ok(ParallelVolumeSource::Captured(Arc::clone(source)));
+    if let Some(source) = volume.sparse_fixture() {
+        return Ok(ParallelVolumeSource::SparseFixture(Arc::clone(source)));
     }
     #[cfg(windows)]
     let source = volume.drive_letter().map(ParallelVolumeSource::DriveLetter);
@@ -268,7 +268,7 @@ pub(in crate::raw_mft) fn open_parallel_volume(
 ) -> Result<Volume, MftError> {
     match source {
         #[cfg(test)]
-        ParallelVolumeSource::Captured(source) => source.open(),
+        ParallelVolumeSource::SparseFixture(source) => source.open(),
         #[cfg(windows)]
         ParallelVolumeSource::DriveLetter(drive_letter) => Volume::from_drive_letter(*drive_letter),
         ParallelVolumeSource::MountPoint(path) => Volume::from_mount_point(path),
