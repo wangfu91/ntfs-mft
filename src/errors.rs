@@ -2,13 +2,21 @@
 
 use thiserror::Error;
 
+/// Failure to construct an NTFS-specific file reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum FileReferenceError {
+    /// The record number cannot fit in NTFS's 48-bit slot field.
+    #[error("record number {0} exceeds 48 bits")]
+    RecordNumberOutOfRange(u64),
+}
+
 /// Errors from raw NTFS MFT operations.
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MftError {
     /// Caller supplied an invalid NTFS file reference.
     #[error("Invalid file reference: {0}")]
-    InvalidFileReference(#[from] crate::FileReferenceError),
+    InvalidFileReference(#[from] FileReferenceError),
     /// Indexed path construction failed.
     #[error("Path index error: {0}")]
     PathIndex(#[from] crate::MftPathError),

@@ -20,7 +20,7 @@ fn options_defaults_are_sensible() {
 }
 
 #[test]
-fn raw_mft_entry_display_is_compact() -> Result<(), crate::types::FileReferenceError> {
+fn raw_mft_entry_display_is_compact() -> Result<(), crate::FileReferenceError> {
     use crate::{FileAttributes, Filetime, NtfsFileReference};
 
     let entry = RawMftEntry {
