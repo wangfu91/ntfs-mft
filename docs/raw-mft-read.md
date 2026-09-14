@@ -1,8 +1,9 @@
 # Live volume scan internals
 
 A **live volume scan** uses `RawMft` to read NTFS boot metadata and `$MFT`
-directly from the volume/device. An **offline MFT scan** instead parses an
-already extracted logical stream. It does not use Windows
+directly from the volume/device. `MftStream` instead parses a logical `$MFT`
+stream; an **offline MFT scan** supplies that stream from an extracted file or
+buffer. It does not use Windows
 FSCTL enumeration. ReFS is rejected with `MftError::UnsupportedFilesystem`.
 All volume access is read-only; see [Windows](windows-raw-volume-access.md) and
 [macOS](macos-raw-volume-access.md) access requirements.
@@ -88,7 +89,7 @@ Enrichment runs when the base entry needs a better name, missing file data, or a
 missing reparse tag. It reads resident or nonresident lists, loads the required
 extension records, and merges usable metadata. It follows only one level and
 does not yield extensions as separate files. Raw iteration discards enrichment
-errors; consumers requiring completeness diagnostics should use the offline API.
+errors; consumers requiring completeness diagnostics should use `MftStream`.
 
 File references combine a 48-bit record number and a 16-bit sequence number.
 `MftPathIndex::resolve_strict` verifies full references, including parent and root
@@ -216,7 +217,7 @@ materialization and enrichment implementation as rich serial scans.
 The fast raw APIs remain tolerant. For evidence about skipped records and
 metadata, use `raw.try_iter_diagnostic(options, diagnostic_limit)`. It yields
 `RawMftDiagnosticRecord` values with per-category `MftFieldState` evidence and
-metadata diagnostics. Base attributes receive the offline parser's validation;
+metadata diagnostics. Base attributes receive the MFT-stream parser's validation;
 attribute-list enrichment is conservatively reported as unverified because the
 raw enrichment path does not inspect the complete extension attribute set.
 

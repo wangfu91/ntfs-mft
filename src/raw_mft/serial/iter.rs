@@ -126,7 +126,7 @@ impl Iterator for RawMftDiagnosticIter<'_> {
         }
         let inner = &mut self.inner;
         let result = next_record_output(inner.mft, &mut inner.scan, &mut inner.reader, |record| {
-            use crate::raw_mft::offline::inspect::{Inspection, inspect_view};
+            use crate::raw_mft::stream::inspect::{Inspection, inspect_view};
             use crate::{MftFieldState, MftIssue};
             let mut inspection = Inspection::default();
             let attrs = inspect_view(record, &mut inspection);

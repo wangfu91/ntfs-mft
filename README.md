@@ -58,11 +58,11 @@ fn main() -> MftResult<()> {
 }
 ```
 
-## Offline MFT scans
+## Logical MFT stream parsing
 
-`MftStream` reads a standalone logical `$MFT` file using ordinary file permissions.
-It also accepts `Read + Seek` sources through `from_reader`, including
-`Cursor<&[u8]>` for borrowed memory:
+`MftStream` parses a logical `$MFT` stream. A standalone extracted `$MFT` file
+uses ordinary file permissions; it also accepts `Read + Seek` sources through
+`from_reader`, including `Cursor<&[u8]>` for borrowed memory:
 
 ```rust,no_run
 use ntfs_mft::{MftResult, MftStream, MftStreamOptions};
@@ -86,7 +86,7 @@ error. Enable `options.resolve_extensions(true)` for one level of resident
 attribute-list references. Always retain `metadata`, `diagnostics`, and
 `external_payloads` when exporting: a missing value may be unknown, not absent.
 An MFT-only stream cannot supply non-resident attribute payloads or arbitrary
-file contents. See [the offline API contract](docs/offline-mft.md).
+file contents. See [the MFT stream API contract](docs/offline-mft.md).
 
 For direct volume input, use `MftStream::from_raw_mft(&raw)` with an existing
 `RawMft`. It discovers the record size and opens an independent handle. For custom
@@ -109,7 +109,7 @@ parser options, pass `raw.byte_reader()?` to `MftStream::from_reader` and use
 
 ## Optional JSONL export
 
-Enable `jsonl` for streaming export of raw scan results or offline `MftStream`
+Enable `jsonl` for streaming export of raw scan results or `MftStream`
 records. Enable only `serde` for the separate versioned DTOs. Both are optional.
 The [export guide and schema](docs/export.md) describe exact identifiers,
 timestamps, lossless NTFS names, native path encodings, metadata completeness, and known parser limits.

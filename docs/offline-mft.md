@@ -1,9 +1,9 @@
-# Offline MFT parsing
+# Logical MFT stream parsing
 
-An **offline MFT scan** parses an already extracted logical `$MFT` file or
-buffer. `MftStream` is the parser for that workflow, but it also accepts bytes
-from a live volume. Using `from_raw_mft()` or `byte_reader()` against a volume
-is still a **live volume scan**, with that source's consistency limitations.
+`MftStream` parses a logical `$MFT` stream. An **offline MFT scan** uses an
+already extracted file or buffer as that stream; `from_raw_mft()` and
+`byte_reader()` instead derive it from a live volume, retaining that source's
+consistency limitations.
 Single-record and byte operations are called **reads**.
 
 `MftStream<R: Read + Seek>` owns a reader (or a borrowed reader such as `&mut R`).
@@ -139,5 +139,5 @@ their independent parser. They should compare per-slot errors separately, and
 account for explicit rejection of malformed payloads.
 Export consumers should preserve the metadata states and diagnostics, rather than
 converting unknown values to zero, empty strings or null without explanation.
-See [JSONL export](export.md) for optional serialization. Offline parsing does
-not reconstruct paths or provide parallel scans.
+See [JSONL export](export.md) for optional serialization. MFT-stream parsing
+does not reconstruct paths or provide parallel scans.

@@ -1,4 +1,4 @@
-//! Offline diagnostics around the shared, intentionally tolerant entry builder.
+//! Logical-MFT-stream diagnostics around the shared, intentionally tolerant entry builder.
 
 use super::*;
 use crate::raw_mft::layout::{

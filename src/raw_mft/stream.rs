@@ -31,7 +31,7 @@ impl MftStreamOptions {
     pub fn new(record_size: usize) -> MftResult<Self> {
         if !(512..=65536).contains(&record_size) || !record_size.is_power_of_two() {
             return Err(MftError::InvalidOptions(
-                "offline record size must be a power of two between 512 and 65536",
+                "MFT stream record size must be a power of two between 512 and 65536",
             ));
         }
         Ok(Self {
@@ -136,7 +136,7 @@ impl<R: Read + Seek> MftStream<R> {
         // NTFS file references carry a 48-bit slot number.
         if size / record_size > 1u64 << 48 {
             return Err(MftError::InvalidOptions(
-                "offline stream exceeds the NTFS record number range",
+                "MFT stream exceeds the NTFS record number range",
             ));
         }
         reader.seek(SeekFrom::Start(0))?;
@@ -166,12 +166,15 @@ impl<R: Read + Seek> MftStream<R> {
         if number >= self.record_count {
             return Err(MftError::InvalidMftRecord {
                 number,
-                reason: "record number outside offline stream",
+                reason: "record number outside MFT stream",
             });
         }
-        let offset = number
-            .checked_mul(self.options.record_size as u64)
-            .ok_or(MftError::InvalidOptions("offline record offset overflow"))?;
+        let offset =
+            number
+                .checked_mul(self.options.record_size as u64)
+                .ok_or(MftError::InvalidOptions(
+                    "MFT stream record offset overflow",
+                ))?;
         self.reader.seek(SeekFrom::Start(offset))?;
         let mut bytes = vec![0; self.options.record_size];
         self.reader.read_exact(&mut bytes)?;
@@ -187,7 +190,7 @@ impl<R: Read + Seek> MftStream<R> {
         {
             return Err(MftError::InvalidMftRecord {
                 number,
-                reason: "offline FILE geometry is inconsistent",
+                reason: "MFT stream FILE geometry is inconsistent",
             });
         }
         Ok(RecordData {

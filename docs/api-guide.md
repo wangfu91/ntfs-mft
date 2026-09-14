@@ -78,7 +78,7 @@ another callback fails; completed side effects are not rolled back.
 Use `RawMftDiagnosticRecord.metadata` to distinguish absent, present, unknown,
 and not-collected fields. Keep its diagnostics and the iterator's final report.
 Raw attribute-list enrichment remains selective and is reported as unverified;
-use the offline inspection API for its supported extension-validation evidence.
+use `MftStream` inspection for its supported extension-validation evidence.
 `MftStreamOptions::new(size)` defaults to no extension resolution; enable
 `.resolve_extensions(true)` for one level of resident attribute-list references.
 An MFT-only source cannot recover arbitrary nonresident attribute payloads.
@@ -107,5 +107,5 @@ an explicit `usize` record size. If you already have a `RawMft`, use
 The resulting stream can outlive `raw` and its volume. For custom options, use
 `from_reader(raw.byte_reader()?, options)` with `raw.file_record_size()`.
 
-See [raw scan details](raw-mft-read.md), [offline inspection](offline-mft.md),
+See [raw scan details](raw-mft-read.md), [MFT stream parsing](offline-mft.md),
 and [versioned export](export.md) for their full contracts.

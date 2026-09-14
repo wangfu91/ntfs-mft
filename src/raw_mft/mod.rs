@@ -49,12 +49,12 @@ mod entry_build;
 pub mod history;
 mod io;
 mod layout;
-mod offline;
 mod options;
 mod parallel;
 mod path_resolver;
 mod reader;
 mod serial;
+mod stream;
 #[cfg(test)]
 mod tests;
 
@@ -76,7 +76,6 @@ pub use byte_reader::MftByteReader;
 pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawMftWorkChunk};
 pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
-pub use offline::{MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord};
 pub use options::{
     RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions,
     RawMftLeanScanOptionsBuilder, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
@@ -86,6 +85,7 @@ pub use parallel::RawMftParallelScheduling;
 pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
 pub use path_resolver::RawMftPathResolver;
 pub use serial::{RawMftDiagnosticIter, RawMftIter};
+pub use stream::{MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord};
 
 /// Default I/O buffer size for raw `$MFT` iteration.
 #[allow(clippy::useless_nonzero_new_unchecked)]

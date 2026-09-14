@@ -4,8 +4,8 @@
 //! A **live volume scan** reads directly from an NTFS volume/device through
 //! [`RawMft`]. An **offline MFT scan** parses an extracted file or buffer.
 //! See [`raw_mft`] for scan options, parallel iteration, and limitations.
-//! Use [`MftStream`] to parse logical `$MFT` bytes. Its source can be an offline
-//! file or a live volume; the parser type does not imply a stable snapshot.
+//! [`MftStream`] parses a logical `$MFT` stream from either source; its type does
+//! not imply offline provenance or a stable snapshot.
 //! **Read** denotes one record or a byte operation; **scan** denotes traversal.
 //!
 //! | API | Projection | Default selection | Parse failures |

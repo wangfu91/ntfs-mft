@@ -81,7 +81,7 @@ pub struct RawMftLink {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawMftEntry {
     /// Materialization choices that produced this entry. Empty collections do
-    /// not establish absence; use diagnostic or offline metadata for evidence.
+    /// not establish absence; use diagnostic or MFT-stream metadata for evidence.
     pub collection_options: crate::RawMftEntryOptions,
     /// Record number in the `$MFT`.
     pub record_number: u64,

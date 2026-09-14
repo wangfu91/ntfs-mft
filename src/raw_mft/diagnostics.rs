@@ -41,7 +41,7 @@ pub struct RawMftScanReport {
 
 /// A raw base record with conservative, per-category metadata evidence.
 ///
-/// Base attributes are inspected with the same checks as the offline parser.
+/// Base attributes are inspected with the same checks as the MFT-stream parser.
 /// An attribute list makes extension completeness unverified even when selected
 /// fields were enriched. Original non-resident file payloads are not returned.
 #[derive(Debug)]
