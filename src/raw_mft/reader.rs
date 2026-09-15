@@ -7,7 +7,7 @@ use crate::{
     errors::MftError,
     raw_mft::{
         attr_list::{enrich_from_attr_list, should_enrich_from_attr_list},
-        entry_build::{AttributeListInfo, EntryBuildOptions, RawMftBatchScratch, RawMftEntry},
+        entry_build::{AttributeListInfo, EntryBuildOptions, RawMftEntry},
         layout::{boot::BootSector, data_run::DataRun, extent::ExtentMap, record::FileRecord},
         options::RawMftScanOptions,
         volume_reader::VolumeReader,
@@ -68,7 +68,7 @@ pub(super) fn build_rich_entry(
 /// Returns `Ok(None)` when the record number maps to a sparse hole in the
 /// `$MFT` or the bytes are not a valid FILE record. Shared by the rich and
 /// lean per-record readers below.
-fn parse_record_at<'b>(
+pub(super) fn parse_record_at<'b>(
     reader: &'b mut VolumeReader,
     boot: &BootSector,
     extent_map: &ExtentMap,
@@ -101,24 +101,6 @@ pub(super) fn read_record_raw(
     Ok(Some(RawMftEntry::from_record_with_attr_list(
         &rec,
         build_options,
-    )))
-}
-
-/// Read one raw FILE record and return the lean batch entry plus any
-/// captured `$ATTRIBUTE_LIST` payload.
-pub(super) fn read_batch_record_raw(
-    reader: &mut VolumeReader,
-    boot: &BootSector,
-    extent_map: &ExtentMap,
-    record_number: u64,
-    collect_dos_file_name_links: bool,
-) -> Result<Option<(RawMftBatchScratch, Option<AttributeListInfo>)>, MftError> {
-    let Some(rec) = parse_record_at(reader, boot, extent_map, record_number)? else {
-        return Ok(None);
-    };
-    Ok(Some(RawMftBatchScratch::from_record_with_attr_list(
-        &rec,
-        collect_dos_file_name_links,
     )))
 }
 

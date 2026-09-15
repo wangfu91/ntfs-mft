@@ -3,7 +3,7 @@
 use super::inspection::{RecordInspection, inspect_view};
 use super::{
     MftByteReader, RawMft, RawMftEntry,
-    layout::{attribute::NtfsAttribute, record::FileRecord},
+    layout::{attribute::parse_attribute_list_references, record::FileRecord},
 };
 use crate::{
     MftDiagnostic, MftDiagnosticKind, MftError, MftExternalPayload, MftMetadata, MftResult,
@@ -181,19 +181,6 @@ impl<R: Read + Seek> MftStream<R> {
         self.reader.read_exact(&mut bytes)?;
         let record = FileRecord::parse(number, None, &mut bytes)?;
         let header = record.header;
-        let expected_usa = self.options.record_size / 512 + 1;
-        if header.allocated_size as usize != self.options.record_size
-            || header.update_sequence_length as usize != expected_usa
-            || (header.attributes_offset as usize) < 42
-            || (header.update_sequence_offset as usize) < 42
-            || header.update_sequence_offset as usize + expected_usa * 2
-                > header.attributes_offset as usize
-        {
-            return Err(MftError::InvalidMftRecord {
-                number,
-                reason: "MFT stream FILE geometry is inconsistent",
-            });
-        }
         Ok(RecordData {
             number,
             bytes,
@@ -219,7 +206,17 @@ impl<R: Read + Seek> MftStream<R> {
                         MftDiagnosticKind::ExternalPayloadUnavailable,
                     );
                 } else if self.options.resolve_extensions {
-                    references.extend(list_references(attr, number, &mut inspection));
+                    if let Some(data) = attr.resident_value() {
+                        let decoded = parse_attribute_list_references(data);
+                        references.extend(decoded.entries);
+                        if !decoded.complete {
+                            inspection.diagnose(
+                                number,
+                                None,
+                                MftDiagnosticKind::MalformedAttributeList,
+                            );
+                        }
+                    }
                 } else {
                     inspection.diagnose(number, None, MftDiagnosticKind::ExtensionsNotResolved);
                 }
@@ -227,7 +224,7 @@ impl<R: Read + Seek> MftStream<R> {
         }
         let mut extensions = BTreeMap::new();
         for reference in &references {
-            let ext_number = reference.file_reference & 0x0000_ffff_ffff_ffff;
+            let ext_number = reference.record_number();
             if ext_number == number || extensions.contains_key(&ext_number) {
                 continue;
             }
@@ -251,7 +248,7 @@ impl<R: Read + Seek> MftStream<R> {
         let mut attributes = base_attrs;
         let mut selected = std::collections::BTreeSet::new();
         for reference in &references {
-            let ext_number = reference.file_reference & 0x0000_ffff_ffff_ffff;
+            let ext_number = reference.record_number();
             let source = if ext_number == number {
                 Some(&base)
             } else {
@@ -261,7 +258,7 @@ impl<R: Read + Seek> MftStream<R> {
                 continue;
             };
             let expected_base = base.view().file_reference();
-            if source.header.sequence_value != (reference.file_reference >> 48) as u16
+            if source.header.sequence_value != reference.sequence_number()
                 || (ext_number != number && source.header.base_reference != expected_base)
             {
                 inspection.diagnose(
@@ -348,77 +345,6 @@ impl RecordData {
             number: self.number,
         }
     }
-}
-
-struct ListReference {
-    type_id: u32,
-    file_reference: u64,
-    id: u16,
-    lowest_vcn: i64,
-    name: Vec<u8>,
-}
-
-impl ListReference {
-    fn matches(&self, attr: &NtfsAttribute<'_>) -> bool {
-        self.type_id == attr.type_id()
-            && self.id == attr.header.id
-            && self.name.as_slice() == attr.name_bytes().unwrap_or_default()
-            && self.lowest_vcn == attr.nonresident_header().map_or(0, |h| h.lowest_vcn)
-    }
-}
-
-fn list_references(
-    attr: &NtfsAttribute<'_>,
-    number: u64,
-    inspection: &mut RecordInspection,
-) -> Vec<ListReference> {
-    use super::layout::attribute::AttributeListEntryHeader;
-    use zerocopy::FromBytes;
-
-    let Some(data) = attr.resident_value() else {
-        return Vec::new();
-    };
-    let mut result = Vec::new();
-    let mut offset = 0;
-    while offset < data.len() {
-        let remaining = &data[offset..];
-        // Some lists include zero-filled alignment padding after their entries.
-        if remaining.len() < 8 && remaining.iter().all(|b| *b == 0) {
-            break;
-        }
-        let header_size = std::mem::size_of::<AttributeListEntryHeader>();
-        let header = remaining
-            .get(..header_size)
-            .and_then(|bytes| AttributeListEntryHeader::read_from_bytes(bytes).ok());
-        let Some(h) = header else {
-            inspection.diagnose(number, None, MftDiagnosticKind::MalformedAttributeList);
-            break;
-        };
-        let len = h.record_length as usize;
-        let name_start = h.attribute_name_offset as usize;
-        let name_len = h.attribute_name_length as usize * 2;
-        if len < header_size
-            || len > remaining.len()
-            || h.lowest_vcn < 0
-            || (name_len != 0 && (name_start < header_size || name_start + name_len > len))
-        {
-            inspection.diagnose(number, None, MftDiagnosticKind::MalformedAttributeList);
-            break;
-        }
-        result.push(ListReference {
-            type_id: h.type_id,
-            file_reference: h.file_reference,
-            id: h.attribute_id,
-            lowest_vcn: h.lowest_vcn,
-            name: if name_len == 0 {
-                Vec::new()
-            } else {
-                remaining[name_start..name_start + name_len].to_vec()
-            },
-        });
-        offset += len;
-    }
-    result
 }
 
 /// Borrowing serial iterator over record positions in a logical MFT stream.

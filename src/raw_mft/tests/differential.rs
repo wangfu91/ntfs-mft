@@ -33,13 +33,25 @@ fn resident(kind: u32, id: u16, name: &str, value: &[u8]) -> Vec<u8> {
     attribute
 }
 
-fn attribute_list_reference(kind: u32, record_number: u64, sequence: u16, id: u16) -> Vec<u8> {
-    let mut reference = vec![0; 32];
+fn attribute_list_reference(
+    kind: u32,
+    record_number: u64,
+    sequence: u16,
+    id: u16,
+    name: &str,
+    lowest_vcn: i64,
+) -> Vec<u8> {
+    let name: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let len = (26 + name.len()).div_ceil(8) * 8;
+    let mut reference = vec![0; len];
     reference[..4].copy_from_slice(&kind.to_le_bytes());
-    reference[4..6].copy_from_slice(&32u16.to_le_bytes());
+    reference[4..6].copy_from_slice(&(len as u16).to_le_bytes());
+    reference[6] = (name.len() / 2) as u8;
     reference[7] = 26;
+    reference[8..16].copy_from_slice(&lowest_vcn.to_le_bytes());
     reference[16..24].copy_from_slice(&(record_number | ((sequence as u64) << 48)).to_le_bytes());
     reference[24..26].copy_from_slice(&id.to_le_bytes());
+    reference[26..26 + name.len()].copy_from_slice(&name);
     reference
 }
 
@@ -120,8 +132,10 @@ fn file_and_usa_outcomes_correspond_by_record_position() -> MftResult<()> {
     let non_file = vec![0; RECORD_SIZE];
     let mut torn = record(0, &[]);
     torn[510] ^= 1;
-    let valid_three = record(0, &[resident(0x80, 1, "", b"payload")]);
-    let records = vec![valid_zero, non_file, torn, valid_three];
+    let mut bad_geometry = record(0, &[]);
+    bad_geometry[28..32].copy_from_slice(&512u32.to_le_bytes());
+    let valid_four = record(0, &[resident(0x80, 1, "", b"payload")]);
+    let records = vec![valid_zero, non_file, torn, bad_geometry, valid_four];
 
     let volume = volume_from_records(&records)?;
     let raw = raw_mft(&volume, records.len() as u64);
@@ -133,7 +147,7 @@ fn file_and_usa_outcomes_correspond_by_record_position() -> MftResult<()> {
             .iter()
             .map(|entry| entry.record_number)
             .collect::<Vec<_>>(),
-        [0, 3]
+        [0, 4]
     );
 
     let mut stream = MftStream::from_reader(Cursor::new(records.concat()), stream_options()?)?;
@@ -147,10 +161,14 @@ fn file_and_usa_outcomes_correspond_by_record_position() -> MftResult<()> {
         records.next(),
         Some(Err(MftError::FixupMismatch { number: 2 }))
     ));
-    let stream_three = records.next().unwrap()?;
+    assert!(matches!(
+        records.next(),
+        Some(Err(MftError::InvalidMftRecord { number: 3, .. }))
+    ));
+    let stream_four = records.next().unwrap()?;
     assert!(records.next().is_none());
     assert_eq!(scanned[0], stream_zero.entry);
-    assert_eq!(scanned[1], stream_three.entry);
+    assert_eq!(scanned[1], stream_four.entry);
     Ok(())
 }
 
@@ -184,7 +202,7 @@ fn malformed_attributes_preserve_the_same_entry_projection() -> MftResult<()> {
 
 #[test]
 fn base_and_extension_enrichment_produce_the_same_base_entry() -> MftResult<()> {
-    let list = attribute_list_reference(0x80, 1, 7, 2);
+    let list = attribute_list_reference(0x80, 1, 7, 2, "", 0);
     let records = vec![
         record(0, &[resident(0x20, 1, "", &list)]),
         record(7 << 48, &[resident(0x80, 2, "", b"extension payload")]),
@@ -216,24 +234,48 @@ fn base_and_extension_enrichment_produce_the_same_base_entry() -> MftResult<()> 
 
 #[test]
 fn attribute_list_mismatch_preserves_iteration_policy_and_stream_evidence() -> MftResult<()> {
-    for (reference_sequence, reference_id, extension_base) in [
-        (8, 2, 7 << 48), // Sequence mismatch.
-        (7, 2, 6 << 48), // Base-reference mismatch.
-        (7, 9, 7 << 48), // Attribute-id mismatch.
+    for (
+        reference_type,
+        reference_sequence,
+        reference_id,
+        reference_name,
+        reference_vcn,
+        extension_base,
+        extension_type,
+        extension_id,
+        extension_name,
+    ) in [
+        (0x80, 8, 2, "", 0, 7 << 48, 0x80, 2, ""), // Sequence mismatch.
+        (0x80, 7, 2, "", 0, 6 << 48, 0x80, 2, ""), // Base-reference mismatch.
+        (0x80, 7, 9, "", 0, 7 << 48, 0x80, 2, ""), // Attribute-id mismatch.
+        (0x30, 7, 2, "", 0, 7 << 48, 0x80, 2, ""), // Attribute-type mismatch.
+        (0x80, 7, 2, "wanted", 0, 7 << 48, 0x80, 2, "actual"), // Name mismatch.
+        (0x80, 7, 2, "", 1, 7 << 48, 0x80, 2, ""), // Lowest-VCN mismatch.
     ] {
-        let mismatched = attribute_list_reference(0x80, 1, reference_sequence, reference_id);
+        let mismatched = attribute_list_reference(
+            reference_type,
+            1,
+            reference_sequence,
+            reference_id,
+            reference_name,
+            reference_vcn,
+        );
         let records = vec![
             record(0, &[resident(0x20, 1, "", &mismatched)]),
-            record(extension_base, &[resident(0x80, 2, "", b"unmatched")]),
+            record(
+                extension_base,
+                &[resident(
+                    extension_type,
+                    extension_id,
+                    extension_name,
+                    b"unmatched",
+                )],
+            ),
             record(0, &[resident(0x80, 1, "", b"following")]),
         ];
 
         let volume = volume_from_records(&records)?;
         let raw = raw_mft(&volume, records.len() as u64);
-        // The live enrichment path does not yet validate the full
-        // (sequence, base, type, id, name, VCN) tuple. Keep this baseline focused
-        // on its public selection/continuation contract; the shared-parser refactor
-        // should close that entry-projection gap rather than preserve it.
         let scanned = raw
             .scan_entries_with_options(scan_options(records.len() as u64))?
             .collect::<MftResult<Vec<_>>>()?;
@@ -257,6 +299,7 @@ fn attribute_list_mismatch_preserves_iteration_policy_and_stream_evidence() -> M
                 .iter()
                 .any(|diagnostic| matches!(diagnostic.kind, MftDiagnosticKind::ExtensionMismatch))
         );
+        assert_eq!(scanned[0], base.entry);
         let extension = records.next().unwrap()?;
         assert_eq!(extension.entry.record_number, 1);
         assert!(

@@ -116,6 +116,7 @@ impl<'a> FileRecord<'a> {
         let header = Self::validated_header(data).ok_or_else(|| {
             MftError::invalid_mft_record(number, volume_offset, "FILE signature or header invalid")
         })?;
+        Self::validate_geometry(number, volume_offset, data.len(), &header)?;
         let (usa_offset, usa_count) = (
             header.update_sequence_offset as usize,
             header.update_sequence_length as usize,
@@ -126,6 +127,35 @@ impl<'a> FileRecord<'a> {
             header,
             number,
         })
+    }
+
+    /// Validate header geometry against the fixed-size record buffer supplied
+    /// by either a live-volume source or a logical MFT stream.
+    fn validate_geometry(
+        number: u64,
+        volume_offset: Option<u64>,
+        record_size: usize,
+        header: &FileRecordHeader,
+    ) -> Result<(), MftError> {
+        let expected_usa = record_size
+            .checked_div(usa_fixup::USA_SECTOR_SIZE)
+            .and_then(|sectors| sectors.checked_add(1));
+        let usa_end = (header.update_sequence_offset as usize)
+            .checked_add((header.update_sequence_length as usize).saturating_mul(2));
+        let valid = record_size.is_multiple_of(usa_fixup::USA_SECTOR_SIZE)
+            && header.allocated_size as usize == record_size
+            && expected_usa == Some(header.update_sequence_length as usize)
+            && (header.attributes_offset as usize) >= size_of::<FileRecordHeader>()
+            && (header.update_sequence_offset as usize) >= size_of::<FileRecordHeader>()
+            && usa_end.is_some_and(|end| end <= header.attributes_offset as usize);
+        if !valid {
+            return Err(MftError::invalid_mft_record(
+                number,
+                volume_offset,
+                "FILE record geometry is inconsistent",
+            ));
+        }
+        Ok(())
     }
 
     /// Return whether the record is marked in use.

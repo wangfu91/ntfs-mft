@@ -16,7 +16,7 @@ pub(crate) use headers::{
     attr_header_flags, file_attr_flags,
 };
 pub(crate) use iter::{
-    for_each_attr_list_entry, for_each_attr_list_entry_header, for_each_attribute,
-    for_each_attribute_checked,
+    AttributeListReference, for_each_attr_list_entry_header, for_each_attribute,
+    for_each_attribute_checked, parse_attribute_list_references,
 };
 pub(crate) use view::{NtfsAttribute, ntfs_name_from_utf16le};

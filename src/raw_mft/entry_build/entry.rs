@@ -176,7 +176,17 @@ impl RawMftEntry {
         record: &FileRecord<'_>,
         attributes: impl IntoIterator<Item = NtfsAttribute<'a>>,
     ) -> Self {
-        let mut builder = RawMftEntryBuilder::new(record, EntryBuildOptions::full());
+        Self::from_attributes_with_options(record, attributes, EntryBuildOptions::full())
+    }
+
+    /// Build metadata from selected, validated attributes while preserving the
+    /// live scan's configured collection policy.
+    pub(crate) fn from_attributes_with_options<'a>(
+        record: &FileRecord<'_>,
+        attributes: impl IntoIterator<Item = NtfsAttribute<'a>>,
+        options: EntryBuildOptions,
+    ) -> Self {
+        let mut builder = RawMftEntryBuilder::new(record, options);
         for attr in attributes {
             super::fold::fold_attribute(&attr, &mut builder);
         }

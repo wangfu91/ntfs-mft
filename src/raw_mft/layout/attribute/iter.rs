@@ -13,17 +13,101 @@ use super::{AttributeListEntryHeader, NtfsAttribute, NtfsAttributeType};
 /// Minimum byte length of an `$ATTRIBUTE_LIST` entry (no attribute name).
 const ATTR_LIST_ENTRY_MIN_SIZE: usize = size_of::<AttributeListEntryHeader>();
 
-/// Call `f(type_id, file_reference)` for each valid entry in a raw
-/// `$ATTRIBUTE_LIST` data slice.
+/// Fully decoded identity of one `$ATTRIBUTE_LIST` entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AttributeListReference {
+    pub(crate) type_id: u32,
+    pub(crate) file_reference: u64,
+    pub(crate) id: u16,
+    pub(crate) lowest_vcn: i64,
+    pub(crate) name: Vec<u8>,
+}
+
+/// Best-effort decode result for a materialized `$ATTRIBUTE_LIST`.
+pub(crate) struct AttributeListReferences {
+    pub(crate) entries: Vec<AttributeListReference>,
+    pub(crate) complete: bool,
+}
+
+impl AttributeListReference {
+    pub(crate) fn record_number(&self) -> u64 {
+        self.file_reference & 0x0000_ffff_ffff_ffff
+    }
+
+    pub(crate) fn sequence_number(&self) -> u16 {
+        (self.file_reference >> 48) as u16
+    }
+
+    pub(crate) fn matches(&self, attr: &NtfsAttribute<'_>) -> bool {
+        let name_matches = if self.name.is_empty() {
+            attr.header.name_length == 0
+        } else {
+            attr.name_bytes() == Some(self.name.as_slice())
+        };
+        self.type_id == attr.type_id()
+            && self.id == attr.header.id
+            && name_matches
+            && self.lowest_vcn
+                == attr
+                    .nonresident_header()
+                    .map_or(0, |header| header.lowest_vcn)
+    }
+}
+
+/// Decode a complete `$ATTRIBUTE_LIST`, including the fields needed to bind an
+/// entry to one exact attribute in one exact FILE-record generation.
 ///
-/// Stops at the first malformed entry (zero-length or out of bounds).
-pub(crate) fn for_each_attr_list_entry<F>(data: &[u8], mut f: F)
-where
-    F: FnMut(u32, u64),
-{
-    for_each_attr_list_entry_header(data, |header| {
-        f(header.type_id, header.file_reference);
-    });
+/// References decoded before the first malformed entry remain available, while
+/// `complete` tells diagnostic callers that the list may have hidden more data.
+/// A short all-zero alignment tail is accepted.
+pub(crate) fn parse_attribute_list_references(data: &[u8]) -> AttributeListReferences {
+    let mut references = Vec::new();
+    let mut offset = 0usize;
+    let mut complete = true;
+    while offset < data.len() {
+        let remaining = &data[offset..];
+        if remaining.len() < 8 && remaining.iter().all(|byte| *byte == 0) {
+            break;
+        }
+        let Some(header) = remaining
+            .get(..ATTR_LIST_ENTRY_MIN_SIZE)
+            .and_then(|bytes| AttributeListEntryHeader::read_from_bytes(bytes).ok())
+        else {
+            complete = false;
+            break;
+        };
+        let len = header.record_length as usize;
+        let name_start = header.attribute_name_offset as usize;
+        let name_len = header.attribute_name_length as usize * 2;
+        let Some(name_end) = name_start.checked_add(name_len) else {
+            complete = false;
+            break;
+        };
+        if len < ATTR_LIST_ENTRY_MIN_SIZE
+            || len > remaining.len()
+            || header.lowest_vcn < 0
+            || (name_len != 0 && (name_start < ATTR_LIST_ENTRY_MIN_SIZE || name_end > len))
+        {
+            complete = false;
+            break;
+        }
+        references.push(AttributeListReference {
+            type_id: header.type_id,
+            file_reference: header.file_reference,
+            id: header.attribute_id,
+            lowest_vcn: header.lowest_vcn,
+            name: if name_len == 0 {
+                Vec::new()
+            } else {
+                remaining[name_start..name_end].to_vec()
+            },
+        });
+        offset += len;
+    }
+    AttributeListReferences {
+        entries: references,
+        complete,
+    }
 }
 
 /// Call `f` with the complete header of each valid `$ATTRIBUTE_LIST` entry.
@@ -182,8 +266,8 @@ mod tests {
         bytes.copy_from_slice(header.as_bytes());
 
         let mut seen = Vec::new();
-        for_each_attr_list_entry(&bytes, |type_id, file_reference| {
-            seen.push((type_id, file_reference));
+        for_each_attr_list_entry_header(&bytes, |header| {
+            seen.push((header.type_id, header.file_reference));
         });
 
         assert_eq!(
@@ -212,8 +296,8 @@ mod tests {
         bytes.extend(attr_list_entry(NtfsAttributeType::Data as u32, 0x22));
 
         let mut seen = Vec::new();
-        for_each_attr_list_entry(&bytes, |type_id, file_reference| {
-            seen.push((type_id, file_reference));
+        for_each_attr_list_entry_header(&bytes, |header| {
+            seen.push((header.type_id, header.file_reference));
         });
 
         assert_eq!(
@@ -234,11 +318,29 @@ mod tests {
         bytes.extend(malformed);
 
         let mut seen = Vec::new();
-        for_each_attr_list_entry(&bytes, |type_id, file_reference| {
-            seen.push((type_id, file_reference));
+        for_each_attr_list_entry_header(&bytes, |header| {
+            seen.push((header.type_id, header.file_reference));
         });
 
         assert_eq!(seen, vec![(NtfsAttributeType::FileName as u32, 0x42)]);
+    }
+
+    #[test]
+    fn exact_reference_decoder_retains_valid_prefix_and_marks_malformed_tail() {
+        let mut bytes = attr_list_entry(NtfsAttributeType::FileName as u32, 0x42);
+        let mut malformed = attr_list_entry(NtfsAttributeType::Data as u32, 0x99);
+        malformed[4..6].copy_from_slice(&0u16.to_le_bytes());
+        bytes.extend(malformed);
+
+        let decoded = parse_attribute_list_references(&bytes);
+
+        assert!(!decoded.complete);
+        assert_eq!(decoded.entries.len(), 1);
+        assert_eq!(decoded.entries[0].record_number(), 0x42);
+        assert_eq!(
+            decoded.entries[0].type_id,
+            NtfsAttributeType::FileName as u32
+        );
     }
 
     #[test]

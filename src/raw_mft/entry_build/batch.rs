@@ -91,6 +91,19 @@ pub(crate) struct RawMftBatchScratch {
 }
 
 impl RawMftBatchScratch {
+    /// Build a lean scratch entry from caller-selected, validated attributes.
+    pub(crate) fn from_attributes<'a>(
+        record: &FileRecord<'_>,
+        attributes: impl IntoIterator<Item = NtfsAttribute<'a>>,
+        collect_dos_file_name_links: bool,
+    ) -> Self {
+        let mut builder = RawMftBatchEntryBuilder::new(record, collect_dos_file_name_links);
+        for attr in attributes {
+            super::fold::fold_attribute(&attr, &mut builder);
+        }
+        builder.build().0
+    }
+
     /// Build a lean batch scratch entry plus any captured `$ATTRIBUTE_LIST`
     /// payload from one parsed FILE record.
     pub(crate) fn from_record_with_attr_list(
