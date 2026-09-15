@@ -1,5 +1,6 @@
 use super::*;
 
+mod differential;
 mod fixture;
 mod sparse_volume_fixture;
 
