@@ -1,4 +1,18 @@
 //! Export an extracted MFT or raw volume as JSONL. Diagnostics go to stderr.
+//!
+//! Export an extracted MFT with its record size:
+//!
+//! ```text
+//! cargo run --example raw_mft_export -- file path/to/$MFT 1024
+//! ```
+//!
+//! Or export a raw NTFS volume. On Windows, pass a drive letter from an elevated shell.
+//! On Linux and macOS, pass an NTFS mount or device path with read permission for its
+//! backing device:
+//!
+//! ```text
+//! cargo run --example raw_mft_export -- volume /media/user/windows
+//! ```
 use ntfs_mft::export::JsonlWriter;
 use ntfs_mft::{
     MftDiagnosticKind, MftError, MftRecord, MftResult, MftStream, MftStreamOptions,

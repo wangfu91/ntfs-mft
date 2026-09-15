@@ -1,6 +1,11 @@
 //! Scan a raw NTFS `$MFT` in parallel and report chunk throughput.
 //!
-//! Usage: `raw_mft_parallel_chunks <drive/mount/device> [records-per-chunk] [workers]`.
+//! On Windows, pass a drive letter from an elevated shell. On Linux and macOS, pass an
+//! NTFS mount or device path with read permission for its backing device:
+//!
+//! ```text
+//! cargo run --example raw_mft_parallel_chunks -- /media/user/windows 16384 4
+//! ```
 
 use std::{
     env,

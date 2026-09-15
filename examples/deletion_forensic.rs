@@ -11,7 +11,12 @@
 //! - `partial`: the chain broke before reaching the root, so the printed path
 //!   includes an unresolved-parent marker.
 //!
-//! Usage: `deletion_forensic <drive/mount/device> [result-limit]`.
+//! On Windows, pass a drive letter from an elevated shell. On Linux and macOS, pass an
+//! NTFS mount or device path with read permission for its backing device:
+//!
+//! ```text
+//! cargo run --example deletion_forensic -- /media/user/windows 1000
+//! ```
 
 use std::env;
 
