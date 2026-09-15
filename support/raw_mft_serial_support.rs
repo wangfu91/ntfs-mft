@@ -67,7 +67,7 @@ impl SerialConfig {
         config
     }
 
-    /// Build the scan options that drive [`RawMft::try_iter_with_options`].
+    /// Build the scan options that drive [`RawMft::scan_entries_with_options`].
     pub fn scan_options(&self) -> RawMftScanOptions {
         let builder = RawMftScanOptions::builder()
             .include_unused_records(self.include_unused_records)
@@ -144,7 +144,7 @@ pub fn print_serial_config(config: &SerialConfig) {
 /// returned [`SerialSummary`].
 pub fn run_serial_read(mft: &RawMft<'_>, config: &SerialConfig) -> Result<SerialSummary, MftError> {
     let mut summary = SerialSummary::default();
-    let iter = mft.try_iter_with_options(config.scan_options())?;
+    let iter = mft.scan_entries_with_options(config.scan_options())?;
     let limit = config.max_records.unwrap_or(usize::MAX);
     for item in iter.take(limit) {
         match item {

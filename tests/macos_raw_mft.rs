@@ -31,7 +31,7 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
     let raw = volume.raw_mft()?;
     let options = RawMftScanOptions::builder().end_record(Some(4096)).build();
     let serial = raw
-        .try_iter_with_options(options.clone())?
+        .scan_entries_with_options(options.clone())?
         .collect::<MftResult<Vec<_>>>()?;
     assert!(!serial.is_empty());
     let chunks = raw.plan_chunks_with_options(

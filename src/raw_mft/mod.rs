@@ -14,7 +14,7 @@
 //! # #[cfg(windows)] {
 //! let volume = Volume::from_drive_letter('C').expect("open volume");
 //! let mft = RawMft::new(&volume).expect("read $MFT");
-//! for entry in mft.try_iter().expect("iter") {
+//! for entry in mft.scan_entries().expect("scan") {
 //!     match entry {
 //!         Ok(e) if e.is_used => {
 //!             println!("{:>8}: {}", e.record_number, e.file_name.to_string_lossy());
@@ -87,8 +87,8 @@ pub use options::{
 pub use parallel::RawMftParallelScheduling;
 pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
 pub use path_resolver::RawMftPathResolver;
-pub use serial::{RawMftDiagnosticIter, RawMftIter};
-pub use stream::{MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord};
+pub use serial::{RawMftDiagnosticEntryScan, RawMftEntryScan};
+pub use stream::{MftRecord, MftRecordIter, MftStream, MftStreamOptions};
 
 /// Default I/O buffer size for raw `$MFT` iteration.
 #[allow(clippy::useless_nonzero_new_unchecked)]

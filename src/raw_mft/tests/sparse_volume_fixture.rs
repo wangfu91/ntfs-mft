@@ -54,7 +54,7 @@ fn sparse_fixture_serial_matches_both_parallel_schedulers() -> Result<(), Box<dy
     let raw = volume.raw_mft()?;
     let options = RawMftScanOptions::builder().start_record(0).build();
     let serial = raw
-        .try_iter_with_options(options.clone())?
+        .scan_entries_with_options(options.clone())?
         .collect::<MftResult<Vec<_>>>()?;
     assert_eq!(serial.len(), 1116);
     assert_eq!(serial.iter().filter(|e| e.is_directory).count(), 107);

@@ -338,7 +338,7 @@ pub fn run_parallel_ingest(
 
 /// Run the same ingest workload serially for comparison.
 pub fn run_serial_ingest(mft: &RawMft<'_>, config: &BenchConfig) -> Result<BenchSummary, MftError> {
-    let iter = mft.try_iter_with_options(config.iter_options())?;
+    let iter = mft.scan_entries_with_options(config.iter_options())?;
     let record_table_len = record_count_hint(mft, config);
     let mut records = Vec::with_capacity(record_table_len);
     records.resize_with(record_table_len, || None);

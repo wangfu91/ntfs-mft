@@ -2,7 +2,7 @@
 
 Use a live volume scan for a best-effort base-record listing from a volume. Use a
 diagnostic live volume scan when skipped-record counts and metadata evidence matter.
-Use `MftStream` when each physical slot, including invalid or extension slots,
+Use `MftStream` when each logical record position, including invalid or extension records,
 needs an explicit outcome.
 
 A **live volume scan** reads directly from an NTFS volume/device. An **offline
@@ -13,11 +13,11 @@ record interpretation. `RawMft` and `MftStream` name the data access abstraction
 
 | Entry point | Result | Default selection | Error behavior |
 | --- | --- | --- | --- |
-| `raw.try_iter()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
+| `raw.scan_entries()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
 | `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
 | `raw.parallel().lean()` | Batches of `RawMftBatchEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
-| `raw.try_iter_diagnostic(options, limit)` | `RawMftDiagnosticRecord` plus final report | Supplied raw selection | Counts skipped categories, retains bounded parser errors; scan I/O error returned once, then stops |
-| `stream.iter_records()` | `MftStreamRecord` per valid slot | All physical slots from zero, including unused and extensions | Parse errors returned per slot and iteration continues; I/O error stops iteration |
+| `raw.scan_entries_diagnostic(options, limit)` | `RawMftDiagnosticRecord` plus final report | Supplied raw selection | Counts skipped categories, retains bounded parser errors; scan I/O error returned once, then stops |
+| `stream.iter_records()` | `MftRecord` per valid record position | All record positions from zero, including unused and extensions | Parse errors returned per position and iteration continues; I/O error stops iteration |
 
 MftStream extension I/O failures are attached to the base record's diagnostics;
 the iterator yields that record and then stops. Ordinary live volume scans use the

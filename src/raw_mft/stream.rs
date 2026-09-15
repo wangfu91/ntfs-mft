@@ -54,9 +54,9 @@ impl MftStreamOptions {
     }
 }
 
-/// Metadata and provenance for one physical MFT slot.
+/// Metadata and provenance for one successfully parsed MFT record.
 #[derive(Debug)]
-pub struct MftStreamRecord {
+pub struct MftRecord {
     /// Existing metadata representation. Interpret default values using `metadata`.
     pub entry: RawMftEntry,
     /// Offset in the supplied stream, not an offset in the original volume.
@@ -148,7 +148,7 @@ impl<R: Read + Seek> MftStream<R> {
         })
     }
 
-    /// Number of complete physical slots, including non-FILE and unused slots.
+    /// Number of complete record positions, including non-FILE and unused positions.
     pub const fn record_count(&self) -> u64 {
         self.record_count
     }
@@ -203,7 +203,7 @@ impl<R: Read + Seek> MftStream<R> {
 
     /// Read one slot. Non-FILE slots, bad USA fixups, and out-of-range numbers
     /// are errors; incomplete metadata retains the entry with diagnostics.
-    pub fn read_record(&mut self, number: u64) -> MftResult<MftStreamRecord> {
+    pub fn read_record(&mut self, number: u64) -> MftResult<MftRecord> {
         let base = self.load(number)?;
         let mut inspection = RecordInspection::default();
         let base_attrs = inspect_view(&base.view(), &mut inspection);
@@ -312,7 +312,7 @@ impl<R: Read + Seek> MftStream<R> {
         );
         let metadata = inspection.metadata();
         let (diagnostics, external_payloads) = inspection.into_diagnostics_and_external_payloads();
-        Ok(MftStreamRecord {
+        Ok(MftRecord {
             entry,
             stream_offset: number * self.options.record_size as u64,
             metadata,
@@ -321,12 +321,12 @@ impl<R: Read + Seek> MftStream<R> {
         })
     }
 
-    /// Iterate every physical slot from zero. Parse errors consume one slot and
+    /// Iterate every record position from zero. Parse errors consume one position and
     /// iteration continues. An I/O error is returned once, then iteration stops.
     /// A recoverable extension I/O error is attached to its base entry and also
     /// stops this iterator after yielding that entry.
-    pub fn iter_records(&mut self) -> MftStreamIter<'_, R> {
-        MftStreamIter {
+    pub fn iter_records(&mut self) -> MftRecordIter<'_, R> {
+        MftRecordIter {
             stream: self,
             next: 0,
             stopped: false,
@@ -421,15 +421,15 @@ fn list_references(
     result
 }
 
-/// Borrowing serial iterator over physical slots in a logical MFT stream.
-pub struct MftStreamIter<'a, R: Read + Seek> {
+/// Borrowing serial iterator over record positions in a logical MFT stream.
+pub struct MftRecordIter<'a, R: Read + Seek> {
     stream: &'a mut MftStream<R>,
     next: u64,
     stopped: bool,
 }
 
-impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
-    type Item = MftResult<MftStreamRecord>;
+impl<R: Read + Seek> Iterator for MftRecordIter<'_, R> {
+    type Item = MftResult<MftRecord>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.stopped || self.next >= self.stream.record_count {
             return None;
@@ -448,4 +448,4 @@ impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
     }
 }
 
-impl<R: Read + Seek> std::iter::FusedIterator for MftStreamIter<'_, R> {}
+impl<R: Read + Seek> std::iter::FusedIterator for MftRecordIter<'_, R> {}

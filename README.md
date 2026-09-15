@@ -51,7 +51,7 @@ fn main() -> MftResult<()> {
     #[cfg(target_os = "macos")]
     let volume = Volume::from_mount_point("/Volumes/Windows")?;
     let mft = volume.raw_mft()?;
-    for entry in mft.try_iter()?.take(20) {
+    for entry in mft.scan_entries()?.take(20) {
         println!("{}", entry?.file_name.to_string_lossy());
     }
     Ok(())

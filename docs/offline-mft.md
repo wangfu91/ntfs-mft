@@ -62,9 +62,9 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
 - Construction seeks to the end to establish a fixed slot count, then to zero.
   An empty stream is valid. A partial trailing slot is `TruncatedRecord`.
   The source must remain unchanged until `into_inner` returns it.
-- `read_record(number)` takes `&mut self`. It addresses a physical slot at
+- `read_record(number)` takes `&mut self`. It addresses a logical record position at
   `number * record_size`. Slot numbering does not come from optional header fields.
-  `MftStreamRecord::stream_offset` always refers to this stream, never the volume.
+  `MftRecord::stream_offset` always refers to this stream, never the volume.
 - `iter_records()` starts at zero and yields every slot, including system records,
   unused records and extension records. A non-FILE slot is an item-level error.
   Parse errors allow iteration to continue. I/O errors terminate iteration after
@@ -76,7 +76,7 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
 
 ## Metadata and unavailable payloads
 
-`MftStreamRecord.entry` reuses `RawMftEntry`. Its zero, empty and `None` defaults
+`MftRecord.entry` reuses `RawMftEntry`. Its zero, empty and `None` defaults
 must be interpreted alongside `metadata`:
 
 | State | Meaning |
@@ -106,7 +106,7 @@ LCNs are never interpreted as offsets into the extracted MFT.
 
 ## Extension records
 
-Default mode builds metadata from each physical record only. A base record with
+Default mode builds metadata from each MFT record only. A base record with
 an attribute list reports `ExtensionsNotResolved`. Use this mode for physical-record comparisons.
 
 With `resolve_extensions(true)`, resident lists select attributes using type,

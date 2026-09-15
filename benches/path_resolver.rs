@@ -29,7 +29,7 @@ mod windows_bench {
         };
 
         let mut entries = Vec::new();
-        if let Ok(it) = mft.try_iter() {
+        if let Ok(it) = mft.scan_entries() {
             for entry in it.flatten() {
                 entries.push(entry);
                 if entries.len() >= NUM_TEST_ENTRIES {

@@ -60,7 +60,7 @@ fn run() -> Result<(), MftError> {
     let mut index = HistoricalPathIndex::new();
     let mut deleted_records = Vec::new();
 
-    for result in mft.try_iter_with_options(options)? {
+    for result in mft.scan_entries_with_options(options)? {
         let entry = match result {
             Ok(entry) => entry,
             Err(error) => {

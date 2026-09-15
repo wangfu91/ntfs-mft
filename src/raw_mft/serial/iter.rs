@@ -19,10 +19,10 @@ use super::engine::{SerialParseState, next_record_output};
 /// Sparse, non-FILE, malformed, and extension records are skipped. Scan I/O
 /// errors are returned as items; a caller that continues may visit later slots.
 /// Attribute-list enrichment errors are not returned. Successful collection
-/// does not establish complete metadata. Use [`RawMft::try_iter_diagnostic`]
+/// does not establish complete metadata. Use [`RawMft::scan_entries_diagnostic`]
 /// for skip counts and evidence, or [`crate::MftStream`] for per-slot outcomes.
 /// A live volume scan is not an atomic snapshot.
-pub struct RawMftIter<'a> {
+pub struct RawMftEntryScan<'a> {
     /// Parent raw-MFT reader.
     mft: &'a RawMft<'a>,
     /// Sector-aligned volume reader reused across iteration.
@@ -37,23 +37,25 @@ pub struct RawMftIter<'a> {
 }
 
 impl<'a> RawMft<'a> {
-    /// Begin a live volume scan with default selection and the error policy of [`RawMftIter`].
-    #[must_use = "iterators are lazy and do nothing unless consumed"]
-    pub fn try_iter(&self) -> Result<RawMftIter<'_>, MftError> {
-        self.try_iter_with_options(RawMftScanOptions::default())
+    /// Create a lazy live-volume entry scan with default selection and the
+    /// error policy of [`RawMftEntryScan`].
+    #[must_use = "entry scans are lazy and do nothing unless consumed"]
+    pub fn scan_entries(&self) -> Result<RawMftEntryScan<'_>, MftError> {
+        self.scan_entries_with_options(RawMftScanOptions::default())
     }
 
-    /// Begin a live volume scan with custom selection and the error policy of [`RawMftIter`].
-    #[must_use = "iterators are lazy and do nothing unless consumed"]
-    pub fn try_iter_with_options(
+    /// Create a lazy live-volume entry scan with custom selection and the
+    /// error policy of [`RawMftEntryScan`].
+    #[must_use = "entry scans are lazy and do nothing unless consumed"]
+    pub fn scan_entries_with_options(
         &self,
         options: RawMftScanOptions,
-    ) -> Result<RawMftIter<'_>, MftError> {
+    ) -> Result<RawMftEntryScan<'_>, MftError> {
         let (reader, attr_reader) = self.buffered_readers_for_options(&options)?;
         let scan = SerialParseState::from_options(self, &options);
         let build_options = entry_build_options(&options);
 
-        Ok(RawMftIter {
+        Ok(RawMftEntryScan {
             mft: self,
             reader,
             attr_reader,
@@ -63,7 +65,7 @@ impl<'a> RawMft<'a> {
     }
 }
 
-impl<'a> Iterator for RawMftIter<'a> {
+impl<'a> Iterator for RawMftEntryScan<'a> {
     type Item = Result<RawMftEntry, MftError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -85,8 +87,8 @@ impl<'a> Iterator for RawMftIter<'a> {
 /// Opt-in diagnostic raw iterator. Corrupt records are counted and skipped;
 /// scan I/O errors are returned once and stop iteration. Metadata limitations
 /// accompany successful records. Use [`Self::report`] even after early stopping.
-pub struct RawMftDiagnosticIter<'a> {
-    inner: RawMftIter<'a>,
+pub struct RawMftDiagnosticEntryScan<'a> {
+    inner: RawMftEntryScan<'a>,
     stopped: bool,
 }
 
@@ -95,20 +97,20 @@ impl RawMft<'_> {
     ///
     /// `diagnostic_limit` bounds retained skipped-record errors; all skips are
     /// still counted. This performs extra attribute validation per yielded record.
-    pub fn try_iter_diagnostic(
+    pub fn scan_entries_diagnostic(
         &self,
         options: RawMftScanOptions,
         diagnostic_limit: usize,
-    ) -> Result<RawMftDiagnosticIter<'_>, MftError> {
-        let mut inner = self.try_iter_with_options(options)?;
+    ) -> Result<RawMftDiagnosticEntryScan<'_>, MftError> {
+        let mut inner = self.scan_entries_with_options(options)?;
         inner.scan.diagnostic_limit = Some(diagnostic_limit);
-        Ok(RawMftDiagnosticIter {
+        Ok(RawMftDiagnosticEntryScan {
             inner,
             stopped: false,
         })
     }
 }
-impl RawMftDiagnosticIter<'_> {
+impl RawMftDiagnosticEntryScan<'_> {
     /// Evidence accumulated so far. Early stopping leaves `reached_end` false.
     pub fn report(&self) -> &crate::RawMftScanReport {
         &self.inner.scan.report
@@ -118,7 +120,7 @@ impl RawMftDiagnosticIter<'_> {
         self.inner.scan.report
     }
 }
-impl Iterator for RawMftDiagnosticIter<'_> {
+impl Iterator for RawMftDiagnosticEntryScan<'_> {
     type Item = Result<crate::RawMftDiagnosticRecord, MftError>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.stopped {
@@ -171,4 +173,4 @@ impl Iterator for RawMftDiagnosticIter<'_> {
         }
     }
 }
-impl std::iter::FusedIterator for RawMftDiagnosticIter<'_> {}
+impl std::iter::FusedIterator for RawMftDiagnosticEntryScan<'_> {}

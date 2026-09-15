@@ -229,7 +229,7 @@ pub struct ExportRecordV1 {
     /// Adapter that supplied this record: `entry`, `mft_stream`, or `volume_scan`.
     /// `mft_stream` may read a live volume; it does not imply offline provenance.
     pub source: String,
-    /// Supplied physical record number as decimal, independent of the reference.
+    /// Supplied MFT record number as decimal, independent of the reference.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
     pub record_number: String,
     /// Supplied record-header sequence number.

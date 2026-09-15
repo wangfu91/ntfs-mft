@@ -98,7 +98,7 @@ impl Volume {
     ///
     /// // Requires Administrator privileges.
     /// let volume = Volume::from_drive_letter('C')?;
-    /// for result in volume.raw_mft()?.try_iter()?.take(10) {
+    /// for result in volume.raw_mft()?.scan_entries()?.take(10) {
     ///     println!("{}", result?);
     /// }
     /// # Ok::<(), ntfs_mft::MftError>(())

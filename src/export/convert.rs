@@ -1,7 +1,6 @@
 use super::*;
 use crate::{
-    Filetime, MftDiagnosticKind, MftError, MftFieldState, MftStreamRecord, NtfsFileReference,
-    RawMftEntry,
+    Filetime, MftDiagnosticKind, MftError, MftFieldState, MftRecord, NtfsFileReference, RawMftEntry,
 };
 use chrono::{Datelike, TimeZone, Utc};
 use std::ffi::OsStr;
@@ -220,7 +219,7 @@ impl ExportRecordV1 {
     }
 
     /// Preserve the logical-stream parser's explicit evidence and diagnostics.
-    pub fn from_stream(record: &MftStreamRecord) -> Self {
+    pub fn from_stream(record: &MftRecord) -> Self {
         let mut dto = Self::from_entry(&record.entry);
         dto.source = "mft_stream".into();
         dto.stream_offset = Some(record.stream_offset.to_string());

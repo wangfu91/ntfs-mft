@@ -406,7 +406,7 @@
           "description": "Selected-name path evidence supplied by the caller."
         },
         "record_number": {
-          "description": "Supplied physical record number as decimal, independent of the reference.",
+          "description": "Supplied MFT record number as decimal, independent of the reference.",
           "pattern": "^(0|[1-9][0-9]*)$",
           "type": "string"
         },

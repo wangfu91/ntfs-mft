@@ -10,10 +10,10 @@
 //!
 //! | API | Projection | Default selection | Parse failures |
 //! | --- | --- | --- | --- |
-//! | [`RawMft::try_iter`] | Rich entries | `24..`, bitmap-used base records | Skipped |
+//! | [`RawMft::scan_entries`] | Rich entries | `24..`, bitmap-used base records | Skipped |
 //! | [`RawMft::parallel`] then `.rich()` | Rich batches | Same raw selection | Skipped |
 //! | [`RawMft::parallel`] then `.lean()` | Lean batches | Same raw selection | Skipped |
-//! | [`RawMft::try_iter_diagnostic`] | Rich entries and evidence | Supplied raw selection | Counted, bounded retention |
+//! | [`RawMft::scan_entries_diagnostic`] | Rich entries and evidence | Supplied raw selection | Counted, bounded retention |
 //! | [`MftStream::iter_records`] | Stream records and evidence | Every slot from zero | Returned per slot |
 //!
 //! Scan I/O errors are returned. Diagnostic and stream iterators stop on I/O

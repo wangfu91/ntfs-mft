@@ -23,7 +23,7 @@ fn mounted_ntfs_raw_mft_smoke_test() {
     };
     let raw_mft = RawMft::new(&volume).expect("parse NTFS boot sector and discover $MFT");
     let entries: Vec<_> = raw_mft
-        .try_iter()
+        .scan_entries()
         .expect("create raw $MFT iterator")
         .take(128)
         .collect::<Result<_, _>>()

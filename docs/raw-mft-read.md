@@ -62,7 +62,7 @@ handles. A live scan is not an atomic snapshot.
 
 ## Serial scanning
 
-`try_iter` and `try_iter_with_options` use the following pipeline:
+`scan_entries` and `scan_entries_with_options` use the following pipeline:
 
 1. Check the cached bitmap when unused records are excluded.
 2. Translate the record number through the extent map; skip sparse holes.
@@ -74,7 +74,7 @@ Default scans start at record 24 and exclude unused records. Invalid records
 are logged and skipped; scan I/O errors are returned. If no bitmap is available,
 `bitmap_used` returns true and callers must inspect `entry.is_used` themselves.
 This output is a best-effort base-record view, not a guaranteed Explorer listing.
-Use [MftStream](offline-mft.md) to inspect every physical slot and its errors.
+Use [MftStream](offline-mft.md) to inspect every logical record position and its errors.
 
 ## Metadata and extension records
 
@@ -215,7 +215,7 @@ materialization and enrichment implementation as rich serial scans.
 ## Diagnostic raw scanning
 
 The fast raw APIs remain tolerant. For evidence about skipped records and
-metadata, use `raw.try_iter_diagnostic(options, diagnostic_limit)`. It yields
+metadata, use `raw.scan_entries_diagnostic(options, diagnostic_limit)`. It yields
 `RawMftDiagnosticRecord` values with per-category `MftFieldState` evidence and
 metadata diagnostics. Base attributes receive the MFT-stream parser's validation;
 attribute-list enrichment is conservatively reported as unverified because the
@@ -224,7 +224,7 @@ raw enrichment path does not inspect the complete extension attribute set.
 ```rust,no_run
 use ntfs_mft::{RawMft, RawMftScanOptions, MftResult};
 fn inspect(raw: &RawMft<'_>) -> MftResult<()> {
-    let mut records = raw.try_iter_diagnostic(RawMftScanOptions::default(), 100)?;
+    let mut records = raw.scan_entries_diagnostic(RawMftScanOptions::default(), 100)?;
     for result in records.by_ref() {
         let record = result?;
         println!("{} {:?}", record.entry, record.metadata);
@@ -241,7 +241,7 @@ error is returned once and stops the diagnostic iterator. The report distinguish
 unused, sparse, non-FILE/header-invalid, extension, and parser-rejected slots.
 The diagnostic limit bounds retained parser errors, not their counts. Early
 stopping leaves `reached_end` false, and reaching the end does not imply complete
-metadata. Per-record metadata diagnostics are bounded by the physical record.
+metadata. Per-record metadata diagnostics are bounded by the MFT record.
 Diagnostic scans are currently serial; ordinary rich/lean parallel scans retain
 the fast best-effort policy.
 

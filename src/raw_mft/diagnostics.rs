@@ -4,7 +4,7 @@ use crate::{MftDiagnostic, MftError, MftMetadata, RawMftEntry};
 /// One recoverable record-level failure observed during a raw scan.
 #[derive(Debug)]
 pub struct RawMftScanDiagnostic {
-    /// Physical record slot at which parsing failed.
+    /// Logical MFT record position at which parsing failed.
     pub record_number: u64,
     /// Original structured parser error.
     pub error: MftError,
@@ -22,7 +22,7 @@ pub struct RawMftScanReport {
     pub yielded: u64,
     /// Slots excluded by the bitmap.
     pub skipped_unused: u64,
-    /// Sparse logical slots without physical records.
+    /// Sparse logical record positions without mapped storage.
     pub skipped_sparse: u64,
     /// Slots with no FILE signature or an implausible header.
     pub skipped_non_file: u64,

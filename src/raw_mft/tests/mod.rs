@@ -107,7 +107,7 @@ mod windows_live {
         let resolver = mft.path_resolver().expect("raw mft path resolver");
         let mut resolved_any = false;
         // Cap the search so the test stays bounded on huge volumes.
-        for r in mft.try_iter().expect("iter").flatten().take(20_000) {
+        for r in mft.scan_entries().expect("iter").flatten().take(20_000) {
             if r.is_directory || r.file_name.is_empty() {
                 continue;
             }

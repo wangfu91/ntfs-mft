@@ -89,7 +89,7 @@ fn automatic_selection_matches_serial_for_ranges_usage_and_builder_order() -> Mf
             .include_unused_records(include_unused)
             .build();
         let serial = raw
-            .try_iter_with_options(options.clone())?
+            .scan_entries_with_options(options.clone())?
             .map(|e| e.map(|e| e.record_number))
             .collect::<MftResult<Vec<_>>>()?;
         assert_eq!(serial, expected);
@@ -379,7 +379,7 @@ fn diagnostic_scan_counts_skips_bounds_errors_and_retains_metadata_evidence() ->
         .include_unused_records(true)
         .collect_alternate_data_streams(false)
         .build();
-    let mut iter = raw.try_iter_diagnostic(options, 1)?;
+    let mut iter = raw.scan_entries_diagnostic(options, 1)?;
     let first = iter.next().unwrap()?;
     assert!(
         !first
@@ -455,7 +455,7 @@ fn diagnostic_scan_marks_attribute_lists_unverified_and_stops_on_io() -> MftResu
         .start_record(0)
         .include_unused_records(true)
         .build();
-    let mut iter = raw.try_iter_diagnostic(options, 0)?;
+    let mut iter = raw.scan_entries_diagnostic(options, 0)?;
     let first = iter.next().unwrap()?;
     assert_eq!(
         first.metadata.standard_information,

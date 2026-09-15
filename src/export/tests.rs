@@ -5,7 +5,7 @@ use crate::{
 };
 use std::{ffi::OsString, io::Cursor};
 
-fn fixture() -> crate::MftResult<crate::MftStreamRecord> {
+fn fixture() -> crate::MftResult<crate::MftRecord> {
     let bytes = include_bytes!("../../tests/fixtures/omerbenamram-mft/MFT");
     let mut stream =
         MftStream::from_reader(Cursor::new(bytes.as_slice()), MftStreamOptions::new(1024)?)?;
