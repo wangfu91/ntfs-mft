@@ -10,6 +10,8 @@
 use crate::errors::MftError;
 use crate::volume::Volume;
 use std::io::{self, Read, Seek, SeekFrom};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::os::unix::fs::FileExt;
 #[cfg(windows)]
 use windows::Win32::{
     Foundation::HANDLE,
@@ -67,6 +69,7 @@ impl VolumeReader {
         // including during bootstrap before the NTFS geometry is known.
         #[cfg(target_os = "macos")]
         let sector_size = sector_size.max(volume.io_alignment);
+
         let sectors = (buffer_bytes as u64 / sector_size).max(1);
         let cap = (sectors * sector_size) as usize;
         Ok(Self {
@@ -110,10 +113,10 @@ impl VolumeReader {
             self.buf_len = count;
             return Ok(());
         }
+
         #[cfg(windows)]
         self.raw_seek(sector_pos)?;
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        use std::os::unix::fs::FileExt;
+
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let bytes_read = self.file.read_at(&mut self.buf, sector_pos)?;
@@ -127,6 +130,7 @@ impl VolumeReader {
             self.buf_len = bytes_read;
             Ok(())
         }
+
         #[cfg(windows)]
         {
             let mut bytes_read: u32 = 0;
