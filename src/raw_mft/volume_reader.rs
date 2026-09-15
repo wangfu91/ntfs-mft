@@ -78,7 +78,14 @@ impl VolumeReader {
         })
     }
 
-    /// Round `n` down to the nearest sector boundary.
+    /// Round `n` down to the start of its containing sector.
+    ///
+    /// `sector_size` is validated at construction to be a non-zero power of
+    /// two. For such a size, the low bits of `n` encode its byte offset within
+    /// a sector. `sector_size - 1` has exactly those low bits set, so its
+    /// inverse keeps the sector-number bits and clears the intra-sector
+    /// offset. Applying that mask returns the sector boundary at or before
+    /// `n`: with 512-byte sectors, 513 becomes 512 while 512 remains 512.
     fn round_down(&self, n: u64) -> u64 {
         n & !(self.sector_size - 1)
     }
