@@ -3,7 +3,7 @@
 use super::{
     MftDiagnostic, MftDiagnosticKind, MftExternalPayload, MftFieldState, MftMetadata,
     layout::{
-        attribute::{NtfsAttribute, for_each_attribute_checked},
+        attribute::{AttributeListReference, NtfsAttribute, for_each_attribute_checked},
         data_run::decode_runs,
         record::FileRecord,
     },
@@ -108,33 +108,7 @@ impl RecordInspection {
     /// Validate before dispatch so malformed named data cannot become unnamed data.
     pub fn observe(&mut self, number: u64, attr: &NtfsAttribute<'_>) -> bool {
         let kind = attr.type_id();
-        let valid_name = !attr.has_name() || attr.name_bytes().is_some();
-        let header_size = if attr.is_non_resident() { 64 } else { 24 };
-        let valid_name =
-            valid_name && (!attr.has_name() || attr.header.name_offset as usize >= header_size);
-        let payload_min = if attr.has_name() {
-            header_size.max(attr.header.name_offset as usize + attr.header.name_length as usize * 2)
-        } else {
-            header_size
-        };
-        let valid_payload = if attr.is_non_resident() {
-            attr.nonresident_header().is_some_and(|h| {
-                h.lowest_vcn >= 0
-                    && h.data_runs_offset as usize >= payload_min
-                    && (h.data_runs_offset as usize) < attr.len()
-            })
-        } else {
-            attr.resident_header()
-                .is_some_and(|h| h.value_offset as usize >= payload_min)
-                && attr.resident_value().is_some()
-        };
-        let valid_typed = match kind {
-            0x10 => attr.as_standard_info().is_some(),
-            0x30 => attr.as_file_name().is_some_and(|(h, _)| h.namespace <= 3),
-            0xc0 if !attr.is_non_resident() => attr.resident_value().is_some_and(|v| v.len() >= 4),
-            _ => true,
-        };
-        if attr.header.is_non_resident > 1 || !valid_name || !valid_payload || !valid_typed {
+        if !attribute_shape_is_valid(attr) {
             self.diagnose(number, Some(kind), MftDiagnosticKind::MalformedAttribute);
             return false;
         }
@@ -186,6 +160,43 @@ impl RecordInspection {
     }
 }
 
+/// Validate the in-record shape needed before any consumer interprets an
+/// attribute. Expensive evidence checks such as runlist decoding remain in
+/// `RecordInspection::observe` and are paid only by diagnostic callers.
+fn attribute_shape_is_valid(attr: &NtfsAttribute<'_>) -> bool {
+    let valid_name = !attr.has_name() || attr.name_bytes().is_some();
+    let header_size = if attr.is_non_resident() { 64 } else { 24 };
+    let valid_name =
+        valid_name && (!attr.has_name() || attr.header.name_offset as usize >= header_size);
+    let payload_min = if attr.has_name() {
+        header_size.max(attr.header.name_offset as usize + attr.header.name_length as usize * 2)
+    } else {
+        header_size
+    };
+    let valid_payload = if attr.is_non_resident() {
+        attr.nonresident_header().is_some_and(|header| {
+            header.lowest_vcn >= 0
+                && header.data_runs_offset as usize >= payload_min
+                && (header.data_runs_offset as usize) < attr.len()
+        })
+    } else {
+        attr.resident_header()
+            .is_some_and(|header| header.value_offset as usize >= payload_min)
+            && attr.resident_value().is_some()
+    };
+    let valid_typed = match attr.type_id() {
+        0x10 => attr.as_standard_info().is_some(),
+        0x30 => attr
+            .as_file_name()
+            .is_some_and(|(header, _)| header.namespace <= 3),
+        0xc0 if !attr.is_non_resident() => {
+            attr.resident_value().is_some_and(|value| value.len() >= 4)
+        }
+        _ => true,
+    };
+    attr.header.is_non_resident <= 1 && valid_name && valid_payload && valid_typed
+}
+
 pub(in crate::raw_mft) fn inspect_view<'a>(
     view: &FileRecord<'a>,
     inspection: &mut RecordInspection,
@@ -205,4 +216,115 @@ pub(in crate::raw_mft) fn inspect_view<'a>(
         inspection.diagnose(view.number, None, MftDiagnosticKind::MalformedAttribute);
     }
     attributes
+}
+
+/// Result of inspecting one FILE record against a set of exact
+/// `$ATTRIBUTE_LIST` references.
+pub(in crate::raw_mft) struct ReferencedAttributeInspection<'a> {
+    /// Structurally valid attributes selected at most once from this record.
+    pub(in crate::raw_mft) attributes: Vec<NtfsAttribute<'a>>,
+    /// Attribute types whose reference did not bind to this record generation.
+    pub(in crate::raw_mft) mismatches: Vec<u32>,
+    /// Whether malformed attribute bytes may have hidden another referenced item.
+    pub(in crate::raw_mft) malformed: bool,
+    /// Whether an extension record itself contains an `$ATTRIBUTE_LIST`.
+    pub(in crate::raw_mft) nested_attribute_list: bool,
+}
+
+/// Inspect one loaded record once, then bind exact list references to its
+/// structurally valid attributes. Source generation/base validation and the
+/// `(type, id, name, lowest VCN)` match therefore cannot diverge by caller.
+pub(in crate::raw_mft) fn inspect_referenced_attributes<'a, 'r>(
+    view: &FileRecord<'a>,
+    references: impl IntoIterator<Item = &'r AttributeListReference>,
+    base_record_number: u64,
+    base_file_reference: u64,
+) -> ReferencedAttributeInspection<'a> {
+    let references = references.into_iter().collect::<Vec<_>>();
+    if !references
+        .iter()
+        .any(|reference| reference.matches_record(view, base_record_number, base_file_reference))
+    {
+        return ReferencedAttributeInspection {
+            attributes: Vec::new(),
+            mismatches: references
+                .into_iter()
+                .map(|reference| reference.type_id)
+                .collect(),
+            malformed: false,
+            nested_attribute_list: false,
+        };
+    }
+    let (candidates, malformed) = inspect_attribute_shapes(view);
+    select_referenced_attributes(
+        view,
+        &candidates,
+        references,
+        base_record_number,
+        base_file_reference,
+        malformed,
+    )
+}
+
+/// Inspect only attribute framing and typed in-record payload boundaries.
+/// This is the selection hot path for live enrichment and bootstrap discovery.
+fn inspect_attribute_shapes<'a>(view: &FileRecord<'a>) -> (Vec<NtfsAttribute<'a>>, bool) {
+    let (offset, used) = view.attrs_range();
+    let mut attributes = Vec::new();
+    let mut malformed = false;
+    let complete = for_each_attribute_checked(view.data, offset, used, |attribute| {
+        if attribute_shape_is_valid(attribute) {
+            if let Some(attribute) = NtfsAttribute::new(attribute.data()) {
+                attributes.push(attribute);
+            }
+        } else {
+            malformed = true;
+        }
+    });
+    (attributes, malformed || !complete)
+}
+
+/// Bind references against an attribute set that the caller already inspected.
+/// This avoids rescanning records when diagnostics and selection are both needed.
+pub(in crate::raw_mft) fn select_referenced_attributes<'a, 'r>(
+    view: &FileRecord<'a>,
+    candidates: &[NtfsAttribute<'a>],
+    references: impl IntoIterator<Item = &'r AttributeListReference>,
+    base_record_number: u64,
+    base_file_reference: u64,
+    malformed: bool,
+) -> ReferencedAttributeInspection<'a> {
+    let nested_attribute_list = view.number != base_record_number
+        && candidates
+            .iter()
+            .any(|attribute| attribute.type_id() == 0x20);
+    let mut selected_ids = std::collections::BTreeSet::new();
+    let mut attributes = Vec::new();
+    let mut mismatches = Vec::new();
+
+    for reference in references {
+        if !reference.matches_record(view, base_record_number, base_file_reference) {
+            mismatches.push(reference.type_id);
+            continue;
+        }
+        match candidates
+            .iter()
+            .find(|attribute| reference.matches(attribute))
+        {
+            Some(attribute) if selected_ids.insert(attribute.header.id) => {
+                if let Some(attribute) = NtfsAttribute::new(attribute.data()) {
+                    attributes.push(attribute);
+                }
+            }
+            Some(_) => {}
+            None => mismatches.push(reference.type_id),
+        }
+    }
+
+    ReferencedAttributeInspection {
+        attributes,
+        mismatches,
+        malformed,
+        nested_attribute_list,
+    }
 }

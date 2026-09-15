@@ -2,6 +2,7 @@
 
 use super::{
     DEFAULT_BUFFER_BYTES, RawMft,
+    inspection::RecordInspection,
     layout::{attribute::for_each_attribute_checked, extent::ExtentMap, record::FileRecord},
     volume_reader::VolumeReader,
 };
@@ -60,9 +61,11 @@ impl RawMft<'_> {
         let (offset, used) = record.attrs_range();
         let mut size = None;
         let mut duplicate = false;
+        let mut inspection = RecordInspection::default();
         let complete = for_each_attribute_checked(record.data, offset, used, |attr| {
             if attr.type_id() == 0x80
                 && !attr.has_name()
+                && inspection.observe(record.number, attr)
                 && let Some(header) = attr.nonresident_header()
                 && header.lowest_vcn == 0
             {
@@ -70,7 +73,7 @@ impl RawMft<'_> {
                 size = Some((header.data_size, header.initialized_size, attr.flags()));
             }
         });
-        if !complete || duplicate {
+        if !complete || duplicate || inspection.has_malformed_attribute() {
             return Err(MftError::InvalidRecordData(
                 "ambiguous or malformed MFT stream attributes",
             ));

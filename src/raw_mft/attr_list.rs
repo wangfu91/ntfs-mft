@@ -15,10 +15,11 @@ use crate::{
         entry_build::{
             AttributeListInfo, EntryBuildOptions, RawMftBatchScratch, RawMftEntry, RawMftLink,
         },
+        inspection::inspect_referenced_attributes,
         layout::{
             attribute::{
                 AttributeListReference, FileNameNamespace, NtfsAttribute, NtfsAttributeType,
-                for_each_attribute_checked, parse_attribute_list_references,
+                parse_attribute_list_references,
             },
             boot::BootSector,
             extent::ExtentMap,
@@ -62,6 +63,7 @@ struct BaseEnrichmentContext {
 struct ExtensionRecordRequest<'a> {
     record_number: u64,
     references: &'a [AttributeListReference],
+    base_record_number: u64,
     expected_base: u64,
 }
 
@@ -297,6 +299,7 @@ fn parse_cached_batch_extension(
     selected_batch_entry(
         &record,
         request.references,
+        request.base_record_number,
         request.expected_base,
         collect_dos_file_name_links,
     )
@@ -314,11 +317,15 @@ fn load_rich_extension(
     let Some(record) = parse_record_at(reader, boot, extent_map, request.record_number)? else {
         return Ok(None);
     };
-    Ok(
-        selected_attributes(&record, request.references, request.expected_base).map(|attributes| {
-            RawMftEntry::from_attributes_with_options(&record, attributes, build_options)
-        }),
+    Ok(selected_attributes(
+        &record,
+        request.references,
+        request.base_record_number,
+        request.expected_base,
     )
+    .map(|attributes| {
+        RawMftEntry::from_attributes_with_options(&record, attributes, build_options)
+    }))
 }
 
 /// Load one extension record and build the lean batch projection from only
@@ -336,6 +343,7 @@ fn load_batch_extension(
     Ok(selected_batch_entry(
         &record,
         request.references,
+        request.base_record_number,
         request.expected_base,
         collect_dos_file_name_links,
     ))
@@ -344,10 +352,11 @@ fn load_batch_extension(
 fn selected_batch_entry(
     record: &FileRecord<'_>,
     references: &[AttributeListReference],
+    base_record_number: u64,
     expected_base: u64,
     collect_dos_file_name_links: bool,
 ) -> Option<RawMftBatchScratch> {
-    selected_attributes(record, references, expected_base).map(|attributes| {
+    selected_attributes(record, references, base_record_number, expected_base).map(|attributes| {
         RawMftBatchScratch::from_attributes(record, attributes, collect_dos_file_name_links)
     })
 }
@@ -357,30 +366,21 @@ fn selected_batch_entry(
 fn selected_attributes<'a>(
     record: &FileRecord<'a>,
     references: &[AttributeListReference],
+    base_record_number: u64,
     expected_base: u64,
 ) -> Option<Vec<NtfsAttribute<'a>>> {
-    if record.base_reference() != expected_base {
-        return None;
-    }
-
-    let sequence = record.sequence_value();
-    let (attributes_offset, used_size) = record.attrs_range();
-    let mut selected = Vec::new();
-    let _ = for_each_attribute_checked(record.data, attributes_offset, used_size, |attribute| {
-        let referenced = references.iter().any(|reference| {
-            reference.sequence_number() == sequence && reference.matches(attribute)
-        });
-        let is_initial_data_extent = attribute.type_id() != NtfsAttributeType::Data as u32
-            || attribute
-                .nonresident_header()
-                .is_none_or(|header| header.lowest_vcn == 0);
-        if referenced
-            && is_initial_data_extent
-            && let Some(selected_attribute) = NtfsAttribute::new(attribute.data())
-        {
-            selected.push(selected_attribute);
-        }
-    });
+    let inspected =
+        inspect_referenced_attributes(record, references, base_record_number, expected_base);
+    let selected = inspected
+        .attributes
+        .into_iter()
+        .filter(|attribute| {
+            attribute.type_id() != NtfsAttributeType::Data as u32
+                || attribute
+                    .nonresident_header()
+                    .is_none_or(|header| header.lowest_vcn == 0)
+        })
+        .collect::<Vec<_>>();
     (!selected.is_empty()).then_some(selected)
 }
 
@@ -453,6 +453,7 @@ where
         let request = ExtensionRecordRequest {
             record_number: ext_num,
             references: &references,
+            base_record_number: base.record_number,
             expected_base: base.file_reference,
         };
         let ext_entry = match load_extension(reader, request) {

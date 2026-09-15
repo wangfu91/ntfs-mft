@@ -1,6 +1,6 @@
 //! Read-only parsing of logical `$MFT` bytes from a file, buffer, or volume.
 
-use super::inspection::{RecordInspection, inspect_view};
+use super::inspection::{RecordInspection, inspect_view, select_referenced_attributes};
 use super::{
     MftByteReader, RawMft, RawMftEntry,
     layout::{attribute::parse_attribute_list_references, record::FileRecord},
@@ -222,18 +222,32 @@ impl<R: Read + Seek> MftStream<R> {
                 }
             }
         }
-        let mut extensions = BTreeMap::new();
+        let mut reference_groups = Vec::<(u64, Vec<_>)>::new();
         for reference in &references {
             let ext_number = reference.record_number();
-            if ext_number == number || extensions.contains_key(&ext_number) {
+            match reference_groups
+                .iter_mut()
+                .find(|(record_number, _)| *record_number == ext_number)
+            {
+                Some((_, group)) => group.push(reference),
+                None => reference_groups.push((ext_number, vec![reference])),
+            }
+        }
+
+        let mut extensions = BTreeMap::new();
+        for (ext_number, group) in &reference_groups {
+            if *ext_number == number {
                 continue;
             }
+            let Some(reference) = group.first() else {
+                continue;
+            };
             // Cache failures as well as successes to bound repeated lookups.
-            let loaded = match self.load(ext_number) {
+            let loaded = match self.load(*ext_number) {
                 Ok(record) => Some(record),
                 Err(error) => {
                     inspection.diagnose(
-                        ext_number,
+                        *ext_number,
                         None,
                         MftDiagnosticKind::ExtensionRead {
                             reference: reference.file_reference,
@@ -243,61 +257,88 @@ impl<R: Read + Seek> MftStream<R> {
                     None
                 }
             };
-            extensions.insert(ext_number, loaded);
+            extensions.insert(*ext_number, loaded);
         }
-        let mut attributes = base_attrs;
-        let mut selected = std::collections::BTreeSet::new();
-        for reference in &references {
-            let ext_number = reference.record_number();
-            let source = if ext_number == number {
-                Some(&base)
-            } else {
-                extensions.get(&ext_number).and_then(Option::as_ref)
-            };
-            let Some(source) = source else {
-                continue;
-            };
-            let expected_base = base.view().file_reference();
-            if source.header.sequence_value != reference.sequence_number()
-                || (ext_number != number && source.header.base_reference != expected_base)
-            {
+        let base_file_reference = base.view().file_reference();
+        if let Some((_, group)) = reference_groups
+            .iter()
+            .find(|(record_number, _)| *record_number == number)
+        {
+            let selected = select_referenced_attributes(
+                &base.view(),
+                &base_attrs,
+                group.iter().copied(),
+                number,
+                base_file_reference,
+                inspection.has_malformed_attribute(),
+            );
+            for attribute_type in selected.mismatches {
                 inspection.diagnose(
-                    ext_number,
-                    Some(reference.type_id),
+                    number,
+                    Some(attribute_type),
                     MftDiagnosticKind::ExtensionMismatch,
                 );
+            }
+        }
+
+        let mut attributes = base_attrs;
+        for (ext_number, group) in &reference_groups {
+            if *ext_number == number {
                 continue;
             }
-            // Scan only after reference validation; reject unrelated extension attributes.
-            let mut local = RecordInspection::default();
-            let candidates = inspect_view(&source.view(), &mut local);
-            if ext_number != number && candidates.iter().any(|a| a.type_id() == 0x20) {
-                inspection.diagnose(ext_number, None, MftDiagnosticKind::NestedAttributeList);
-            }
-            let matched = candidates.into_iter().find(|attr| reference.matches(attr));
-            match matched {
-                Some(attr) if ext_number != number => {
-                    let key = (ext_number, attr.header.id);
-                    if selected.insert(key) {
-                        inspection.observe(ext_number, &attr);
-                        attributes.push(attr);
-                    }
+            let Some(source) = extensions.get(ext_number).and_then(Option::as_ref) else {
+                continue;
+            };
+            let source_view = source.view();
+            if !group.iter().any(|reference| {
+                reference.matches_record(&source_view, number, base_file_reference)
+            }) {
+                for reference in group {
+                    inspection.diagnose(
+                        *ext_number,
+                        Some(reference.type_id),
+                        MftDiagnosticKind::ExtensionMismatch,
+                    );
                 }
-                Some(_) => {}
-                None => inspection.diagnose(
-                    ext_number,
-                    Some(reference.type_id),
-                    MftDiagnosticKind::ExtensionMismatch,
-                ),
+                continue;
             }
-            if local.has_malformed_attribute() {
+            let mut local = RecordInspection::default();
+            let candidates = inspect_view(&source_view, &mut local);
+            let selected = select_referenced_attributes(
+                &source_view,
+                &candidates,
+                group.iter().copied(),
+                number,
+                base_file_reference,
+                local.has_malformed_attribute(),
+            );
+            if selected.nested_attribute_list {
+                inspection.diagnose(*ext_number, None, MftDiagnosticKind::NestedAttributeList);
+            }
+            for attribute_type in selected.mismatches {
+                inspection.diagnose(
+                    *ext_number,
+                    Some(attribute_type),
+                    MftDiagnosticKind::ExtensionMismatch,
+                );
+            }
+            if selected.malformed {
                 // A malformed extension may hide another required attribute. Do not
                 // claim completeness even if the selected attribute was accessible.
-                inspection.diagnose(
-                    ext_number,
-                    Some(reference.type_id),
-                    MftDiagnosticKind::MalformedAttribute,
-                );
+                for reference in group.iter().filter(|reference| {
+                    reference.matches_record(&source_view, number, base_file_reference)
+                }) {
+                    inspection.diagnose(
+                        *ext_number,
+                        Some(reference.type_id),
+                        MftDiagnosticKind::MalformedAttribute,
+                    );
+                }
+            }
+            for attribute in selected.attributes {
+                if inspection.observe(*ext_number, &attribute) {
+                    attributes.push(attribute);
+                }
             }
         }
         let entry = RawMftEntry::from_attributes(
