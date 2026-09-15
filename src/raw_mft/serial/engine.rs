@@ -7,10 +7,10 @@ use crate::{
     errors::MftError,
     raw_mft::{
         RawMft,
-        io::VolumeReader,
         layout::{extent::ExtentLookupCursor, record::FileRecord},
         options::RawMftScanOptions,
         reader::io_err,
+        volume_reader::VolumeReader,
     },
 };
 

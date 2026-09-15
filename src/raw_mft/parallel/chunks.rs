@@ -9,9 +9,9 @@ use crate::{
         attr_list::{enrich_batch_from_attr_list, should_enrich_batch_from_attr_list},
         chunk_plan::{self, RawMftChunkPlanOptions, RawMftWorkChunk},
         entry_build::{RawMftBatchEntry, RawMftBatchScratch, RawMftChunkBatch},
-        io::VolumeReader,
         options::RawMftScanOptions,
         serial::engine::{SerialParseState, next_record_output},
+        volume_reader::VolumeReader,
     },
 };
 

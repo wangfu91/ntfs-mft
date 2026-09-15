@@ -2,8 +2,8 @@
 
 use super::{
     RawMft,
-    io::VolumeReader,
     layout::{attribute::for_each_attribute_checked, extent::ExtentMap, record::FileRecord},
+    volume_reader::VolumeReader,
 };
 use crate::{MftError, MftResult, Volume};
 use std::io::{self, Read, Seek, SeekFrom};

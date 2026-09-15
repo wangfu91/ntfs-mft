@@ -15,7 +15,7 @@ use self::discovery::bootstrap_mft_state;
 
 use crate::{
     errors::MftError,
-    raw_mft::{io::VolumeReader, layout::boot::BootSector, reader::io_err},
+    raw_mft::{layout::boot::BootSector, reader::io_err, volume_reader::VolumeReader},
     volume::Volume,
 };
 

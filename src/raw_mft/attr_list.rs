@@ -18,7 +18,6 @@ use crate::{
         entry_build::{
             AttributeListInfo, EntryBuildOptions, RawMftBatchScratch, RawMftEntry, RawMftLink,
         },
-        io::VolumeReader,
         layout::{
             attribute::{FileNameNamespace, NtfsAttributeType, for_each_attr_list_entry},
             boot::BootSector,
@@ -26,6 +25,7 @@ use crate::{
             record::FileRecord,
         },
         reader::{read_batch_record_raw, read_nonresident, read_record_raw},
+        volume_reader::VolumeReader,
     },
 };
 

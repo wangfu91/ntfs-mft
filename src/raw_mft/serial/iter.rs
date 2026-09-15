@@ -5,9 +5,9 @@ use crate::{
     raw_mft::{
         RawMft,
         entry_build::{EntryBuildOptions, RawMftEntry},
-        io::VolumeReader,
         options::RawMftScanOptions,
         reader::{build_rich_entry, entry_build_options},
+        volume_reader::VolumeReader,
     },
 };
 

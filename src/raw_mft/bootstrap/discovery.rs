@@ -12,7 +12,6 @@ use crate::{
     errors::MftError,
     raw_mft::{
         entry_build::AttributeListInfo,
-        io::VolumeReader,
         layout::{
             attribute::{
                 NtfsAttribute, NtfsAttributeType, for_each_attr_list_entry_header,
@@ -24,6 +23,7 @@ use crate::{
             record::{FileRecord, MFT_RECORD_NUMBER},
         },
         reader::{io_err, read_nonresident},
+        volume_reader::VolumeReader,
     },
     volume::Volume,
 };

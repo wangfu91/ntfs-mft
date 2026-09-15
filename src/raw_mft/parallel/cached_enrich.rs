@@ -26,9 +26,9 @@ use crate::{
         RawMft, RawMftWorkChunk,
         attr_list::{enrich_batch_from_attr_list_cached, should_enrich_batch_from_attr_list},
         entry_build::{AttributeListInfo, RawMftBatchEntry, RawMftBatchScratch},
-        io::VolumeReader,
         options::RawMftScanOptions,
         serial::engine::{SerialParseState, for_each_record_capturing},
+        volume_reader::VolumeReader,
     },
 };
 

@@ -49,7 +49,6 @@ pub use metadata::{
 mod differential_tests;
 mod entry_build;
 pub mod history;
-mod io;
 mod layout;
 mod options;
 mod parallel;
@@ -59,6 +58,7 @@ mod serial;
 mod stream;
 #[cfg(test)]
 mod tests;
+mod volume_reader;
 
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -67,9 +67,9 @@ use crate::{
     errors::MftError,
     raw_mft::{
         entry_build::EntryBuildOptions,
-        io::VolumeReader,
         layout::{boot::BootSector, extent::ExtentMap},
         reader::read_record_at,
+        volume_reader::VolumeReader,
     },
     volume::Volume,
 };

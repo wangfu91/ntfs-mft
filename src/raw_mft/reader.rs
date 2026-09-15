@@ -8,9 +8,9 @@ use crate::{
     raw_mft::{
         attr_list::{enrich_from_attr_list, should_enrich_from_attr_list},
         entry_build::{AttributeListInfo, EntryBuildOptions, RawMftBatchScratch, RawMftEntry},
-        io::VolumeReader,
         layout::{boot::BootSector, data_run::DataRun, extent::ExtentMap, record::FileRecord},
         options::RawMftScanOptions,
+        volume_reader::VolumeReader,
     },
 };
 
