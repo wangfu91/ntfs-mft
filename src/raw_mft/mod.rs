@@ -119,6 +119,11 @@ pub struct RawMft<'a> {
 }
 
 impl<'a> RawMft<'a> {
+    /// Create a volume reader using this MFT's discovered sector geometry.
+    fn volume_reader(&self, buffer_bytes: NonZeroUsize) -> Result<VolumeReader, MftError> {
+        VolumeReader::new(self.volume, self.boot.bytes_per_sector as u64, buffer_bytes)
+    }
+
     /// Internal access to the bound volume for crate-level helpers.
     pub(crate) fn volume(&self) -> &'a Volume {
         self.volume
@@ -164,7 +169,7 @@ impl<'a> RawMft<'a> {
     /// record falls in a sparse hole or does not contain a valid FILE record.
     #[must_use = "the returned record is discarded if not inspected"]
     pub fn read_record(&self, number: u64) -> Result<Option<RawMftEntry>, MftError> {
-        let mut reader = VolumeReader::new(self.volume, self.boot.bytes_per_sector as u64)?;
+        let mut reader = self.volume_reader(DEFAULT_BUFFER_BYTES)?;
         read_record_at(
             &mut reader,
             &self.boot,

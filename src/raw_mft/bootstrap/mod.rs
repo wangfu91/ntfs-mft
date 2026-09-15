@@ -15,7 +15,9 @@ use self::discovery::bootstrap_mft_state;
 
 use crate::{
     errors::MftError,
-    raw_mft::{layout::boot::BootSector, reader::io_err, volume_reader::VolumeReader},
+    raw_mft::{
+        DEFAULT_BUFFER_BYTES, layout::boot::BootSector, reader::io_err, volume_reader::VolumeReader,
+    },
     volume::Volume,
 };
 
@@ -44,7 +46,7 @@ impl<'a> RawMft<'a> {
 
 /// Read and parse the NTFS boot sector from the raw volume.
 fn read_boot_sector(volume: &Volume) -> Result<BootSector, MftError> {
-    let mut reader = VolumeReader::new(volume, 512)?;
+    let mut reader = VolumeReader::new(volume, 512, DEFAULT_BUFFER_BYTES)?;
     let mut boot_buf = vec![0u8; 512];
     reader.seek(SeekFrom::Start(0)).map_err(io_err)?;
     reader.read_exact(&mut boot_buf).map_err(io_err)?;

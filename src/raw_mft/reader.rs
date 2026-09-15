@@ -23,16 +23,8 @@ impl<'a> RawMft<'a> {
         &self,
         options: &RawMftScanOptions,
     ) -> Result<(VolumeReader, VolumeReader), MftError> {
-        let reader = VolumeReader::with_buffer_bytes(
-            self.volume,
-            self.boot.bytes_per_sector as u64,
-            options.buffers.main.get(),
-        )?;
-        let attr_reader = VolumeReader::with_buffer_bytes(
-            self.volume,
-            self.boot.bytes_per_sector as u64,
-            options.buffers.attr.get(),
-        )?;
+        let reader = self.volume_reader(options.buffers.main)?;
+        let attr_reader = self.volume_reader(options.buffers.attr)?;
         Ok((reader, attr_reader))
     }
 }
@@ -86,7 +78,7 @@ fn parse_record_at<'b>(
         return Ok(None);
     };
     let buf = reader
-        .borrow_at(offset, boot.file_record_size as usize)
+        .buffer_at_mut(offset, boot.file_record_size as usize)
         .map_err(io_err)?;
     if !FileRecord::is_valid(buf) {
         return Ok(None);
@@ -245,7 +237,8 @@ mod tests {
         #[cfg(target_os = "macos")]
         let volume = crate::volume::Volume::from_device_path(std::env::current_exe().unwrap())
             .expect("open test byte source");
-        VolumeReader::new(&volume, 512).expect("test reader construction should succeed")
+        VolumeReader::new(&volume, 512, crate::raw_mft::DEFAULT_BUFFER_BYTES)
+            .expect("test reader construction should succeed")
     }
 
     #[test]

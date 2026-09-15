@@ -11,6 +11,7 @@ use log::warn;
 use crate::{
     errors::MftError,
     raw_mft::{
+        DEFAULT_BUFFER_BYTES,
         entry_build::AttributeListInfo,
         layout::{
             attribute::{
@@ -65,7 +66,7 @@ pub(super) fn bootstrap_mft_state(
     volume: &Volume,
     boot: &BootSector,
 ) -> Result<MftBootstrap, MftError> {
-    let mut reader = VolumeReader::new(volume, boot.bytes_per_sector as u64)?;
+    let mut reader = VolumeReader::new(volume, boot.bytes_per_sector as u64, DEFAULT_BUFFER_BYTES)?;
     let mut record0 = read_mft_record_zero(&mut reader, boot)?;
     let mut streams = {
         let record =
@@ -237,7 +238,7 @@ fn load_extension_stream_extents(
                 Ok(None) | Err(_) => continue,
             };
             let buf = reader
-                .borrow_at(offset, boot.file_record_size as usize)
+                .buffer_at_mut(offset, boot.file_record_size as usize)
                 .map_err(io_err)?;
             if !FileRecord::is_valid(buf) {
                 continue;

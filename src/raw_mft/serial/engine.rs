@@ -93,7 +93,7 @@ where
         };
 
         let buf = reader
-            .borrow_at(offset, state.record_size)
+            .buffer_at_mut(offset, state.record_size)
             .map_err(io_err)?;
 
         let is_valid = FileRecord::is_valid(buf);
@@ -179,7 +179,7 @@ where
         };
 
         let buf = reader
-            .borrow_at(offset, state.record_size)
+            .buffer_at_mut(offset, state.record_size)
             .map_err(io_err)?;
 
         // Classify from the raw header before the USA fixup mutates `buf`.

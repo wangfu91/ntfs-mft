@@ -1,7 +1,7 @@
 //! A byte-oriented view of the logical `$MFT::$DATA` stream.
 
 use super::{
-    RawMft,
+    DEFAULT_BUFFER_BYTES, RawMft,
     layout::{attribute::for_each_attribute_checked, extent::ExtentMap, record::FileRecord},
     volume_reader::VolumeReader,
 };
@@ -47,7 +47,11 @@ impl RawMft<'_> {
     /// ```
     pub fn byte_reader(&self) -> MftResult<MftByteReader> {
         let volume = self.volume.reopen()?;
-        let reader = VolumeReader::new(&volume, self.boot.bytes_per_sector as u64)?;
+        let reader = VolumeReader::new(
+            &volume,
+            self.boot.bytes_per_sector as u64,
+            DEFAULT_BUFFER_BYTES,
+        )?;
         let mut inner = MappedReader::new(reader, self.extent_map.as_ref())?;
         // Read record zero through the same mapping, including a fragmented record.
         let mut bytes = vec![0; self.boot.file_record_size as usize];
