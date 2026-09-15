@@ -49,6 +49,7 @@ pub use metadata::{
 mod differential_tests;
 mod entry_build;
 pub mod history;
+pub(in crate::raw_mft) mod inspection;
 mod layout;
 mod options;
 mod parallel;

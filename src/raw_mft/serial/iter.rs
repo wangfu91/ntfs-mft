@@ -126,9 +126,9 @@ impl Iterator for RawMftDiagnosticIter<'_> {
         }
         let inner = &mut self.inner;
         let result = next_record_output(inner.mft, &mut inner.scan, &mut inner.reader, |record| {
-            use crate::raw_mft::stream::inspect::{Inspection, inspect_view};
+            use crate::raw_mft::inspection::{RecordInspection, inspect_view};
             use crate::{MftDiagnosticKind, MftFieldState};
-            let mut inspection = Inspection::default();
+            let mut inspection = RecordInspection::default();
             let attrs = inspect_view(record, &mut inspection);
             if attrs.iter().any(|a| a.type_id() == 0x20) {
                 inspection.diagnose(
@@ -155,7 +155,7 @@ impl Iterator for RawMftDiagnosticIter<'_> {
             Ok(crate::RawMftDiagnosticRecord {
                 entry,
                 metadata,
-                diagnostics: inspection.diagnostics,
+                diagnostics: inspection.into_diagnostics(),
             })
         });
         match result {

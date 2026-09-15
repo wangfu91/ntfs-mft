@@ -1,15 +1,13 @@
 //! Read-only parsing of logical `$MFT` bytes from a file, buffer, or volume.
 
-pub(in crate::raw_mft) mod inspect;
+use super::inspection::{RecordInspection, inspect_view};
 use super::{
-    RawMftEntry,
+    MftByteReader, RawMft, RawMftEntry,
     layout::{attribute::NtfsAttribute, record::FileRecord},
 };
 use crate::{
-    MftDiagnostic, MftDiagnosticKind, MftError, MftExternalPayload, MftFieldState, MftMetadata,
-    MftResult,
+    MftDiagnostic, MftDiagnosticKind, MftError, MftExternalPayload, MftMetadata, MftResult,
 };
-use inspect::{Inspection, RecordData, inspect_record, list_references};
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -105,14 +103,14 @@ impl MftStream<BufReader<File>> {
     }
 }
 
-impl MftStream<super::MftByteReader> {
+impl MftStream<MftByteReader> {
     /// Parse a volume's logical MFT using its discovered record size.
     ///
     /// The stream owns an independent handle and can outlive `raw` and its
     /// volume. Extension resolution is disabled by default, as with
     /// [`MftStreamOptions::new`]. For custom options, use [`Self::from_reader`]
     /// with [`super::RawMft::byte_reader`]. A live volume is not a snapshot.
-    pub fn from_raw_mft(raw: &super::RawMft<'_>) -> MftResult<Self> {
+    pub fn from_raw_mft(raw: &RawMft<'_>) -> MftResult<Self> {
         Self::from_reader(
             raw.byte_reader()?,
             MftStreamOptions::new(raw.file_record_size())?,
@@ -205,8 +203,8 @@ impl<R: Read + Seek> MftStream<R> {
     /// are errors; incomplete metadata retains the entry with diagnostics.
     pub fn read_record(&mut self, number: u64) -> MftResult<MftStreamRecord> {
         let base = self.load(number)?;
-        let mut inspection = Inspection::default();
-        let base_attrs = inspect_record(&base, &mut inspection);
+        let mut inspection = RecordInspection::default();
+        let base_attrs = inspect_view(&base.view(), &mut inspection);
         let mut references = Vec::new();
         if base.header.base_reference != 0 {
             inspection.diagnose(number, None, MftDiagnosticKind::ExtensionRecordOnly);
@@ -272,8 +270,8 @@ impl<R: Read + Seek> MftStream<R> {
                 continue;
             }
             // Scan only after reference validation; reject unrelated extension attributes.
-            let mut local = Inspection::default();
-            let candidates = inspect_record(source, &mut local);
+            let mut local = RecordInspection::default();
+            let candidates = inspect_view(&source.view(), &mut local);
             if ext_number != number && candidates.iter().any(|a| a.type_id() == 0x20) {
                 inspection.diagnose(ext_number, None, MftDiagnosticKind::NestedAttributeList);
             }
@@ -293,11 +291,7 @@ impl<R: Read + Seek> MftStream<R> {
                     MftDiagnosticKind::ExtensionMismatch,
                 ),
             }
-            if local
-                .diagnostics
-                .iter()
-                .any(|diagnostic| matches!(diagnostic.kind, MftDiagnosticKind::MalformedAttribute))
-            {
+            if local.has_malformed_attribute() {
                 // A malformed extension may hide another required attribute. Do not
                 // claim completeness even if the selected attribute was accessible.
                 inspection.diagnose(
@@ -314,12 +308,14 @@ impl<R: Read + Seek> MftStream<R> {
                     || attr.nonresident_header().is_none_or(|h| h.lowest_vcn == 0)
             }),
         );
+        let metadata = inspection.metadata();
+        let (diagnostics, external_payloads) = inspection.into_diagnostics_and_external_payloads();
         Ok(MftStreamRecord {
             entry,
             stream_offset: number * self.options.record_size as u64,
-            metadata: inspection.metadata(),
-            diagnostics: inspection.diagnostics,
-            external_payloads: inspection.external_payloads,
+            metadata,
+            diagnostics,
+            external_payloads,
         })
     }
 
@@ -334,6 +330,93 @@ impl<R: Read + Seek> MftStream<R> {
             stopped: false,
         }
     }
+}
+
+struct RecordData {
+    number: u64,
+    bytes: Vec<u8>,
+    header: super::layout::record::FileRecordHeader,
+}
+
+impl RecordData {
+    fn view(&self) -> FileRecord<'_> {
+        FileRecord {
+            data: &self.bytes,
+            header: self.header,
+            number: self.number,
+        }
+    }
+}
+
+struct ListReference {
+    type_id: u32,
+    file_reference: u64,
+    id: u16,
+    lowest_vcn: i64,
+    name: Vec<u8>,
+}
+
+impl ListReference {
+    fn matches(&self, attr: &NtfsAttribute<'_>) -> bool {
+        self.type_id == attr.type_id()
+            && self.id == attr.header.id
+            && self.name.as_slice() == attr.name_bytes().unwrap_or_default()
+            && self.lowest_vcn == attr.nonresident_header().map_or(0, |h| h.lowest_vcn)
+    }
+}
+
+fn list_references(
+    attr: &NtfsAttribute<'_>,
+    number: u64,
+    inspection: &mut RecordInspection,
+) -> Vec<ListReference> {
+    use super::layout::attribute::AttributeListEntryHeader;
+    use zerocopy::FromBytes;
+
+    let Some(data) = attr.resident_value() else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    let mut offset = 0;
+    while offset < data.len() {
+        let remaining = &data[offset..];
+        // Some lists include zero-filled alignment padding after their entries.
+        if remaining.len() < 8 && remaining.iter().all(|b| *b == 0) {
+            break;
+        }
+        let header_size = std::mem::size_of::<AttributeListEntryHeader>();
+        let header = remaining
+            .get(..header_size)
+            .and_then(|bytes| AttributeListEntryHeader::read_from_bytes(bytes).ok());
+        let Some(h) = header else {
+            inspection.diagnose(number, None, MftDiagnosticKind::MalformedAttributeList);
+            break;
+        };
+        let len = h.record_length as usize;
+        let name_start = h.attribute_name_offset as usize;
+        let name_len = h.attribute_name_length as usize * 2;
+        if len < header_size
+            || len > remaining.len()
+            || h.lowest_vcn < 0
+            || (name_len != 0 && (name_start < header_size || name_start + name_len > len))
+        {
+            inspection.diagnose(number, None, MftDiagnosticKind::MalformedAttributeList);
+            break;
+        }
+        result.push(ListReference {
+            type_id: h.type_id,
+            file_reference: h.file_reference,
+            id: h.attribute_id,
+            lowest_vcn: h.lowest_vcn,
+            name: if name_len == 0 {
+                Vec::new()
+            } else {
+                remaining[name_start..name_start + name_len].to_vec()
+            },
+        });
+        offset += len;
+    }
+    result
 }
 
 /// Borrowing serial iterator over physical slots in a logical MFT stream.
