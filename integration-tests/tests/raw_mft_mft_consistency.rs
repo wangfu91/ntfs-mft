@@ -202,8 +202,8 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
         }
     };
     for raw_entry in raw_mft
-        .try_iter()
-        .expect("RawMft::try_iter failed")
+        .scan_entries()
+        .expect("RawMft::scan_entries failed")
         .flatten()
     {
         if !raw_entry.is_used || raw_entry.file_name.is_empty() {

@@ -1,7 +1,8 @@
 //! Export an extracted MFT or raw volume as JSONL. Diagnostics go to stderr.
 use ntfs_mft::export::JsonlWriter;
 use ntfs_mft::{
-    MftError, MftIssue, MftResult, MftStream, MftStreamOptions, MftStreamRecord, RawMftScanOptions,
+    MftDiagnosticKind, MftError, MftRecord, MftResult, MftStream, MftStreamOptions,
+    RawMftScanOptions,
 };
 use std::{
     env,
@@ -55,10 +56,9 @@ fn run() -> MftResult<bool> {
                 .start_record(0)
                 .include_unused_records(true)
                 .collect_alternate_data_streams(true)
-                .collect_data_run_summary(true)
                 .collect_dos_file_name_links(true)
                 .build();
-            for result in mft.try_iter_with_options(options)? {
+            for result in mft.scan_entries_with_options(options)? {
                 match result {
                     Ok(entry) => {
                         writer.write_entry(&entry)?;
@@ -79,7 +79,7 @@ fn run() -> MftResult<bool> {
 }
 
 fn export_offline(
-    source: impl IntoIterator<Item = MftResult<MftStreamRecord>>,
+    source: impl IntoIterator<Item = MftResult<MftRecord>>,
     writer: &mut JsonlWriter<impl io::Write>,
 ) -> MftResult<(u64, u64)> {
     let (mut records, mut errors) = (0, 0);
@@ -88,8 +88,8 @@ fn export_offline(
             Ok(record) => {
                 let terminal = record.diagnostics.iter().any(|diagnostic| {
                     matches!(
-                        &diagnostic.issue,
-                        MftIssue::ExtensionRead { error, .. } if error.is_io_error()
+                        &diagnostic.kind,
+                        MftDiagnosticKind::ExtensionRead { error, .. } if error.is_io_error()
                     )
                 });
                 writer.write_stream(&record)?;

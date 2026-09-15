@@ -5,7 +5,7 @@ use super::super::{
 };
 use crate::{
     MftResult, RawMftChunkPlanOptions, RawMftParallelScheduling, RawMftScanOptions,
-    volume::captured::CapturedVolume,
+    volume::sparse_fixture::SparseVolumeFixture,
 };
 use std::{
     io::{Read, Seek, SeekFrom},
@@ -13,12 +13,14 @@ use std::{
     sync::Arc,
 };
 
-const BOOT: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/boot.bin");
-const MFT: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/mft.bin");
-const BITMAP0: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/mft-bitmap-0.bin");
-const BITMAP1: &[u8] = include_bytes!("../../../tests/fixtures/captured-volume/mft-bitmap-1.bin");
+const BOOT: &[u8] = include_bytes!("../../../tests/fixtures/sparse-volume-fixture/boot.bin");
+const MFT: &[u8] = include_bytes!("../../../tests/fixtures/sparse-volume-fixture/mft.bin");
+const BITMAP0: &[u8] =
+    include_bytes!("../../../tests/fixtures/sparse-volume-fixture/mft-bitmap-0.bin");
+const BITMAP1: &[u8] =
+    include_bytes!("../../../tests/fixtures/sparse-volume-fixture/mft-bitmap-1.bin");
 
-fn source(with_bitmap_tail: bool) -> Arc<CapturedVolume> {
+fn source(with_bitmap_tail: bool) -> Arc<SparseVolumeFixture> {
     let mut ranges = vec![
         (0, BOOT.to_vec()),
         (3_221_225_472, MFT.to_vec()),
@@ -27,11 +29,11 @@ fn source(with_bitmap_tail: bool) -> Arc<CapturedVolume> {
     if with_bitmap_tail {
         ranges.push((151_552, BITMAP1.to_vec()));
     }
-    Arc::new(CapturedVolume::new(ranges))
+    Arc::new(SparseVolumeFixture::new(ranges))
 }
 
 #[test]
-fn captured_bootstrap_reads_both_bitmap_extents() -> MftResult<()> {
+fn sparse_fixture_bootstrap_reads_both_bitmap_extents() -> MftResult<()> {
     let volume = source(true).open()?;
     let raw = volume.raw_mft()?;
     assert_eq!(raw.cluster_size(), 4096);
@@ -39,19 +41,20 @@ fn captured_bootstrap_reads_both_bitmap_extents() -> MftResult<()> {
     assert_eq!(raw.record_count(), 1280);
     assert_eq!(&*raw.bitmap, [BITMAP0, BITMAP1].concat());
     assert_eq!((0..1280).filter(|&n| raw.bitmap_used(n)).count(), 1116);
-    // Even an all-zero logical tail must come from the captured source.
+    // Even an all-zero logical tail must be supplied by the sparse fixture.
     assert!(source(false).open()?.raw_mft().is_err());
     assert!(source(true).read_at(&mut [0; 1], 512).is_err());
     Ok(())
 }
 
 #[test]
-fn captured_serial_matches_both_parallel_schedulers() -> Result<(), Box<dyn std::error::Error>> {
+fn sparse_fixture_serial_matches_both_parallel_schedulers() -> Result<(), Box<dyn std::error::Error>>
+{
     let volume = source(true).open()?;
     let raw = volume.raw_mft()?;
     let options = RawMftScanOptions::builder().start_record(0).build();
     let serial = raw
-        .try_iter_with_options(options.clone())?
+        .scan_entries_with_options(options.clone())?
         .collect::<MftResult<Vec<_>>>()?;
     assert_eq!(serial.len(), 1116);
     assert_eq!(serial.iter().filter(|e| e.is_directory).count(), 107);
@@ -123,7 +126,7 @@ fn captured_serial_matches_both_parallel_schedulers() -> Result<(), Box<dyn std:
 }
 
 #[test]
-fn captured_owned_stream_preserves_all_original_bytes() -> MftResult<()> {
+fn sparse_fixture_owned_stream_preserves_all_original_bytes() -> MftResult<()> {
     let volume = source(true).open()?;
     let raw = volume.raw_mft()?;
     let mut first = raw.byte_reader()?;
@@ -146,7 +149,7 @@ fn captured_owned_stream_preserves_all_original_bytes() -> MftResult<()> {
 }
 
 #[test]
-fn captured_record_inventory_matches_independent_decoder() -> MftResult<()> {
+fn sparse_fixture_record_inventory_matches_independent_decoder() -> MftResult<()> {
     let (mut files, mut other, mut dirs) = (0, 0, 0);
     for (number, bytes) in MFT.as_chunks::<1024>().0.iter().enumerate() {
         let mut bytes = bytes.to_vec();
@@ -167,9 +170,9 @@ fn captured_record_inventory_matches_independent_decoder() -> MftResult<()> {
 }
 
 #[test]
-fn captured_known_files_match_independently_decoded_text_fixture() -> MftResult<()> {
+fn sparse_fixture_known_files_match_independently_decoded_text_fixture() -> MftResult<()> {
     let expected: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tests/fixtures/captured-volume/expected.json"
+        "../../../tests/fixtures/sparse-volume-fixture/expected.json"
     ))
     .unwrap();
     let volume = source(true).open()?;

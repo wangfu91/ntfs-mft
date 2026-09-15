@@ -4,7 +4,7 @@
 //! each FILE record to expose rich per-record metadata that the USN-based
 //! the Windows FSCTL-based `Mft` enumerator cannot surface (full timestamps, real
 //! and allocated size, hard link count, alternate data streams, sparse
-//! / compressed flags, data-run summary, file-name namespace, etc.).
+//! / compressed flags, file-name namespace, etc.).
 //!
 //! Quick start:
 //!
@@ -14,7 +14,7 @@
 //! # #[cfg(windows)] {
 //! let volume = Volume::from_drive_letter('C').expect("open volume");
 //! let mft = RawMft::new(&volume).expect("read $MFT");
-//! for entry in mft.try_iter().expect("iter") {
+//! for entry in mft.scan_entries().expect("scan") {
 //!     match entry {
 //!         Ok(e) if e.is_used => {
 //!             println!("{:>8}: {}", e.record_number, e.file_name.to_string_lossy());
@@ -40,23 +40,26 @@ mod chunk_plan;
 mod diagnostics;
 mod metadata;
 pub use diagnostics::{RawMftDiagnosticRecord, RawMftScanDiagnostic, RawMftScanReport};
-pub use metadata::{MftDiagnostic, MftExternalPayload, MftFieldState, MftIssue, MftMetadata};
+pub use metadata::{
+    MftDiagnostic, MftDiagnosticKind, MftExternalPayload, MftFieldState, MftMetadata,
+};
 // Enabled only by the non-publishable differential test package's build script.
 #[cfg(all(test, ntfs_mft_differential))]
 #[path = "../../differential-tests/tests/mod.rs"]
 mod differential_tests;
 mod entry_build;
 pub mod history;
-mod io;
+pub(in crate::raw_mft) mod inspection;
 mod layout;
-mod offline;
 mod options;
 mod parallel;
 mod path_resolver;
 mod reader;
 mod serial;
+mod stream;
 #[cfg(test)]
 mod tests;
+mod volume_reader;
 
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -65,9 +68,9 @@ use crate::{
     errors::MftError,
     raw_mft::{
         entry_build::EntryBuildOptions,
-        io::VolumeReader,
         layout::{boot::BootSector, extent::ExtentMap},
         reader::read_record_at,
+        volume_reader::VolumeReader,
     },
     volume::Volume,
 };
@@ -76,8 +79,6 @@ pub use byte_reader::MftByteReader;
 pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawMftWorkChunk};
 pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
-pub use layout::data_run::{DataRun as DataRunInfo, DataRunSummary};
-pub use offline::{MftStream, MftStreamIter, MftStreamOptions, MftStreamRecord};
 pub use options::{
     RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions,
     RawMftLeanScanOptionsBuilder, RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions,
@@ -86,7 +87,8 @@ pub use options::{
 pub use parallel::RawMftParallelScheduling;
 pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
 pub use path_resolver::RawMftPathResolver;
-pub use serial::{RawMftDiagnosticIter, RawMftIter};
+pub use serial::{RawMftDiagnosticEntryScan, RawMftEntryScan};
+pub use stream::{MftRecord, MftRecordIter, MftStream, MftStreamOptions};
 
 /// Default I/O buffer size for raw `$MFT` iteration.
 #[allow(clippy::useless_nonzero_new_unchecked)]
@@ -118,6 +120,11 @@ pub struct RawMft<'a> {
 }
 
 impl<'a> RawMft<'a> {
+    /// Create a volume reader using this MFT's discovered sector geometry.
+    fn volume_reader(&self, buffer_bytes: NonZeroUsize) -> Result<VolumeReader, MftError> {
+        VolumeReader::new(self.volume, self.boot.bytes_per_sector as u64, buffer_bytes)
+    }
+
     /// Internal access to the bound volume for crate-level helpers.
     pub(crate) fn volume(&self) -> &'a Volume {
         self.volume
@@ -163,7 +170,7 @@ impl<'a> RawMft<'a> {
     /// record falls in a sparse hole or does not contain a valid FILE record.
     #[must_use = "the returned record is discarded if not inspected"]
     pub fn read_record(&self, number: u64) -> Result<Option<RawMftEntry>, MftError> {
-        let mut reader = VolumeReader::new(self.volume, self.boot.bytes_per_sector as u64)?;
+        let mut reader = self.volume_reader(DEFAULT_BUFFER_BYTES)?;
         read_record_at(
             &mut reader,
             &self.boot,

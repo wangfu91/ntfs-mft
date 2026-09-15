@@ -1,7 +1,7 @@
 //! Read-only volume access for NTFS/ReFS on Windows and raw NTFS on Linux and macOS.
 
 #[cfg(test)]
-pub(crate) mod captured;
+pub(crate) mod sparse_fixture;
 
 use crate::errors::MftError;
 #[cfg(windows)]
@@ -32,8 +32,9 @@ use windows::{
 /// Source used to open a [`Volume`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum VolumeSource {
+    /// Test-only sparse fixture; omitted offsets fail instead of reading as zeroes.
     #[cfg(test)]
-    Captured(std::sync::Arc<captured::CapturedVolume>),
+    SparseFixture(std::sync::Arc<sparse_fixture::SparseVolumeFixture>),
     /// Volume was opened via a drive letter (e.g. `'C'`).
     #[cfg(windows)]
     DriveLetter(char),
@@ -66,9 +67,11 @@ pub struct Volume {
 
 impl Volume {
     #[cfg(test)]
-    pub(crate) fn captured(&self) -> Option<&std::sync::Arc<captured::CapturedVolume>> {
+    pub(crate) fn sparse_fixture(
+        &self,
+    ) -> Option<&std::sync::Arc<sparse_fixture::SparseVolumeFixture>> {
         match &self.source {
-            VolumeSource::Captured(source) => Some(source),
+            VolumeSource::SparseFixture(source) => Some(source),
             _ => None,
         }
     }
@@ -77,7 +80,7 @@ impl Volume {
     pub(crate) fn reopen(&self) -> Result<Self, MftError> {
         match &self.source {
             #[cfg(test)]
-            VolumeSource::Captured(source) => source.open(),
+            VolumeSource::SparseFixture(source) => source.open(),
             #[cfg(windows)]
             VolumeSource::DriveLetter(letter) => Self::from_drive_letter(*letter),
             VolumeSource::MountPoint(path) => Self::from_mount_point(path),
@@ -95,7 +98,7 @@ impl Volume {
     ///
     /// // Requires Administrator privileges.
     /// let volume = Volume::from_drive_letter('C')?;
-    /// for result in volume.raw_mft()?.try_iter()?.take(10) {
+    /// for result in volume.raw_mft()?.scan_entries()?.take(10) {
     ///     println!("{}", result?);
     /// }
     /// # Ok::<(), ntfs_mft::MftError>(())

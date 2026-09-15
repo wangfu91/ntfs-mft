@@ -117,7 +117,6 @@ impl BenchConfig {
             .attr_buffer_bytes(self.attr_buffer_bytes)
             .include_unused_records(false)
             .collect_alternate_data_streams(false)
-            .collect_data_run_summary(false)
             .collect_dos_file_name_links(false)
             .start_record(self.start_record)
             .end_record(self.end_record)
@@ -339,7 +338,7 @@ pub fn run_parallel_ingest(
 
 /// Run the same ingest workload serially for comparison.
 pub fn run_serial_ingest(mft: &RawMft<'_>, config: &BenchConfig) -> Result<BenchSummary, MftError> {
-    let iter = mft.try_iter_with_options(config.iter_options())?;
+    let iter = mft.scan_entries_with_options(config.iter_options())?;
     let record_table_len = record_count_hint(mft, config);
     let mut records = Vec::with_capacity(record_table_len);
     records.resize_with(record_table_len, || None);
@@ -586,9 +585,9 @@ fn default_worker_count() -> NonZeroUsize {
         .ok()
         .map(NonZeroUsize::get)
         .unwrap_or(1);
-    // The current Criterion worker sweeps on a large C: volume keep
-    // `include_unused_records(false)` in both chunk planning and scanning, but chunk
-    // planning now stays dense and only drops fully unused logical bands.
+    // The current Criterion worker sweeps on a large C: volume pass
+    // `include_unused_records(false)` to both chunk planning and scanning through
+    // the shared scan options. Planning only drops fully unused logical bands.
     // With the current 2,048-record default chunk size that produces about
     // 1,329 planned chunks on the measured live volume and still settles into
     // its fastest region around 10-11 workers with dynamic scheduling. Cap
@@ -676,12 +675,12 @@ mod tests {
     }
 
     #[test]
-    fn benchmark_scan_and_chunk_defaults_exclude_unused_records() {
+    fn benchmark_defaults_keep_selection_in_scan_options() {
         let config = sample_config();
         let iter_options = config.iter_options();
         let chunk_options = config.chunk_plan_options();
 
         assert!(!iter_options.include_unused_records());
-        assert!(!chunk_options.include_unused_records());
+        assert_eq!(chunk_options.max_records_per_chunk(), config.chunk_records);
     }
 }

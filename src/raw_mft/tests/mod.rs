@@ -1,7 +1,8 @@
 use super::*;
 
-mod captured_volume;
+mod differential;
 mod fixture;
+mod sparse_volume_fixture;
 
 #[test]
 fn options_defaults_are_sensible() {
@@ -10,7 +11,6 @@ fn options_defaults_are_sensible() {
     assert_eq!(o.buffers().attr(), DEFAULT_ATTR_BUFFER_BYTES);
     assert!(!o.include_unused_records());
     assert!(o.entry().collect_alternate_data_streams());
-    assert!(o.entry().collect_data_run_summary());
     assert!(o.entry().collect_dos_file_name_links());
     assert_eq!(
         o.range().start_record(),
@@ -20,7 +20,7 @@ fn options_defaults_are_sensible() {
 }
 
 #[test]
-fn raw_mft_entry_display_is_compact() -> Result<(), crate::types::FileReferenceError> {
+fn raw_mft_entry_display_is_compact() -> Result<(), crate::FileReferenceError> {
     use crate::{FileAttributes, Filetime, NtfsFileReference};
 
     let entry = RawMftEntry {
@@ -54,7 +54,6 @@ fn raw_mft_entry_display_is_compact() -> Result<(), crate::types::FileReferenceE
         is_sparse: false,
         is_compressed: false,
         is_encrypted: false,
-        data_run_summary: None,
         alternate_data_streams: Box::default(),
         links: Box::default(),
     };
@@ -109,7 +108,7 @@ mod windows_live {
         let resolver = mft.path_resolver().expect("raw mft path resolver");
         let mut resolved_any = false;
         // Cap the search so the test stays bounded on huge volumes.
-        for r in mft.try_iter().expect("iter").flatten().take(20_000) {
+        for r in mft.scan_entries().expect("iter").flatten().take(20_000) {
             if r.is_directory || r.file_name.is_empty() {
                 continue;
             }

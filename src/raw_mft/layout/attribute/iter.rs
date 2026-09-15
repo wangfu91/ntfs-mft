@@ -9,49 +9,122 @@ use std::mem::size_of;
 use zerocopy::FromBytes;
 
 use super::{AttributeListEntryHeader, NtfsAttribute, NtfsAttributeType};
+use crate::raw_mft::layout::record::FileRecord;
 
 /// Minimum byte length of an `$ATTRIBUTE_LIST` entry (no attribute name).
 const ATTR_LIST_ENTRY_MIN_SIZE: usize = size_of::<AttributeListEntryHeader>();
 
-/// Call `f(type_id, file_reference)` for each valid entry in a raw
-/// `$ATTRIBUTE_LIST` data slice.
-///
-/// Stops at the first malformed entry (zero-length or out of bounds).
-pub(crate) fn for_each_attr_list_entry<F>(data: &[u8], mut f: F)
-where
-    F: FnMut(u32, u64),
-{
-    for_each_attr_list_entry_header(data, |header| {
-        f(header.type_id, header.file_reference);
-    });
+/// Fully decoded identity of one `$ATTRIBUTE_LIST` entry.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct AttributeListReference {
+    pub(crate) type_id: u32,
+    pub(crate) file_reference: u64,
+    pub(crate) id: u16,
+    pub(crate) lowest_vcn: i64,
+    pub(crate) name: Vec<u8>,
 }
 
-/// Call `f` with the complete header of each valid `$ATTRIBUTE_LIST` entry.
-///
-/// Bootstrap code needs the lowest VCN and attribute instance identifier in
-/// addition to the record reference, so keep that detail in one bounded parser.
-pub(crate) fn for_each_attr_list_entry_header<F>(data: &[u8], mut f: F)
-where
-    F: FnMut(AttributeListEntryHeader),
-{
-    let mut offset = 0usize;
-    while offset + ATTR_LIST_ENTRY_MIN_SIZE <= data.len() {
-        let bytes = &data[offset..offset + ATTR_LIST_ENTRY_MIN_SIZE];
-        let h = match AttributeListEntryHeader::read_from_bytes(bytes) {
-            Ok(h) => h,
-            Err(_) => break,
+/// Best-effort decode result for a materialized `$ATTRIBUTE_LIST`.
+pub(crate) struct AttributeListReferences {
+    pub(crate) entries: Vec<AttributeListReference>,
+    pub(crate) complete: bool,
+}
+
+impl AttributeListReference {
+    pub(crate) fn record_number(&self) -> u64 {
+        self.file_reference & 0x0000_ffff_ffff_ffff
+    }
+
+    pub(crate) fn sequence_number(&self) -> u16 {
+        (self.file_reference >> 48) as u16
+    }
+
+    pub(crate) fn matches(&self, attr: &NtfsAttribute<'_>) -> bool {
+        let name_matches = if self.name.is_empty() {
+            attr.header.name_length == 0
+        } else {
+            attr.name_bytes() == Some(self.name.as_slice())
         };
-        let len = h.record_length as usize;
-        if len < ATTR_LIST_ENTRY_MIN_SIZE {
+        self.type_id == attr.type_id()
+            && self.id == attr.header.id
+            && name_matches
+            && self.lowest_vcn
+                == attr
+                    .nonresident_header()
+                    .map_or(0, |header| header.lowest_vcn)
+    }
+
+    /// Validate that a loaded FILE record is the exact source generation named
+    /// by this list entry and belongs to the expected base record.
+    pub(crate) fn matches_record(
+        &self,
+        record: &FileRecord<'_>,
+        base_record_number: u64,
+        base_file_reference: u64,
+    ) -> bool {
+        self.record_number() == record.number
+            && self.sequence_number() == record.sequence_value()
+            && if record.number == base_record_number {
+                record.base_reference() == 0
+            } else {
+                record.base_reference() == base_file_reference
+            }
+    }
+}
+
+/// Decode a complete `$ATTRIBUTE_LIST`, including the fields needed to bind an
+/// entry to one exact attribute in one exact FILE-record generation.
+///
+/// References decoded before the first malformed entry remain available, while
+/// `complete` tells diagnostic callers that the list may have hidden more data.
+/// A short all-zero alignment tail is accepted.
+pub(crate) fn parse_attribute_list_references(data: &[u8]) -> AttributeListReferences {
+    let mut references = Vec::new();
+    let mut offset = 0usize;
+    let mut complete = true;
+    while offset < data.len() {
+        let remaining = &data[offset..];
+        if remaining.len() < 8 && remaining.iter().all(|byte| *byte == 0) {
             break;
         }
-        let next = match offset.checked_add(len) {
-            Some(o) if o <= data.len() => o,
-            None => break,
-            _ => break,
+        let Some(header) = remaining
+            .get(..ATTR_LIST_ENTRY_MIN_SIZE)
+            .and_then(|bytes| AttributeListEntryHeader::read_from_bytes(bytes).ok())
+        else {
+            complete = false;
+            break;
         };
-        f(h);
-        offset = next;
+        let len = header.record_length as usize;
+        let name_start = header.attribute_name_offset as usize;
+        let name_len = header.attribute_name_length as usize * 2;
+        let Some(name_end) = name_start.checked_add(name_len) else {
+            complete = false;
+            break;
+        };
+        if len < ATTR_LIST_ENTRY_MIN_SIZE
+            || len > remaining.len()
+            || header.lowest_vcn < 0
+            || (name_len != 0 && (name_start < ATTR_LIST_ENTRY_MIN_SIZE || name_end > len))
+        {
+            complete = false;
+            break;
+        }
+        references.push(AttributeListReference {
+            type_id: header.type_id,
+            file_reference: header.file_reference,
+            id: header.attribute_id,
+            lowest_vcn: header.lowest_vcn,
+            name: if name_len == 0 {
+                Vec::new()
+            } else {
+                remaining[name_start..name_end].to_vec()
+            },
+        });
+        offset += len;
+    }
+    AttributeListReferences {
+        entries: references,
+        complete,
     }
 }
 
@@ -118,7 +191,10 @@ mod tests {
     use super::*;
     use zerocopy::IntoBytes;
 
-    use crate::raw_mft::layout::attribute::{NtfsAttributeHeader, NtfsResidentAttributeHeader};
+    use crate::raw_mft::layout::{
+        attribute::{NtfsAttributeHeader, NtfsResidentAttributeHeader},
+        record::FileRecordHeader,
+    };
 
     fn build_resident_attr(type_id: u32, value: &[u8]) -> Vec<u8> {
         let header_size = size_of::<NtfsResidentAttributeHeader>();
@@ -168,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn iterates_attribute_list_entry() {
+    fn decodes_attribute_list_entry() {
         let header = AttributeListEntryHeader {
             type_id: NtfsAttributeType::FileName as u32,
             record_length: size_of::<AttributeListEntryHeader>() as u16,
@@ -181,10 +257,12 @@ mod tests {
         let mut bytes = vec![0u8; size_of::<AttributeListEntryHeader>()];
         bytes.copy_from_slice(header.as_bytes());
 
-        let mut seen = Vec::new();
-        for_each_attr_list_entry(&bytes, |type_id, file_reference| {
-            seen.push((type_id, file_reference));
-        });
+        let decoded = parse_attribute_list_references(&bytes);
+        let seen = decoded
+            .entries
+            .into_iter()
+            .map(|reference| (reference.type_id, reference.file_reference))
+            .collect::<Vec<_>>();
 
         assert_eq!(
             seen,
@@ -207,14 +285,16 @@ mod tests {
     }
 
     #[test]
-    fn iterates_multiple_attribute_list_entries() {
+    fn decodes_multiple_attribute_list_entries() {
         let mut bytes = attr_list_entry(NtfsAttributeType::StandardInformation as u32, 0x11);
         bytes.extend(attr_list_entry(NtfsAttributeType::Data as u32, 0x22));
 
-        let mut seen = Vec::new();
-        for_each_attr_list_entry(&bytes, |type_id, file_reference| {
-            seen.push((type_id, file_reference));
-        });
+        let decoded = parse_attribute_list_references(&bytes);
+        let seen = decoded
+            .entries
+            .into_iter()
+            .map(|reference| (reference.type_id, reference.file_reference))
+            .collect::<Vec<_>>();
 
         assert_eq!(
             seen,
@@ -226,19 +306,84 @@ mod tests {
     }
 
     #[test]
-    fn attr_list_stops_at_zero_length_entry() {
+    fn attr_list_decoder_stops_at_zero_length_entry() {
         let mut bytes = attr_list_entry(NtfsAttributeType::FileName as u32, 0x42);
         // A second entry that declares record_length = 0 must halt iteration.
         let mut malformed = attr_list_entry(NtfsAttributeType::Data as u32, 0x99);
         malformed[4..6].copy_from_slice(&0u16.to_le_bytes()); // record_length = 0
         bytes.extend(malformed);
 
-        let mut seen = Vec::new();
-        for_each_attr_list_entry(&bytes, |type_id, file_reference| {
-            seen.push((type_id, file_reference));
-        });
+        let decoded = parse_attribute_list_references(&bytes);
+        let seen = decoded
+            .entries
+            .into_iter()
+            .map(|reference| (reference.type_id, reference.file_reference))
+            .collect::<Vec<_>>();
 
         assert_eq!(seen, vec![(NtfsAttributeType::FileName as u32, 0x42)]);
+        assert!(!decoded.complete);
+    }
+
+    #[test]
+    fn exact_reference_decoder_retains_valid_prefix_and_marks_malformed_tail() {
+        let mut bytes = attr_list_entry(NtfsAttributeType::FileName as u32, 0x42);
+        let mut malformed = attr_list_entry(NtfsAttributeType::Data as u32, 0x99);
+        malformed[4..6].copy_from_slice(&0u16.to_le_bytes());
+        bytes.extend(malformed);
+
+        let decoded = parse_attribute_list_references(&bytes);
+
+        assert!(!decoded.complete);
+        assert_eq!(decoded.entries.len(), 1);
+        assert_eq!(decoded.entries[0].record_number(), 0x42);
+        assert_eq!(
+            decoded.entries[0].type_id,
+            NtfsAttributeType::FileName as u32
+        );
+    }
+
+    #[test]
+    fn reference_source_validation_checks_record_sequence_and_base() {
+        let record = FileRecord {
+            data: &[],
+            header: FileRecordHeader {
+                signature: *b"FILE",
+                update_sequence_offset: 0,
+                update_sequence_length: 0,
+                logfile_sequence_number: 0,
+                sequence_value: 7,
+                link_count: 0,
+                attributes_offset: 0,
+                flags: 0,
+                used_size: 0,
+                allocated_size: 0,
+                base_reference: 7 << 48,
+                next_attribute_id: 0,
+            },
+            number: 1,
+        };
+        let reference = AttributeListReference {
+            type_id: NtfsAttributeType::Data as u32,
+            file_reference: 1 | (7 << 48),
+            id: 2,
+            lowest_vcn: 0,
+            name: Vec::new(),
+        };
+
+        assert!(reference.matches_record(&record, 0, 7 << 48));
+        assert!(!reference.matches_record(&record, 0, 6 << 48));
+
+        let wrong_sequence = AttributeListReference {
+            file_reference: 1 | (8 << 48),
+            ..reference.clone()
+        };
+        assert!(!wrong_sequence.matches_record(&record, 0, 7 << 48));
+
+        let wrong_record = AttributeListReference {
+            file_reference: 2 | (7 << 48),
+            ..reference
+        };
+        assert!(!wrong_record.matches_record(&record, 0, 7 << 48));
     }
 
     #[test]

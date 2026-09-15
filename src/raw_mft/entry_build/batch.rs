@@ -41,7 +41,7 @@ pub struct RawMftChunkBatch<E = RawMftBatchEntry> {
 ///
 /// Compared with [`super::RawMftEntry`], this form keeps only the metadata
 /// needed by the chunk/batch APIs and omits richer fields such as timestamps
-/// from `$FILE_NAME`, alternate data stream details, and data-run summaries.
+/// from `$FILE_NAME` and alternate data stream details.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawMftBatchEntry {
     /// Record number in the `$MFT`.
@@ -91,6 +91,19 @@ pub(crate) struct RawMftBatchScratch {
 }
 
 impl RawMftBatchScratch {
+    /// Build a lean scratch entry from caller-selected, validated attributes.
+    pub(crate) fn from_attributes<'a>(
+        record: &FileRecord<'_>,
+        attributes: impl IntoIterator<Item = NtfsAttribute<'a>>,
+        collect_dos_file_name_links: bool,
+    ) -> Self {
+        let mut builder = RawMftBatchEntryBuilder::new(record, collect_dos_file_name_links);
+        for attr in attributes {
+            super::fold::fold_attribute(&attr, &mut builder);
+        }
+        builder.build().0
+    }
+
     /// Build a lean batch scratch entry plus any captured `$ATTRIBUTE_LIST`
     /// payload from one parsed FILE record.
     pub(crate) fn from_record_with_attr_list(

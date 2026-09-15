@@ -47,8 +47,8 @@ fn raw_mft_path_resolver_paths_exist_on_disk() {
     let mut matched = 0usize;
 
     for entry in raw_mft
-        .try_iter()
-        .expect("RawMft::try_iter failed")
+        .scan_entries()
+        .expect("RawMft::scan_entries failed")
         .filter_map(|r: Result<RawMftEntry, MftError>| r.ok())
         .filter(|e| e.is_used && !e.file_name.is_empty())
         .take(200)

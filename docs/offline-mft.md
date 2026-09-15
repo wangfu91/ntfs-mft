@@ -1,9 +1,9 @@
-# Offline MFT parsing
+# Logical MFT stream parsing
 
-An **offline MFT scan** parses an already extracted logical `$MFT` file or
-buffer. `MftStream` is the parser for that workflow, but it also accepts bytes
-from a live volume. Using `from_raw_mft()` or `byte_reader()` against a volume
-is still a **live volume scan**, with that source's consistency limitations.
+`MftStream` parses a logical `$MFT` stream. An **offline MFT scan** uses an
+already extracted file or buffer as that stream; `from_raw_mft()` and
+`byte_reader()` instead derive it from a live volume, retaining that source's
+consistency limitations.
 Single-record and byte operations are called **reads**.
 
 `MftStream<R: Read + Seek>` owns a reader (or a borrowed reader such as `&mut R`).
@@ -62,9 +62,9 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
 - Construction seeks to the end to establish a fixed slot count, then to zero.
   An empty stream is valid. A partial trailing slot is `TruncatedRecord`.
   The source must remain unchanged until `into_inner` returns it.
-- `read_record(number)` takes `&mut self`. It addresses a physical slot at
+- `read_record(number)` takes `&mut self`. It addresses a logical record position at
   `number * record_size`. Slot numbering does not come from optional header fields.
-  `MftStreamRecord::stream_offset` always refers to this stream, never the volume.
+  `MftRecord::stream_offset` always refers to this stream, never the volume.
 - `iter_records()` starts at zero and yields every slot, including system records,
   unused records and extension records. A non-FILE slot is an item-level error.
   Parse errors allow iteration to continue. I/O errors terminate iteration after
@@ -76,7 +76,7 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
 
 ## Metadata and unavailable payloads
 
-`MftStreamRecord.entry` reuses `RawMftEntry`. Its zero, empty and `None` defaults
+`MftRecord.entry` reuses `RawMftEntry`. Its zero, empty and `None` defaults
 must be interpreted alongside `metadata`:
 
 | State | Meaning |
@@ -95,7 +95,7 @@ categories remain incomplete because its base was not inspected.
 Completeness covers the supported metadata representation, not every NTFS
 attribute type and not file-content availability. Unknown attributes are not
 decoded into `RawMftEntry`. Non-resident data headers can provide valid sizes and
-run summaries while their contents remain outside the input. `external_payloads`
+valid sizes while their contents remain outside the input. `external_payloads`
 identifies observed non-resident attributes by record number, type and instance
 ID. An empty list is not evidence of absence if inspection was incomplete.
 
@@ -106,7 +106,7 @@ LCNs are never interpreted as offsets into the extracted MFT.
 
 ## Extension records
 
-Default mode builds metadata from each physical record only. A base record with
+Default mode builds metadata from each MFT record only. A base record with
 an attribute list reports `ExtensionsNotResolved`. Use this mode for physical-record comparisons.
 
 With `resolve_extensions(true)`, resident lists select attributes using type,
@@ -123,8 +123,8 @@ the base list is checked against the base's own attribute, not read recursively.
 Non-resident lists cannot be resolved without the original volume.
 
 Split data streams are only partially represented: the first segment supplies
-sizes and its run summary, continuation segments do not overwrite them, and
-`SplitDataStream` marks data completeness false. Continuation runlists are not aggregated.
+sizes, continuation segments do not overwrite them, and `SplitDataStream`
+marks data completeness false. Continuation runlists are not aggregated.
 
 ## Tests and downstream integration
 
@@ -139,5 +139,5 @@ their independent parser. They should compare per-slot errors separately, and
 account for explicit rejection of malformed payloads.
 Export consumers should preserve the metadata states and diagnostics, rather than
 converting unknown values to zero, empty strings or null without explanation.
-See [JSONL export](export.md) for optional serialization. Offline parsing does
-not reconstruct paths or provide parallel scans.
+See [JSONL export](export.md) for optional serialization. MFT-stream parsing
+does not reconstruct paths or provide parallel scans.

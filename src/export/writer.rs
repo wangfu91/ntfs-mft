@@ -1,5 +1,5 @@
 use super::{ExportError, ExportItem, ExportItemV1, ExportRecordV1};
-use crate::{MftError, MftResult, MftStreamRecord, RawMftEntry};
+use crate::{MftError, MftRecord, MftResult, RawMftEntry};
 use std::io::{self, Write};
 
 /// Streaming JSONL writer using at most one item's serialized buffer.
@@ -46,8 +46,8 @@ impl<W: Write> JsonlWriter<W> {
         self.write_record(ExportRecordV1::from_diagnostic(record))
     }
 
-    /// Convert and write a stream record with presence states and diagnostics.
-    pub fn write_stream(&mut self, record: &MftStreamRecord) -> MftResult<()> {
+    /// Convert and write an MFT record with presence states and diagnostics.
+    pub fn write_stream(&mut self, record: &MftRecord) -> MftResult<()> {
         self.write_record(ExportRecordV1::from_stream(record))
     }
 

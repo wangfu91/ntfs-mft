@@ -2,7 +2,7 @@
 
 Use a live volume scan for a best-effort base-record listing from a volume. Use a
 diagnostic live volume scan when skipped-record counts and metadata evidence matter.
-Use `MftStream` when each physical slot, including invalid or extension slots,
+Use `MftStream` when each logical record position, including invalid or extension records,
 needs an explicit outcome.
 
 A **live volume scan** reads directly from an NTFS volume/device. An **offline
@@ -13,11 +13,11 @@ record interpretation. `RawMft` and `MftStream` name the data access abstraction
 
 | Entry point | Result | Default selection | Error behavior |
 | --- | --- | --- | --- |
-| `raw.try_iter()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
+| `raw.scan_entries()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
 | `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
 | `raw.parallel().lean()` | Batches of `RawMftBatchEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
-| `raw.try_iter_diagnostic(options, limit)` | `RawMftDiagnosticRecord` plus final report | Supplied raw selection | Counts skipped categories, retains bounded parser errors; scan I/O error returned once, then stops |
-| `stream.iter_records()` | `MftStreamRecord` per valid slot | All physical slots from zero, including unused and extensions | Parse errors returned per slot and iteration continues; I/O error stops iteration |
+| `raw.scan_entries_diagnostic(options, limit)` | `RawMftDiagnosticRecord` plus final report | Supplied raw selection | Counts skipped categories, retains bounded parser errors; scan I/O error returned once, then stops |
+| `stream.iter_records()` | `MftRecord` per valid record position | All record positions from zero, including unused and extensions | Parse errors returned per position and iteration continues; I/O error stops iteration |
 
 MftStream extension I/O failures are attached to the base record's diagnostics;
 the iterator yields that record and then stops. Ordinary live volume scans use the
@@ -32,7 +32,6 @@ use ntfs_mft::{RawMftEntryOptions, RawMftScanOptions};
 
 let metadata = RawMftEntryOptions::builder()
     .collect_alternate_data_streams(false)
-    .collect_data_run_summary(false)
     .build();
 let options = RawMftScanOptions::builder()
     .range(0..1000)
@@ -48,9 +47,9 @@ of rich parallel scans. `RawMftChunkPlanOptions` controls partition size only.
 Explicit chunks are clipped to selection and volume bounds; overlapping chunks
 are rejected. Results are delivered in supplied chunk order.
 
-Rich entries include timestamps, attributes, ADS, and data-run summaries,
-subject to `collection_options`. Lean entries keep names, references, sizes,
-links, and basic flags; their options expose no ADS or run-summary toggles.
+Rich entries include timestamps, attributes, and ADS, subject to
+`collection_options`. Lean entries keep names, references, sizes,
+links, and basic flags; their options expose no ADS toggle.
 `options.into_lean()` explicitly retains selection/buffers/DOS-link policy and
 discards the rich-only metadata choices.
 
@@ -79,7 +78,7 @@ another callback fails; completed side effects are not rolled back.
 Use `RawMftDiagnosticRecord.metadata` to distinguish absent, present, unknown,
 and not-collected fields. Keep its diagnostics and the iterator's final report.
 Raw attribute-list enrichment remains selective and is reported as unverified;
-use the offline inspection API for its supported extension-validation evidence.
+use `MftStream` inspection for its supported extension-validation evidence.
 `MftStreamOptions::new(size)` defaults to no extension resolution; enable
 `.resolve_extensions(true)` for one level of resident attribute-list references.
 An MFT-only source cannot recover arbitrary nonresident attribute payloads.
@@ -108,5 +107,5 @@ an explicit `usize` record size. If you already have a `RawMft`, use
 The resulting stream can outlive `raw` and its volume. For custom options, use
 `from_reader(raw.byte_reader()?, options)` with `raw.file_record_size()`.
 
-See [raw scan details](raw-mft-read.md), [offline inspection](offline-mft.md),
+See [raw scan details](raw-mft-read.md), [MFT stream parsing](offline-mft.md),
 and [versioned export](export.md) for their full contracts.

@@ -1,11 +1,11 @@
 use super::*;
 use crate::{
-    AdsInfo, FileAttributes, Filetime, MftDiagnostic, MftError, MftFieldState, MftIssue, MftStream,
-    MftStreamOptions, RawMftLink, RawMftScanOptions,
+    AdsInfo, FileAttributes, Filetime, MftDiagnostic, MftDiagnosticKind, MftError, MftFieldState,
+    MftStream, MftStreamOptions, RawMftLink, RawMftScanOptions,
 };
 use std::{ffi::OsString, io::Cursor};
 
-fn fixture() -> crate::MftResult<crate::MftStreamRecord> {
+fn fixture() -> crate::MftResult<crate::MftRecord> {
     let bytes = include_bytes!("../../tests/fixtures/omerbenamram-mft/MFT");
     let mut stream =
         MftStream::from_reader(Cursor::new(bytes.as_slice()), MftStreamOptions::new(1024)?)?;
@@ -188,7 +188,7 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
     record.diagnostics.push(MftDiagnostic {
         record_number: 5,
         attribute_type: Some(0x20),
-        issue: MftIssue::ExtensionRead {
+        kind: MftDiagnosticKind::ExtensionRead {
             reference: u64::MAX,
             error: MftError::FixupMismatch { number: 42 },
         },
@@ -214,18 +214,15 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
     assert_eq!(dto.path, ExportPath::NotRequested);
     let options = RawMftScanOptions::builder()
         .collect_alternate_data_streams(false)
-        .collect_data_run_summary(false)
         .build();
     record.entry.collection_options = options.entry();
     record.entry.alternate_data_streams = Box::default();
-    record.entry.data_run_summary = None;
     let raw = ExportRecordV1::from_entry(&record.entry);
     assert_eq!(raw.source, "entry");
     assert_eq!(
         raw.metadata.alternate_data_streams,
         FieldState::NotCollected
     );
-    assert_eq!(raw.metadata.data_run_summary, FieldState::NotCollected);
     assert_eq!(raw.metadata.standard_information, FieldState::Unknown);
     assert!(raw.diagnostics.is_empty());
     record.entry.collection_options = crate::RawMftEntryOptions::default();
@@ -234,7 +231,6 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
         collected.metadata.alternate_data_streams,
         FieldState::NotObserved
     );
-    assert_eq!(collected.metadata.data_run_summary, FieldState::NotObserved);
     #[cfg(feature = "jsonl")]
     {
         let mut bytes = Vec::new();

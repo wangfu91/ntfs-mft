@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    Filetime, MftError, MftFieldState, MftIssue, MftStreamRecord, NtfsFileReference, RawMftEntry,
+    Filetime, MftDiagnosticKind, MftError, MftFieldState, MftRecord, NtfsFileReference, RawMftEntry,
 };
 use chrono::{Datelike, TimeZone, Utc};
 use std::ffi::OsStr;
@@ -190,10 +190,6 @@ impl ExportRecordV1 {
             sparse: entry.is_sparse,
             compressed: entry.is_compressed,
             encrypted: entry.is_encrypted,
-            data_runs: entry.data_run_summary.as_ref().map(|runs| ExportRuns {
-                run_count: runs.run_count,
-                total_clusters: runs.total_clusters.to_string(),
-            }),
             alternate_streams: entry
                 .alternate_data_streams
                 .iter()
@@ -213,10 +209,6 @@ impl ExportRecordV1 {
                     !entry.alternate_data_streams.is_empty(),
                 ),
                 reparse_point: FieldState::Unknown,
-                data_run_summary: observed(
-                    Some(options.collect_data_run_summary()),
-                    entry.data_run_summary.is_some(),
-                ),
                 dos_links_collected: Some(options.collect_dos_file_name_links()),
             },
             path: ExportPath::NotRequested,
@@ -227,7 +219,7 @@ impl ExportRecordV1 {
     }
 
     /// Preserve the logical-stream parser's explicit evidence and diagnostics.
-    pub fn from_stream(record: &MftStreamRecord) -> Self {
+    pub fn from_stream(record: &MftRecord) -> Self {
         let mut dto = Self::from_entry(&record.entry);
         dto.source = "mft_stream".into();
         dto.stream_offset = Some(record.stream_offset.to_string());
@@ -251,9 +243,6 @@ impl ExportRecordV1 {
         dto.source = "volume_scan".into();
         dto.apply_inspection(record.metadata, &record.diagnostics);
         dto.metadata.dos_links_collected = Some(options.collect_dos_file_name_links());
-        if !options.collect_data_run_summary() {
-            dto.metadata.data_run_summary = FieldState::NotCollected;
-        }
         dto
     }
     fn apply_inspection(
@@ -268,35 +257,34 @@ impl ExportRecordV1 {
             unnamed_data: m.unnamed_data.into(),
             alternate_data_streams: m.alternate_data_streams.into(),
             reparse_point: m.reparse_point.into(),
-            data_run_summary: if self.data_runs.is_some() {
-                m.unnamed_data.into()
-            } else if m.unnamed_data == MftFieldState::Absent {
-                FieldState::Absent
-            } else {
-                FieldState::NotObserved
-            },
             dos_links_collected: Some(true),
         };
         self.diagnostics = diagnostics
             .iter()
             .map(|d| {
-                let (code, reference, error) = match &d.issue {
-                    MftIssue::EnrichmentNotVerified => ("enrichment_not_verified", None, None),
-                    MftIssue::MalformedAttribute => ("malformed_attribute", None, None),
-                    MftIssue::ExtensionsNotResolved => ("extensions_not_resolved", None, None),
-                    MftIssue::ExternalPayloadUnavailable => {
+                let (code, reference, error) = match &d.kind {
+                    MftDiagnosticKind::EnrichmentNotVerified => {
+                        ("enrichment_not_verified", None, None)
+                    }
+                    MftDiagnosticKind::MalformedAttribute => ("malformed_attribute", None, None),
+                    MftDiagnosticKind::ExtensionsNotResolved => {
+                        ("extensions_not_resolved", None, None)
+                    }
+                    MftDiagnosticKind::ExternalPayloadUnavailable => {
                         ("external_payload_unavailable", None, None)
                     }
-                    MftIssue::MalformedAttributeList => ("malformed_attribute_list", None, None),
-                    MftIssue::ExtensionRead { reference, error } => (
+                    MftDiagnosticKind::MalformedAttributeList => {
+                        ("malformed_attribute_list", None, None)
+                    }
+                    MftDiagnosticKind::ExtensionRead { reference, error } => (
                         "extension_read",
                         Some(NtfsFileReference::new(*reference).into()),
                         Some(error.into()),
                     ),
-                    MftIssue::ExtensionMismatch => ("extension_mismatch", None, None),
-                    MftIssue::NestedAttributeList => ("nested_attribute_list", None, None),
-                    MftIssue::SplitDataStream => ("split_data_stream", None, None),
-                    MftIssue::ExtensionRecordOnly => ("extension_record_only", None, None),
+                    MftDiagnosticKind::ExtensionMismatch => ("extension_mismatch", None, None),
+                    MftDiagnosticKind::NestedAttributeList => ("nested_attribute_list", None, None),
+                    MftDiagnosticKind::SplitDataStream => ("split_data_stream", None, None),
+                    MftDiagnosticKind::ExtensionRecordOnly => ("extension_record_only", None, None),
                 };
                 ExportDiagnostic {
                     record_number: d.record_number.to_string(),

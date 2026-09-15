@@ -1,9 +1,10 @@
 //! A byte-oriented view of the logical `$MFT::$DATA` stream.
 
 use super::{
-    RawMft,
-    io::VolumeReader,
+    DEFAULT_BUFFER_BYTES, RawMft,
+    inspection::RecordInspection,
     layout::{attribute::for_each_attribute_checked, extent::ExtentMap, record::FileRecord},
+    volume_reader::VolumeReader,
 };
 use crate::{MftError, MftResult, Volume};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -47,7 +48,11 @@ impl RawMft<'_> {
     /// ```
     pub fn byte_reader(&self) -> MftResult<MftByteReader> {
         let volume = self.volume.reopen()?;
-        let reader = VolumeReader::new(&volume, self.boot.bytes_per_sector as u64)?;
+        let reader = VolumeReader::new(
+            &volume,
+            self.boot.bytes_per_sector as u64,
+            DEFAULT_BUFFER_BYTES,
+        )?;
         let mut inner = MappedReader::new(reader, self.extent_map.as_ref())?;
         // Read record zero through the same mapping, including a fragmented record.
         let mut bytes = vec![0; self.boot.file_record_size as usize];
@@ -56,9 +61,11 @@ impl RawMft<'_> {
         let (offset, used) = record.attrs_range();
         let mut size = None;
         let mut duplicate = false;
+        let mut inspection = RecordInspection::default();
         let complete = for_each_attribute_checked(record.data, offset, used, |attr| {
             if attr.type_id() == 0x80
                 && !attr.has_name()
+                && inspection.observe(record.number, attr)
                 && let Some(header) = attr.nonresident_header()
                 && header.lowest_vcn == 0
             {
@@ -66,7 +73,7 @@ impl RawMft<'_> {
                 size = Some((header.data_size, header.initialized_size, attr.flags()));
             }
         });
-        if !complete || duplicate {
+        if !complete || duplicate || inspection.has_malformed_attribute() {
             return Err(MftError::InvalidRecordData(
                 "ambiguous or malformed MFT stream attributes",
             ));

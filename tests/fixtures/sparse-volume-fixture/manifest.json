@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "source": "Windows installation USB used for the captured-volume fixture",
+  "source": "Windows installation USB used for the sparse-volume fixture",
   "partition_start_on_disk": 1048576,
   "ranges": [
     {

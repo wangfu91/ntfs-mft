@@ -35,7 +35,7 @@ impl<'a> RawMftPathResolver<'a> {
     pub(crate) fn new(raw_mft: &RawMft<'a>) -> MftResult<Self> {
         let mut index = MftPathIndex::new();
         let options = super::RawMftScanOptions::builder().start_record(0).build();
-        for result in raw_mft.try_iter_with_options(options)? {
+        for result in raw_mft.scan_entries_with_options(options)? {
             let entry = result?;
             if entry.is_used {
                 index.insert(&entry)?;

@@ -4,7 +4,7 @@
 | --- | --- |
 | `layout/` | NTFS structures, runlists, extent mapping, and USA fixups |
 | `bootstrap/` | Boot geometry, MFT stream discovery, and allocation bitmap |
-| `io.rs`, `reader.rs` | Aligned volume reads and record access |
+| `volume_reader.rs`, `reader.rs` | Aligned volume reads and record access |
 | `entry_build/`, `attr_list.rs` | Metadata construction and extension enrichment |
 | `serial/`, `parallel/` | Record scanning and worker execution |
 | `chunk_plan.rs`, `options.rs` | Logical chunk ranges and scan configuration |

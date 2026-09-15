@@ -9,7 +9,7 @@ pub enum MftFieldState {
     /// Collection was explicitly disabled for this metadata category.
     NotCollected,
     /// At least one valid attribute was observed. `complete` is false when more
-    /// metadata may be missing or a split stream could not be fully summarized.
+    /// metadata may be missing or a split stream could not be fully inspected.
     Present {
         /// All relevant supported metadata was inspected successfully.
         complete: bool,
@@ -27,7 +27,7 @@ pub struct MftMetadata {
     pub standard_information: MftFieldState,
     /// `$FILE_NAME` names, links, and timestamps.
     pub file_names: MftFieldState,
-    /// Unnamed `$DATA` metadata, including its run summary.
+    /// Unnamed `$DATA` metadata.
     pub unnamed_data: MftFieldState,
     /// Named `$DATA` stream metadata.
     pub alternate_data_streams: MftFieldState,
@@ -46,10 +46,11 @@ pub struct MftExternalPayload {
     pub attribute_id: u16,
 }
 
-/// Why supported MFT metadata could not be inspected completely.
+/// Structured category explaining why supported MFT metadata could not be
+/// inspected completely.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum MftIssue {
+pub enum MftDiagnosticKind {
     /// Raw scanning enriched selected fields but did not validate the complete
     /// extension attribute set. Presence may still be observed in the base.
     EnrichmentNotVerified,
@@ -72,19 +73,19 @@ pub enum MftIssue {
     ExtensionMismatch,
     /// An extension has its own attribute list; recursive traversal is unsupported.
     NestedAttributeList,
-    /// A data stream spans attribute segments; a complete run summary is unavailable.
+    /// A data stream spans attribute segments; its metadata may be incomplete.
     SplitDataStream,
     /// A physical extension record was requested without resolving its base.
     ExtensionRecordOnly,
 }
 
-/// A recoverable limitation associated with a parsed record.
+/// A recoverable diagnostic associated with a parsed record.
 #[derive(Debug)]
 pub struct MftDiagnostic {
-    /// Record at which the issue was observed.
+    /// Record at which the diagnostic was observed.
     pub record_number: u64,
     /// Affected attribute type, or `None` when all categories may be affected.
     pub attribute_type: Option<u32>,
-    /// Structured reason, including underlying errors where applicable.
-    pub issue: MftIssue,
+    /// Structured diagnostic category, including underlying errors where applicable.
+    pub kind: MftDiagnosticKind,
 }

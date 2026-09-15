@@ -1,8 +1,9 @@
 # Live volume scan internals
 
 A **live volume scan** uses `RawMft` to read NTFS boot metadata and `$MFT`
-directly from the volume/device. An **offline MFT scan** instead parses an
-already extracted logical stream. It does not use Windows
+directly from the volume/device. `MftStream` instead parses a logical `$MFT`
+stream; an **offline MFT scan** supplies that stream from an extracted file or
+buffer. It does not use Windows
 FSCTL enumeration. ReFS is rejected with `MftError::UnsupportedFilesystem`.
 All volume access is read-only; see [Windows](windows-raw-volume-access.md) and
 [macOS](macos-raw-volume-access.md) access requirements.
@@ -61,7 +62,7 @@ handles. A live scan is not an atomic snapshot.
 
 ## Serial scanning
 
-`try_iter` and `try_iter_with_options` use the following pipeline:
+`scan_entries` and `scan_entries_with_options` use the following pipeline:
 
 1. Check the cached bitmap when unused records are excluded.
 2. Translate the record number through the extent map; skip sparse holes.
@@ -73,14 +74,14 @@ Default scans start at record 24 and exclude unused records. Invalid records
 are logged and skipped; scan I/O errors are returned. If no bitmap is available,
 `bitmap_used` returns true and callers must inspect `entry.is_used` themselves.
 This output is a best-effort base-record view, not a guaranteed Explorer listing.
-Use [MftStream](offline-mft.md) to inspect every physical slot and its errors.
+Use [MftStream](offline-mft.md) to inspect every logical record position and its errors.
 
 ## Metadata and extension records
 
 The entry builder collects standard information, names, data streams, reparse
 information, and attribute-list references. Name selection prefers
 `Win32AndDos`, then `Win32`, `Posix`, and `Dos`. Collection options control
-shadowed DOS aliases, alternate streams, and data-run summaries. Unnamed DATA
+shadowed DOS aliases and alternate streams. Unnamed DATA
 supplies primary size/storage metadata; named DATA supplies alternate streams.
 
 Overflow attributes live in extension records referenced by `$ATTRIBUTE_LIST`.
@@ -88,7 +89,7 @@ Enrichment runs when the base entry needs a better name, missing file data, or a
 missing reparse tag. It reads resident or nonresident lists, loads the required
 extension records, and merges usable metadata. It follows only one level and
 does not yield extensions as separate files. Raw iteration discards enrichment
-errors; consumers requiring completeness diagnostics should use the offline API.
+errors; consumers requiring completeness diagnostics should use `MftStream`.
 
 File references combine a 48-bit record number and a 16-bit sequence number.
 `MftPathIndex::resolve_strict` verifies full references, including parent and root
@@ -185,14 +186,14 @@ batch vector. Both preserve ordered result delivery.
 ## Benchmarks and tests
 
 `benches/raw_mft_ingest.rs` and its profile example share
-`support/raw_mft_ingest_support.rs`. The benchmark disables ADS, run summaries,
-and DOS aliases; both planning and scanning exclude unused records. Its defaults
+`support/raw_mft_ingest_support.rs`. The benchmark disables ADS and DOS aliases;
+both planning and scanning exclude unused records. Its defaults
 are 2,048-record chunks, 256 KiB/16 KiB buffers, and available parallelism capped
 at 10 workers. These are workload-specific benchmark settings.
 
 See [parallel measurements and commands](raw_mft_parallel_ingest_findings.md)
 and [serial measurements](raw_mft_serial_read_findings.md). The
-[captured-volume fixture](../tests/fixtures/captured-volume/README.md) tests bootstrapping,
+[sparse-volume fixture](../tests/fixtures/sparse-volume-fixture/README.md) tests bootstrapping,
 fragmented bitmap loading, and serial/parallel agreement without a device.
 The [module map](../src/raw_mft/README.md) locates the implementation.
 
@@ -200,7 +201,7 @@ The [module map](../src/raw_mft/README.md) locates the implementation.
 
 Choose `.parallel().rich()` for the full `RawMftEntry` shape used by serial
 iteration, or `.parallel().lean()` for `RawMftBatchEntry`. Rich scans honor ADS,
-data-run-summary, and DOS-link collection settings. Lean scans accept
+and DOS-link collection settings. Lean scans accept
 `RawMftLeanScanOptions`, which exposes only selection, buffers, and DOS-link
 collection. Both entry shapes carry `is_used` from the FILE header.
 
@@ -214,16 +215,16 @@ materialization and enrichment implementation as rich serial scans.
 ## Diagnostic raw scanning
 
 The fast raw APIs remain tolerant. For evidence about skipped records and
-metadata, use `raw.try_iter_diagnostic(options, diagnostic_limit)`. It yields
+metadata, use `raw.scan_entries_diagnostic(options, diagnostic_limit)`. It yields
 `RawMftDiagnosticRecord` values with per-category `MftFieldState` evidence and
-metadata diagnostics. Base attributes receive the offline parser's validation;
+metadata diagnostics. Base attributes receive the MFT-stream parser's validation;
 attribute-list enrichment is conservatively reported as unverified because the
 raw enrichment path does not inspect the complete extension attribute set.
 
 ```rust,no_run
 use ntfs_mft::{RawMft, RawMftScanOptions, MftResult};
 fn inspect(raw: &RawMft<'_>) -> MftResult<()> {
-    let mut records = raw.try_iter_diagnostic(RawMftScanOptions::default(), 100)?;
+    let mut records = raw.scan_entries_diagnostic(RawMftScanOptions::default(), 100)?;
     for result in records.by_ref() {
         let record = result?;
         println!("{} {:?}", record.entry, record.metadata);
@@ -240,7 +241,7 @@ error is returned once and stops the diagnostic iterator. The report distinguish
 unused, sparse, non-FILE/header-invalid, extension, and parser-rejected slots.
 The diagnostic limit bounds retained parser errors, not their counts. Early
 stopping leaves `reached_end` false, and reaching the end does not imply complete
-metadata. Per-record metadata diagnostics are bounded by the physical record.
+metadata. Per-record metadata diagnostics are bounded by the MFT record.
 Diagnostic scans are currently serial; ordinary rich/lean parallel scans retain
 the fast best-effort policy.
 

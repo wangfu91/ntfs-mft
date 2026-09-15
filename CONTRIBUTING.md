@@ -18,7 +18,7 @@ git lfs install
 git clone https://github.com/wangfu91/ntfs-mft.git
 cd ntfs-mft
 git lfs pull
-python tests/fixtures/captured-volume/verify.py
+python tests/fixtures/sparse-volume-fixture/verify.py
 ```
 
 Use `python3` if that is your platform's Python command. The fixture files must

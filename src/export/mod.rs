@@ -134,17 +134,6 @@ pub struct ExportStream {
     pub resident: bool,
 }
 
-/// Run summary of the represented unnamed stream segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct ExportRuns {
-    /// Number of runs.
-    pub run_count: u32,
-    /// Logical clusters, as a decimal string.
-    #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
-    pub total_clusters: String,
-}
-
 /// Category-level evidence; stored separately from default-valued scan fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -159,8 +148,6 @@ pub struct ExportMetadata {
     pub alternate_data_streams: FieldState,
     /// Reparse-point attribute evidence, not a tag copied from FILE_NAME.
     pub reparse_point: FieldState,
-    /// Run summary evidence.
-    pub data_run_summary: FieldState,
     /// Whether DOS aliases were requested; null means unknown.
     pub dos_links_collected: Option<bool>,
 }
@@ -242,7 +229,7 @@ pub struct ExportRecordV1 {
     /// Adapter that supplied this record: `entry`, `mft_stream`, or `volume_scan`.
     /// `mft_stream` may read a live volume; it does not imply offline provenance.
     pub source: String,
-    /// Supplied physical record number as decimal, independent of the reference.
+    /// Supplied MFT record number as decimal, independent of the reference.
     #[cfg_attr(test, schemars(regex(pattern = "^(0|[1-9][0-9]*)$")))]
     pub record_number: String,
     /// Supplied record-header sequence number.
@@ -287,8 +274,6 @@ pub struct ExportRecordV1 {
     pub compressed: bool,
     /// Scanner's unnamed-stream encrypted indicator.
     pub encrypted: bool,
-    /// Summary when available; see metadata for completeness.
-    pub data_runs: Option<ExportRuns>,
     /// Retained named streams, in original order; no deduplication or flattening.
     pub alternate_streams: Vec<ExportStream>,
     /// Evidence for presence, completeness, and collection choices.

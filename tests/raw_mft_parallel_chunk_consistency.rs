@@ -55,7 +55,6 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
         .start_record(24)
         .end_record(Some(50_000))
         .collect_alternate_data_streams(false)
-        .collect_data_run_summary(false)
         .build();
     let chunk_options = RawMftChunkPlanOptions::builder()
         .max_records_per_chunk(max_records_per_chunk)

@@ -7,10 +7,10 @@ use crate::{
     errors::MftError,
     raw_mft::{
         attr_list::{enrich_from_attr_list, should_enrich_from_attr_list},
-        entry_build::{AttributeListInfo, EntryBuildOptions, RawMftBatchScratch, RawMftEntry},
-        io::VolumeReader,
+        entry_build::{AttributeListInfo, EntryBuildOptions, RawMftEntry},
         layout::{boot::BootSector, data_run::DataRun, extent::ExtentMap, record::FileRecord},
         options::RawMftScanOptions,
+        volume_reader::VolumeReader,
     },
 };
 
@@ -23,16 +23,8 @@ impl<'a> RawMft<'a> {
         &self,
         options: &RawMftScanOptions,
     ) -> Result<(VolumeReader, VolumeReader), MftError> {
-        let reader = VolumeReader::with_buffer_bytes(
-            self.volume,
-            self.boot.bytes_per_sector as u64,
-            options.buffers.main.get(),
-        )?;
-        let attr_reader = VolumeReader::with_buffer_bytes(
-            self.volume,
-            self.boot.bytes_per_sector as u64,
-            options.buffers.attr.get(),
-        )?;
+        let reader = self.volume_reader(options.buffers.main)?;
+        let attr_reader = self.volume_reader(options.buffers.attr)?;
         Ok((reader, attr_reader))
     }
 }
@@ -42,7 +34,6 @@ impl<'a> RawMft<'a> {
 pub(super) fn entry_build_options(options: &RawMftScanOptions) -> EntryBuildOptions {
     EntryBuildOptions {
         collect_alternate_data_streams: options.entry.collect_alternate_data_streams,
-        collect_data_run_summary: options.entry.collect_data_run_summary,
         collect_dos_file_name_links: options.entry.collect_dos_file_name_links,
     }
 }
@@ -77,7 +68,7 @@ pub(super) fn build_rich_entry(
 /// Returns `Ok(None)` when the record number maps to a sparse hole in the
 /// `$MFT` or the bytes are not a valid FILE record. Shared by the rich and
 /// lean per-record readers below.
-fn parse_record_at<'b>(
+pub(super) fn parse_record_at<'b>(
     reader: &'b mut VolumeReader,
     boot: &BootSector,
     extent_map: &ExtentMap,
@@ -87,7 +78,7 @@ fn parse_record_at<'b>(
         return Ok(None);
     };
     let buf = reader
-        .borrow_at(offset, boot.file_record_size as usize)
+        .buffer_at_mut(offset, boot.file_record_size as usize)
         .map_err(io_err)?;
     if !FileRecord::is_valid(buf) {
         return Ok(None);
@@ -110,24 +101,6 @@ pub(super) fn read_record_raw(
     Ok(Some(RawMftEntry::from_record_with_attr_list(
         &rec,
         build_options,
-    )))
-}
-
-/// Read one raw FILE record and return the lean batch entry plus any
-/// captured `$ATTRIBUTE_LIST` payload.
-pub(super) fn read_batch_record_raw(
-    reader: &mut VolumeReader,
-    boot: &BootSector,
-    extent_map: &ExtentMap,
-    record_number: u64,
-    collect_dos_file_name_links: bool,
-) -> Result<Option<(RawMftBatchScratch, Option<AttributeListInfo>)>, MftError> {
-    let Some(rec) = parse_record_at(reader, boot, extent_map, record_number)? else {
-        return Ok(None);
-    };
-    Ok(Some(RawMftBatchScratch::from_record_with_attr_list(
-        &rec,
-        collect_dos_file_name_links,
     )))
 }
 
@@ -246,7 +219,8 @@ mod tests {
         #[cfg(target_os = "macos")]
         let volume = crate::volume::Volume::from_device_path(std::env::current_exe().unwrap())
             .expect("open test byte source");
-        VolumeReader::new(&volume, 512).expect("test reader construction should succeed")
+        VolumeReader::new(&volume, 512, crate::raw_mft::DEFAULT_BUFFER_BYTES)
+            .expect("test reader construction should succeed")
     }
 
     #[test]

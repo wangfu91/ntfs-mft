@@ -11,12 +11,13 @@ use log::warn;
 use crate::{
     errors::MftError,
     raw_mft::{
+        DEFAULT_BUFFER_BYTES,
         entry_build::AttributeListInfo,
-        io::VolumeReader,
+        inspection::{RecordInspection, inspect_referenced_attributes, inspect_view},
         layout::{
             attribute::{
-                NtfsAttribute, NtfsAttributeType, for_each_attr_list_entry_header,
-                for_each_attribute,
+                AttributeListReference, NtfsAttribute, NtfsAttributeType,
+                parse_attribute_list_references,
             },
             boot::BootSector,
             data_run::{DataRun, decode_runs},
@@ -24,6 +25,7 @@ use crate::{
             record::{FileRecord, MFT_RECORD_NUMBER},
         },
         reader::{io_err, read_nonresident},
+        volume_reader::VolumeReader,
     },
     volume::Volume,
 };
@@ -44,15 +46,8 @@ struct StreamExtent {
     runs: Vec<DataRun>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct StreamTarget {
-    type_id: u32,
-    lowest_vcn: u64,
-    record_number: u64,
-    attribute_id: u16,
-}
-
 struct MftStreamRuns {
+    base_file_reference: u64,
     data_extents: Vec<StreamExtent>,
     bitmap_extents: Vec<StreamExtent>,
     bitmap_size: u64,
@@ -65,7 +60,7 @@ pub(super) fn bootstrap_mft_state(
     volume: &Volume,
     boot: &BootSector,
 ) -> Result<MftBootstrap, MftError> {
-    let mut reader = VolumeReader::new(volume, boot.bytes_per_sector as u64)?;
+    let mut reader = VolumeReader::new(volume, boot.bytes_per_sector as u64, DEFAULT_BUFFER_BYTES)?;
     let mut record0 = read_mft_record_zero(&mut reader, boot)?;
     let mut streams = {
         let record =
@@ -109,6 +104,7 @@ fn read_mft_record_zero(reader: &mut VolumeReader, boot: &BootSector) -> Result<
 /// and `$MFT::$BITMAP`.
 fn discover_mft_stream_runs(record: &FileRecord<'_>) -> MftStreamRuns {
     let mut streams = MftStreamRuns {
+        base_file_reference: record.file_reference(),
         data_extents: Vec::new(),
         bitmap_extents: Vec::new(),
         bitmap_size: 0,
@@ -124,29 +120,38 @@ fn capture_stream_attributes(
     streams: &mut MftStreamRuns,
     capture_attribute_list: bool,
 ) {
-    let (attrs_off, used) = record.attrs_range();
-    for_each_attribute(record.data, attrs_off, used, |attr| {
-        let type_id = attr.type_id();
-        let unnamed = !attr.has_name();
+    let mut inspection = RecordInspection::default();
+    for attribute in inspect_view(record, &mut inspection) {
+        capture_stream_attribute(record.number, &attribute, streams, capture_attribute_list);
+    }
+}
 
-        if type_id == NtfsAttributeType::Data as u32 && unnamed && attr.is_non_resident() {
-            if let Some(extent) = decode_nonresident_extent(attr, record.number, "$MFT $DATA") {
-                insert_extent(&mut streams.data_extents, extent);
-            }
-        } else if type_id == NtfsAttributeType::Bitmap as u32 && unnamed && attr.is_non_resident() {
-            if let Some(header) = attr.nonresident_header() {
-                streams.bitmap_size = streams.bitmap_size.max(header.data_size);
-            }
-            if let Some(extent) = decode_nonresident_extent(attr, record.number, "$MFT $BITMAP") {
-                insert_extent(&mut streams.bitmap_extents, extent);
-            }
-        } else if capture_attribute_list
-            && type_id == NtfsAttributeType::AttributeList as u32
-            && streams.attribute_list.is_none()
-        {
-            streams.attribute_list = capture_attribute_list_info(attr);
+fn capture_stream_attribute(
+    record_number: u64,
+    attr: &NtfsAttribute<'_>,
+    streams: &mut MftStreamRuns,
+    capture_attribute_list: bool,
+) {
+    let type_id = attr.type_id();
+    let unnamed = !attr.has_name();
+
+    if type_id == NtfsAttributeType::Data as u32 && unnamed && attr.is_non_resident() {
+        if let Some(extent) = decode_nonresident_extent(attr, record_number, "$MFT $DATA") {
+            insert_extent(&mut streams.data_extents, extent);
         }
-    });
+    } else if type_id == NtfsAttributeType::Bitmap as u32 && unnamed && attr.is_non_resident() {
+        if let Some(header) = attr.nonresident_header() {
+            streams.bitmap_size = streams.bitmap_size.max(header.data_size);
+        }
+        if let Some(extent) = decode_nonresident_extent(attr, record_number, "$MFT $BITMAP") {
+            insert_extent(&mut streams.bitmap_extents, extent);
+        }
+    } else if capture_attribute_list
+        && type_id == NtfsAttributeType::AttributeList as u32
+        && streams.attribute_list.is_none()
+    {
+        streams.attribute_list = capture_attribute_list_info(attr);
+    }
 }
 
 fn insert_extent(extents: &mut Vec<StreamExtent>, extent: StreamExtent) {
@@ -186,32 +191,25 @@ fn load_extension_stream_extents(
         return Ok(());
     };
     let data = materialize_attribute_list(reader, boot.cluster_size, attribute_list)?;
-    let mut targets = Vec::new();
+    let mut targets = Vec::<AttributeListReference>::new();
     let mut seen = HashSet::new();
-    for_each_attr_list_entry_header(&data, |header| {
-        let type_id = header.type_id;
+    for reference in parse_attribute_list_references(&data).entries {
+        let type_id = reference.type_id;
         let is_stream = (type_id == NtfsAttributeType::Data as u32
             || type_id == NtfsAttributeType::Bitmap as u32)
-            && header.attribute_name_length == 0;
-        if !is_stream || header.lowest_vcn < 0 {
-            return;
+            && reference.name.is_empty();
+        if !is_stream {
+            continue;
         }
-        let target = StreamTarget {
-            type_id,
-            lowest_vcn: header.lowest_vcn as u64,
-            record_number: header.file_reference & 0x0000_FFFF_FFFF_FFFF,
-            attribute_id: header.attribute_id,
-        };
-        if seen.insert(target) {
-            targets.push(target);
+        if seen.insert(reference.clone()) {
+            targets.push(reference);
         }
-    });
+    }
 
     loop {
         let unresolved: Vec<_> = targets
             .iter()
-            .copied()
-            .filter(|target| !target_is_loaded(streams, *target))
+            .filter(|target| !target_is_loaded(streams, target))
             .collect();
         if unresolved.is_empty() {
             return Ok(());
@@ -226,24 +224,34 @@ fn load_extension_stream_extents(
         let before = streams.data_extents.len() + streams.bitmap_extents.len();
         let mut loaded_records = HashSet::new();
 
-        for target in unresolved {
-            if target.record_number == MFT_RECORD_NUMBER
-                || !loaded_records.insert(target.record_number)
-            {
+        for target in &unresolved {
+            let record_number = target.record_number();
+            if record_number == MFT_RECORD_NUMBER || !loaded_records.insert(record_number) {
                 continue;
             }
-            let offset = match partial_map.record_offset(target.record_number) {
+            let offset = match partial_map.record_offset(record_number) {
                 Ok(Some(offset)) => offset,
                 Ok(None) | Err(_) => continue,
             };
             let buf = reader
-                .borrow_at(offset, boot.file_record_size as usize)
+                .buffer_at_mut(offset, boot.file_record_size as usize)
                 .map_err(io_err)?;
             if !FileRecord::is_valid(buf) {
                 continue;
             }
-            let record = FileRecord::parse(target.record_number, Some(offset), buf)?;
-            capture_stream_attributes(&record, streams, false);
+            let record = FileRecord::parse(record_number, Some(offset), buf)?;
+            let selected = inspect_referenced_attributes(
+                &record,
+                unresolved
+                    .iter()
+                    .copied()
+                    .filter(|reference| reference.record_number() == record_number),
+                MFT_RECORD_NUMBER,
+                streams.base_file_reference,
+            );
+            for attribute in selected.attributes {
+                capture_stream_attribute(record.number, &attribute, streams, false);
+            }
         }
 
         let after = streams.data_extents.len() + streams.bitmap_extents.len();
@@ -255,16 +263,21 @@ fn load_extension_stream_extents(
     }
 }
 
-fn target_is_loaded(streams: &MftStreamRuns, target: StreamTarget) -> bool {
+fn target_is_loaded(streams: &MftStreamRuns, target: &AttributeListReference) -> bool {
+    if target.record_number() == MFT_RECORD_NUMBER
+        && target.file_reference != streams.base_file_reference
+    {
+        return false;
+    }
     let extents = if target.type_id == NtfsAttributeType::Data as u32 {
         &streams.data_extents
     } else {
         &streams.bitmap_extents
     };
     extents.iter().any(|extent| {
-        extent.lowest_vcn == target.lowest_vcn
-            && extent.record_number == target.record_number
-            && extent.attribute_id == target.attribute_id
+        extent.lowest_vcn == target.lowest_vcn as u64
+            && extent.record_number == target.record_number()
+            && extent.attribute_id == target.id
     })
 }
 
@@ -279,7 +292,7 @@ fn materialize_attribute_list(
             runs_data,
             data_size,
         } => {
-            let (runs, _) = decode_runs(&runs_data)?;
+            let runs = decode_runs(&runs_data)?;
             read_nonresident(reader, &runs, cluster_size, data_size)
         }
     }
@@ -380,7 +393,7 @@ fn decode_nonresident_runs(attr: &NtfsAttribute<'_>, label: &'static str) -> Opt
     }
 
     match decode_runs(&attr_data[runs_offset..]) {
-        Ok((runs, _)) => Some(runs),
+        Ok(runs) => Some(runs),
         Err(error) => {
             warn!("{label} decode_runs failed: {error}");
             None
@@ -564,6 +577,7 @@ mod tests {
     #[test]
     fn target_loadedness_includes_source_record_number() {
         let streams = MftStreamRuns {
+            base_file_reference: 7 << 48,
             data_extents: vec![StreamExtent {
                 lowest_vcn: 4,
                 record_number: 10,
@@ -580,20 +594,22 @@ mod tests {
 
         assert!(target_is_loaded(
             &streams,
-            StreamTarget {
+            &AttributeListReference {
                 type_id: NtfsAttributeType::Data as u32,
                 lowest_vcn: 4,
-                record_number: 10,
-                attribute_id: 2,
+                file_reference: 10,
+                id: 2,
+                name: Vec::new(),
             }
         ));
         assert!(!target_is_loaded(
             &streams,
-            StreamTarget {
+            &AttributeListReference {
                 type_id: NtfsAttributeType::Data as u32,
                 lowest_vcn: 4,
-                record_number: 11,
-                attribute_id: 2,
+                file_reference: 11,
+                id: 2,
+                name: Vec::new(),
             }
         ));
     }

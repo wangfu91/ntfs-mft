@@ -1,14 +1,13 @@
 //! Read-only parsing of logical `$MFT` bytes from a file, buffer, or volume.
 
-pub(in crate::raw_mft) mod inspect;
+use super::inspection::{RecordInspection, inspect_view, select_referenced_attributes};
 use super::{
-    RawMftEntry,
-    layout::{attribute::NtfsAttribute, record::FileRecord},
+    MftByteReader, RawMft, RawMftEntry,
+    layout::{attribute::parse_attribute_list_references, record::FileRecord},
 };
 use crate::{
-    MftDiagnostic, MftError, MftExternalPayload, MftFieldState, MftIssue, MftMetadata, MftResult,
+    MftDiagnostic, MftDiagnosticKind, MftError, MftExternalPayload, MftMetadata, MftResult,
 };
-use inspect::{Inspection, RecordData, inspect_record, list_references};
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -19,7 +18,9 @@ use std::{
 /// Configuration for an extracted MFT stream. No geometry is guessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MftStreamOptions {
+    /// Size in bytes of each MFT record.
     record_size: usize,
+    /// Whether to resolve referenced extension records.
     resolve_extensions: bool,
 }
 
@@ -31,7 +32,7 @@ impl MftStreamOptions {
     pub fn new(record_size: usize) -> MftResult<Self> {
         if !(512..=65536).contains(&record_size) || !record_size.is_power_of_two() {
             return Err(MftError::InvalidOptions(
-                "offline record size must be a power of two between 512 and 65536",
+                "MFT stream record size must be a power of two between 512 and 65536",
             ));
         }
         Ok(Self {
@@ -53,9 +54,9 @@ impl MftStreamOptions {
     }
 }
 
-/// Metadata and provenance for one physical MFT slot.
+/// Metadata and provenance for one successfully parsed MFT record.
 #[derive(Debug)]
-pub struct MftStreamRecord {
+pub struct MftRecord {
     /// Existing metadata representation. Interpret default values using `metadata`.
     pub entry: RawMftEntry,
     /// Offset in the supplied stream, not an offset in the original volume.
@@ -104,14 +105,14 @@ impl MftStream<BufReader<File>> {
     }
 }
 
-impl MftStream<super::MftByteReader> {
+impl MftStream<MftByteReader> {
     /// Parse a volume's logical MFT using its discovered record size.
     ///
     /// The stream owns an independent handle and can outlive `raw` and its
     /// volume. Extension resolution is disabled by default, as with
     /// [`MftStreamOptions::new`]. For custom options, use [`Self::from_reader`]
     /// with [`super::RawMft::byte_reader`]. A live volume is not a snapshot.
-    pub fn from_raw_mft(raw: &super::RawMft<'_>) -> MftResult<Self> {
+    pub fn from_raw_mft(raw: &RawMft<'_>) -> MftResult<Self> {
         Self::from_reader(
             raw.byte_reader()?,
             MftStreamOptions::new(raw.file_record_size())?,
@@ -136,7 +137,7 @@ impl<R: Read + Seek> MftStream<R> {
         // NTFS file references carry a 48-bit slot number.
         if size / record_size > 1u64 << 48 {
             return Err(MftError::InvalidOptions(
-                "offline stream exceeds the NTFS record number range",
+                "MFT stream exceeds the NTFS record number range",
             ));
         }
         reader.seek(SeekFrom::Start(0))?;
@@ -147,7 +148,7 @@ impl<R: Read + Seek> MftStream<R> {
         })
     }
 
-    /// Number of complete physical slots, including non-FILE and unused slots.
+    /// Number of complete record positions, including non-FILE and unused positions.
     pub const fn record_count(&self) -> u64 {
         self.record_count
     }
@@ -166,30 +167,20 @@ impl<R: Read + Seek> MftStream<R> {
         if number >= self.record_count {
             return Err(MftError::InvalidMftRecord {
                 number,
-                reason: "record number outside offline stream",
+                reason: "record number outside MFT stream",
             });
         }
-        let offset = number
-            .checked_mul(self.options.record_size as u64)
-            .ok_or(MftError::InvalidOptions("offline record offset overflow"))?;
+        let offset =
+            number
+                .checked_mul(self.options.record_size as u64)
+                .ok_or(MftError::InvalidOptions(
+                    "MFT stream record offset overflow",
+                ))?;
         self.reader.seek(SeekFrom::Start(offset))?;
         let mut bytes = vec![0; self.options.record_size];
         self.reader.read_exact(&mut bytes)?;
         let record = FileRecord::parse(number, None, &mut bytes)?;
         let header = record.header;
-        let expected_usa = self.options.record_size / 512 + 1;
-        if header.allocated_size as usize != self.options.record_size
-            || header.update_sequence_length as usize != expected_usa
-            || (header.attributes_offset as usize) < 42
-            || (header.update_sequence_offset as usize) < 42
-            || header.update_sequence_offset as usize + expected_usa * 2
-                > header.attributes_offset as usize
-        {
-            return Err(MftError::InvalidMftRecord {
-                number,
-                reason: "offline FILE geometry is inconsistent",
-            });
-        }
         Ok(RecordData {
             number,
             bytes,
@@ -199,38 +190,66 @@ impl<R: Read + Seek> MftStream<R> {
 
     /// Read one slot. Non-FILE slots, bad USA fixups, and out-of-range numbers
     /// are errors; incomplete metadata retains the entry with diagnostics.
-    pub fn read_record(&mut self, number: u64) -> MftResult<MftStreamRecord> {
+    pub fn read_record(&mut self, number: u64) -> MftResult<MftRecord> {
         let base = self.load(number)?;
-        let mut inspection = Inspection::default();
-        let base_attrs = inspect_record(&base, &mut inspection);
+        let mut inspection = RecordInspection::default();
+        let base_attrs = inspect_view(&base.view(), &mut inspection);
         let mut references = Vec::new();
         if base.header.base_reference != 0 {
-            inspection.issue(number, None, MftIssue::ExtensionRecordOnly);
+            inspection.diagnose(number, None, MftDiagnosticKind::ExtensionRecordOnly);
         } else {
             for attr in base_attrs.iter().filter(|a| a.type_id() == 0x20) {
                 if attr.is_non_resident() {
-                    inspection.issue(number, None, MftIssue::ExternalPayloadUnavailable);
+                    inspection.diagnose(
+                        number,
+                        None,
+                        MftDiagnosticKind::ExternalPayloadUnavailable,
+                    );
                 } else if self.options.resolve_extensions {
-                    references.extend(list_references(attr, number, &mut inspection));
+                    if let Some(data) = attr.resident_value() {
+                        let decoded = parse_attribute_list_references(data);
+                        references.extend(decoded.entries);
+                        if !decoded.complete {
+                            inspection.diagnose(
+                                number,
+                                None,
+                                MftDiagnosticKind::MalformedAttributeList,
+                            );
+                        }
+                    }
                 } else {
-                    inspection.issue(number, None, MftIssue::ExtensionsNotResolved);
+                    inspection.diagnose(number, None, MftDiagnosticKind::ExtensionsNotResolved);
                 }
             }
         }
-        let mut extensions = BTreeMap::new();
+        let mut reference_groups = Vec::<(u64, Vec<_>)>::new();
         for reference in &references {
-            let ext_number = reference.file_reference & 0x0000_ffff_ffff_ffff;
-            if ext_number == number || extensions.contains_key(&ext_number) {
+            let ext_number = reference.record_number();
+            match reference_groups
+                .iter_mut()
+                .find(|(record_number, _)| *record_number == ext_number)
+            {
+                Some((_, group)) => group.push(reference),
+                None => reference_groups.push((ext_number, vec![reference])),
+            }
+        }
+
+        let mut extensions = BTreeMap::new();
+        for (ext_number, group) in &reference_groups {
+            if *ext_number == number {
                 continue;
             }
+            let Some(reference) = group.first() else {
+                continue;
+            };
             // Cache failures as well as successes to bound repeated lookups.
-            let loaded = match self.load(ext_number) {
+            let loaded = match self.load(*ext_number) {
                 Ok(record) => Some(record),
                 Err(error) => {
-                    inspection.issue(
-                        ext_number,
+                    inspection.diagnose(
+                        *ext_number,
                         None,
-                        MftIssue::ExtensionRead {
+                        MftDiagnosticKind::ExtensionRead {
                             reference: reference.file_reference,
                             error,
                         },
@@ -238,65 +257,88 @@ impl<R: Read + Seek> MftStream<R> {
                     None
                 }
             };
-            extensions.insert(ext_number, loaded);
+            extensions.insert(*ext_number, loaded);
         }
-        let mut attributes = base_attrs;
-        let mut selected = std::collections::BTreeSet::new();
-        for reference in &references {
-            let ext_number = reference.file_reference & 0x0000_ffff_ffff_ffff;
-            let source = if ext_number == number {
-                Some(&base)
-            } else {
-                extensions.get(&ext_number).and_then(Option::as_ref)
-            };
-            let Some(source) = source else {
-                continue;
-            };
-            let expected_base = base.view().file_reference();
-            if source.header.sequence_value != (reference.file_reference >> 48) as u16
-                || (ext_number != number && source.header.base_reference != expected_base)
-            {
-                inspection.issue(
-                    ext_number,
-                    Some(reference.type_id),
-                    MftIssue::ExtensionMismatch,
+        let base_file_reference = base.view().file_reference();
+        if let Some((_, group)) = reference_groups
+            .iter()
+            .find(|(record_number, _)| *record_number == number)
+        {
+            let selected = select_referenced_attributes(
+                &base.view(),
+                &base_attrs,
+                group.iter().copied(),
+                number,
+                base_file_reference,
+                inspection.has_malformed_attribute(),
+            );
+            for attribute_type in selected.mismatches {
+                inspection.diagnose(
+                    number,
+                    Some(attribute_type),
+                    MftDiagnosticKind::ExtensionMismatch,
                 );
+            }
+        }
+
+        let mut attributes = base_attrs;
+        for (ext_number, group) in &reference_groups {
+            if *ext_number == number {
                 continue;
             }
-            // Scan only after reference validation; reject unrelated extension attributes.
-            let mut local = Inspection::default();
-            let candidates = inspect_record(source, &mut local);
-            if ext_number != number && candidates.iter().any(|a| a.type_id() == 0x20) {
-                inspection.issue(ext_number, None, MftIssue::NestedAttributeList);
-            }
-            let matched = candidates.into_iter().find(|attr| reference.matches(attr));
-            match matched {
-                Some(attr) if ext_number != number => {
-                    let key = (ext_number, attr.header.id);
-                    if selected.insert(key) {
-                        inspection.observe(ext_number, &attr);
-                        attributes.push(attr);
-                    }
+            let Some(source) = extensions.get(ext_number).and_then(Option::as_ref) else {
+                continue;
+            };
+            let source_view = source.view();
+            if !group.iter().any(|reference| {
+                reference.matches_record(&source_view, number, base_file_reference)
+            }) {
+                for reference in group {
+                    inspection.diagnose(
+                        *ext_number,
+                        Some(reference.type_id),
+                        MftDiagnosticKind::ExtensionMismatch,
+                    );
                 }
-                Some(_) => {}
-                None => inspection.issue(
-                    ext_number,
-                    Some(reference.type_id),
-                    MftIssue::ExtensionMismatch,
-                ),
+                continue;
             }
-            if local
-                .diagnostics
-                .iter()
-                .any(|diagnostic| matches!(diagnostic.issue, MftIssue::MalformedAttribute))
-            {
+            let mut local = RecordInspection::default();
+            let candidates = inspect_view(&source_view, &mut local);
+            let selected = select_referenced_attributes(
+                &source_view,
+                &candidates,
+                group.iter().copied(),
+                number,
+                base_file_reference,
+                local.has_malformed_attribute(),
+            );
+            if selected.nested_attribute_list {
+                inspection.diagnose(*ext_number, None, MftDiagnosticKind::NestedAttributeList);
+            }
+            for attribute_type in selected.mismatches {
+                inspection.diagnose(
+                    *ext_number,
+                    Some(attribute_type),
+                    MftDiagnosticKind::ExtensionMismatch,
+                );
+            }
+            if selected.malformed {
                 // A malformed extension may hide another required attribute. Do not
                 // claim completeness even if the selected attribute was accessible.
-                inspection.issue(
-                    ext_number,
-                    Some(reference.type_id),
-                    MftIssue::MalformedAttribute,
-                );
+                for reference in group.iter().filter(|reference| {
+                    reference.matches_record(&source_view, number, base_file_reference)
+                }) {
+                    inspection.diagnose(
+                        *ext_number,
+                        Some(reference.type_id),
+                        MftDiagnosticKind::MalformedAttribute,
+                    );
+                }
+            }
+            for attribute in selected.attributes {
+                if inspection.observe(*ext_number, &attribute) {
+                    attributes.push(attribute);
+                }
             }
         }
         let entry = RawMftEntry::from_attributes(
@@ -306,21 +348,23 @@ impl<R: Read + Seek> MftStream<R> {
                     || attr.nonresident_header().is_none_or(|h| h.lowest_vcn == 0)
             }),
         );
-        Ok(MftStreamRecord {
+        let metadata = inspection.metadata();
+        let (diagnostics, external_payloads) = inspection.into_diagnostics_and_external_payloads();
+        Ok(MftRecord {
             entry,
             stream_offset: number * self.options.record_size as u64,
-            metadata: inspection.metadata(),
-            diagnostics: inspection.diagnostics,
-            external_payloads: inspection.external_payloads,
+            metadata,
+            diagnostics,
+            external_payloads,
         })
     }
 
-    /// Iterate every physical slot from zero. Parse errors consume one slot and
+    /// Iterate every record position from zero. Parse errors consume one position and
     /// iteration continues. An I/O error is returned once, then iteration stops.
     /// A recoverable extension I/O error is attached to its base entry and also
     /// stops this iterator after yielding that entry.
-    pub fn iter_records(&mut self) -> MftStreamIter<'_, R> {
-        MftStreamIter {
+    pub fn iter_records(&mut self) -> MftRecordIter<'_, R> {
+        MftRecordIter {
             stream: self,
             next: 0,
             stopped: false,
@@ -328,15 +372,31 @@ impl<R: Read + Seek> MftStream<R> {
     }
 }
 
-/// Borrowing serial iterator over physical slots in a logical MFT stream.
-pub struct MftStreamIter<'a, R: Read + Seek> {
+struct RecordData {
+    number: u64,
+    bytes: Vec<u8>,
+    header: super::layout::record::FileRecordHeader,
+}
+
+impl RecordData {
+    fn view(&self) -> FileRecord<'_> {
+        FileRecord {
+            data: &self.bytes,
+            header: self.header,
+            number: self.number,
+        }
+    }
+}
+
+/// Borrowing serial iterator over record positions in a logical MFT stream.
+pub struct MftRecordIter<'a, R: Read + Seek> {
     stream: &'a mut MftStream<R>,
     next: u64,
     stopped: bool,
 }
 
-impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
-    type Item = MftResult<MftStreamRecord>;
+impl<R: Read + Seek> Iterator for MftRecordIter<'_, R> {
+    type Item = MftResult<MftRecord>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.stopped || self.next >= self.stream.record_count {
             return None;
@@ -347,7 +407,7 @@ impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
             Err(error) => error.is_io_error(),
             Ok(record) => record.diagnostics.iter().any(|d| {
                 matches!(
-                    &d.issue, MftIssue::ExtensionRead { error, .. } if error.is_io_error()
+                    &d.kind, MftDiagnosticKind::ExtensionRead { error, .. } if error.is_io_error()
                 )
             }),
         };
@@ -355,4 +415,4 @@ impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
     }
 }
 
-impl<R: Read + Seek> std::iter::FusedIterator for MftStreamIter<'_, R> {}
+impl<R: Read + Seek> std::iter::FusedIterator for MftRecordIter<'_, R> {}

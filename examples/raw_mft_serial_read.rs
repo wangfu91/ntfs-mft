@@ -53,10 +53,9 @@ fn run() -> Result<(), MftError> {
     let options = RawMftScanOptions::builder()
         .include_unused_records(true)
         .collect_alternate_data_streams(true)
-        .collect_data_run_summary(true)
         .collect_dos_file_name_links(true)
         .build();
-    for result in mft.try_iter_with_options(options)?.take(MAX_ENTRIES) {
+    for result in mft.scan_entries_with_options(options)?.take(MAX_ENTRIES) {
         match result {
             Ok(entry) => {
                 let path = resolver.resolve_path(&entry);

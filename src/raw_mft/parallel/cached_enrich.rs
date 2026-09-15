@@ -26,7 +26,6 @@ use crate::{
         RawMft, RawMftWorkChunk,
         attr_list::{enrich_batch_from_attr_list_cached, should_enrich_batch_from_attr_list},
         entry_build::{AttributeListInfo, RawMftBatchEntry, RawMftBatchScratch},
-        io::VolumeReader,
         options::RawMftScanOptions,
         serial::engine::{SerialParseState, for_each_record_capturing},
     },
@@ -180,11 +179,7 @@ impl RawMft<'_> {
         let mut acc = init();
         let mut ext_cache: HashMap<u64, Box<[u8]>> = HashMap::new();
         let mut deferred: Vec<DeferredBase> = Vec::new();
-        let mut reader = VolumeReader::with_buffer_bytes(
-            self.volume(),
-            self.boot.bytes_per_sector as u64,
-            options.buffers.main.get(),
-        )?;
+        let mut reader = self.volume_reader(options.buffers.main)?;
 
         loop {
             let index = next_chunk.fetch_add(1, Ordering::Relaxed);
@@ -251,11 +246,7 @@ impl RawMft<'_> {
     {
         let mut acc = init();
         // Read non-resident attribute lists and extensions outside the captured selection.
-        let mut attr_reader = VolumeReader::with_buffer_bytes(
-            self.volume(),
-            self.boot.bytes_per_sector as u64,
-            options.buffers.attr.get(),
-        )?;
+        let mut attr_reader = self.volume_reader(options.buffers.attr)?;
 
         for deferred in deferred {
             let mut scratch = deferred.scratch;

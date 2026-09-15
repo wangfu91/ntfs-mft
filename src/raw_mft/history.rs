@@ -335,7 +335,6 @@ mod tests {
             is_sparse: false,
             is_compressed: false,
             is_encrypted: false,
-            data_run_summary: None,
             alternate_data_streams: Box::default(),
             links: Box::default(),
         }

@@ -1,13 +1,29 @@
 //! Platform-independent NTFS name storage.
 use std::{ffi::OsString, fmt};
 
-/// An NTFS name retaining its exact UTF-16 code units on every platform.
+/// A lossless NTFS name, stored as its on-disk UTF-16 code units.
 ///
-/// Unpaired surrogates are preserved. Equality, ordering, and hashing compare
-/// code units, with no case folding or Unicode normalization. A name is not
-/// necessarily a safe path component; this type does not validate path syntax.
-/// Use [`Self::as_utf16`] for identity/export and [`Self::to_string_lossy`] for
-/// display. Native path conversion is explicit via [`Self::to_os_string`].
+/// NTFS names can contain unpaired UTF-16 surrogates, which cannot be
+/// represented by a Rust [`String`]. `NtfsName` retains those units unchanged
+/// on every host platform. Equality, ordering, and hashing compare the original
+/// code units; they do not apply NTFS case folding or Unicode normalization.
+///
+/// Use [`Self::as_utf16`] when identity or lossless export matters.
+/// [`Self::try_to_string`] and [`Self::to_string_lossy`] are text conversions
+/// for consumers that require Unicode, while [`Self::to_os_string`] is an
+/// explicit, platform-dependent conversion for native-path APIs. This type does
+/// not validate whether a name is a safe path component.
+///
+/// # Examples
+///
+/// ```
+/// use ntfs_mft::NtfsName;
+///
+/// let name = NtfsName::from_utf16(vec![b'a' as u16, 0xd800]);
+/// assert_eq!(name.as_utf16(), &[0x0061, 0xd800]);
+/// assert!(name.try_to_string().is_err());
+/// assert_eq!(name.to_string_lossy(), "a\u{fffd}");
+/// ```
 #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NtfsName(Box<[u16]>);
 
@@ -18,19 +34,22 @@ impl NtfsName {
         Self::default()
     }
 
-    /// Retain code units unchanged, including unpaired surrogates.
+    /// Construct a name from UTF-16 code units without validation or conversion.
+    ///
+    /// This preserves unpaired surrogates and does not apply case folding or
+    /// Unicode normalization.
     #[must_use]
     pub fn from_utf16(units: impl Into<Box<[u16]>>) -> Self {
         Self(units.into())
     }
 
-    /// Original UTF-16 code units.
+    /// Borrow the original UTF-16 code units.
     #[must_use]
     pub fn as_utf16(&self) -> &[u16] {
         &self.0
     }
 
-    /// Recover the original UTF-16 storage without copying.
+    /// Return the original UTF-16 storage without copying.
     #[must_use]
     pub fn into_utf16(self) -> Box<[u16]> {
         self.0
@@ -42,13 +61,18 @@ impl NtfsName {
         self.0.is_empty()
     }
 
-    /// Convert to Unicode, rejecting unpaired surrogates.
+    /// Convert to a Unicode [`String`].
+    ///
+    /// Returns an error when the name contains an unpaired surrogate. Use
+    /// [`Self::to_string_lossy`] for readable replacement text instead.
     pub fn try_to_string(&self) -> Result<String, std::string::FromUtf16Error> {
         String::from_utf16(&self.0)
     }
 
-    /// Display text, replacing each unpaired surrogate with U+FFFD.
-    /// Distinct names can produce the same display text.
+    /// Convert to display text, replacing unpaired surrogates with U+FFFD.
+    ///
+    /// This conversion is not suitable for identity or deduplication: distinct
+    /// NTFS names can produce the same result.
     #[must_use]
     pub fn to_string_lossy(&self) -> String {
         String::from_utf16_lossy(&self.0)
@@ -56,8 +80,10 @@ impl NtfsName {
 
     /// Convert to a native OS string.
     ///
-    /// Windows preserves every code unit. Linux and macOS replace unpaired
-    /// surrogates with U+FFFD; retain this `NtfsName` for lossless identity.
+    /// On Windows, the returned [`OsString`] preserves every code unit. On
+    /// Linux and macOS, unpaired surrogates become U+FFFD, so retain this
+    /// `NtfsName` when identity or lossless export matters. The result is not
+    /// validated as a safe path component.
     #[must_use]
     pub fn to_os_string(&self) -> OsString {
         #[cfg(windows)]
@@ -92,6 +118,10 @@ impl PartialEq<&str> for NtfsName {
         self == *other
     }
 }
+/// Formats the lossy display representation from [`NtfsName::to_string_lossy`].
+///
+/// Do not use [`fmt::Display`] output as an identity key because distinct names
+/// can display identically.
 impl fmt::Display for NtfsName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.to_string_lossy())

@@ -2,7 +2,7 @@
 
 These are recorded local results, not the current CI status.
 
-## macOS and captured fixtures
+## macOS and sparse fixtures
 
 Host: Apple Silicon, macOS 27.0 build 26A5425a, Rust 1.97.1.
 
@@ -14,7 +14,7 @@ Host: Apple Silicon, macOS 27.0 build 26A5425a, Rust 1.97.1.
   Linux x86_64, and Windows x86_64 MSVC; rustdoc passed with warnings denied.
   Cross-checking the added test code was blocked by a missing Linux cross-compiler
   and an uncached Windows test dependency. Native CI still needs to verify it.
-- On the captured-fixture source USB, the privileged live test passed through both the mount point
+- On the Windows installation USB from which the sparse fixture was sourced, the privileged live test passed through both the mount point
   and raw device: 1,100 serial records, 69 chunks with both schedulers/four workers,
   root rereading, independent cursors, and stream ownership. The volume stayed
   mounted read-only. Its device blocks are 512 bytes and NTFS clusters 4,096 bytes.
