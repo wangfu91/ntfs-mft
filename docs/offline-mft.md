@@ -95,7 +95,7 @@ categories remain incomplete because its base was not inspected.
 Completeness covers the supported metadata representation, not every NTFS
 attribute type and not file-content availability. Unknown attributes are not
 decoded into `RawMftEntry`. Non-resident data headers can provide valid sizes and
-run summaries while their contents remain outside the input. `external_payloads`
+valid sizes while their contents remain outside the input. `external_payloads`
 identifies observed non-resident attributes by record number, type and instance
 ID. An empty list is not evidence of absence if inspection was incomplete.
 

@@ -46,10 +46,11 @@ pub struct MftExternalPayload {
     pub attribute_id: u16,
 }
 
-/// Why supported MFT metadata could not be inspected completely.
+/// Structured category explaining why supported MFT metadata could not be
+/// inspected completely.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum MftIssue {
+pub enum MftDiagnosticKind {
     /// Raw scanning enriched selected fields but did not validate the complete
     /// extension attribute set. Presence may still be observed in the base.
     EnrichmentNotVerified,
@@ -78,13 +79,13 @@ pub enum MftIssue {
     ExtensionRecordOnly,
 }
 
-/// A recoverable limitation associated with a parsed record.
+/// A recoverable diagnostic associated with a parsed record.
 #[derive(Debug)]
 pub struct MftDiagnostic {
-    /// Record at which the issue was observed.
+    /// Record at which the diagnostic was observed.
     pub record_number: u64,
     /// Affected attribute type, or `None` when all categories may be affected.
     pub attribute_type: Option<u32>,
-    /// Structured reason, including underlying errors where applicable.
-    pub issue: MftIssue,
+    /// Structured diagnostic category, including underlying errors where applicable.
+    pub kind: MftDiagnosticKind,
 }

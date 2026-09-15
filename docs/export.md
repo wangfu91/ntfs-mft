@@ -41,8 +41,8 @@ files open read-only. Windows volume arguments accept only an ASCII drive letter
 with an optional colon (for example, `C` or `C:`); paths and words are rejected
 before device access. Only volume mode needs device permissions (Administrator
 on Windows). Offline mode resolves one level of resident extension lists. Volume
-mode starts at record zero, includes unused records, and collects ADS, run summaries,
-and DOS aliases. The scanner may skip non-FILE slots. Output contains only items
+mode starts at record zero, includes unused records, and collects ADS and DOS aliases.
+The scanner may skip non-FILE slots. Output contains only items
 the iterator yields, not an inventory of every physical slot. The example returns
 nonzero for top-level or item errors and for terminal extension I/O diagnostics.
 The latter can stop the stream iterator after an otherwise successful record;
@@ -93,8 +93,7 @@ validating caller-authored DTOs against NTFS invariants.
 - `unnamed_stream` is null when no unnamed data was observed. A present empty
   stream retains zero sizes. Named ADS remain separate array entries, including
   duplicate names/segments if supplied. ADS flags and per-link timestamps not
-  supplied by the scanner are not invented. Run summaries cover represented
-  segments, not necessarily a whole split stream. No file contents are exported.
+  supplied by the scanner are not invented. No file contents are exported.
 
 ## Evidence, errors, and paths
 

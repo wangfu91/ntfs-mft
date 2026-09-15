@@ -40,7 +40,9 @@ mod chunk_plan;
 mod diagnostics;
 mod metadata;
 pub use diagnostics::{RawMftDiagnosticRecord, RawMftScanDiagnostic, RawMftScanReport};
-pub use metadata::{MftDiagnostic, MftExternalPayload, MftFieldState, MftIssue, MftMetadata};
+pub use metadata::{
+    MftDiagnostic, MftDiagnosticKind, MftExternalPayload, MftFieldState, MftMetadata,
+};
 // Enabled only by the non-publishable differential test package's build script.
 #[cfg(all(test, ntfs_mft_differential))]
 #[path = "../../differential-tests/tests/mod.rs"]

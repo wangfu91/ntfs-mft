@@ -6,7 +6,8 @@ use super::{
     layout::{attribute::NtfsAttribute, record::FileRecord},
 };
 use crate::{
-    MftDiagnostic, MftError, MftExternalPayload, MftFieldState, MftIssue, MftMetadata, MftResult,
+    MftDiagnostic, MftDiagnosticKind, MftError, MftExternalPayload, MftFieldState, MftMetadata,
+    MftResult,
 };
 use inspect::{Inspection, RecordData, inspect_record, list_references};
 use std::{
@@ -208,15 +209,19 @@ impl<R: Read + Seek> MftStream<R> {
         let base_attrs = inspect_record(&base, &mut inspection);
         let mut references = Vec::new();
         if base.header.base_reference != 0 {
-            inspection.issue(number, None, MftIssue::ExtensionRecordOnly);
+            inspection.diagnose(number, None, MftDiagnosticKind::ExtensionRecordOnly);
         } else {
             for attr in base_attrs.iter().filter(|a| a.type_id() == 0x20) {
                 if attr.is_non_resident() {
-                    inspection.issue(number, None, MftIssue::ExternalPayloadUnavailable);
+                    inspection.diagnose(
+                        number,
+                        None,
+                        MftDiagnosticKind::ExternalPayloadUnavailable,
+                    );
                 } else if self.options.resolve_extensions {
                     references.extend(list_references(attr, number, &mut inspection));
                 } else {
-                    inspection.issue(number, None, MftIssue::ExtensionsNotResolved);
+                    inspection.diagnose(number, None, MftDiagnosticKind::ExtensionsNotResolved);
                 }
             }
         }
@@ -230,10 +235,10 @@ impl<R: Read + Seek> MftStream<R> {
             let loaded = match self.load(ext_number) {
                 Ok(record) => Some(record),
                 Err(error) => {
-                    inspection.issue(
+                    inspection.diagnose(
                         ext_number,
                         None,
-                        MftIssue::ExtensionRead {
+                        MftDiagnosticKind::ExtensionRead {
                             reference: reference.file_reference,
                             error,
                         },
@@ -259,10 +264,10 @@ impl<R: Read + Seek> MftStream<R> {
             if source.header.sequence_value != (reference.file_reference >> 48) as u16
                 || (ext_number != number && source.header.base_reference != expected_base)
             {
-                inspection.issue(
+                inspection.diagnose(
                     ext_number,
                     Some(reference.type_id),
-                    MftIssue::ExtensionMismatch,
+                    MftDiagnosticKind::ExtensionMismatch,
                 );
                 continue;
             }
@@ -270,7 +275,7 @@ impl<R: Read + Seek> MftStream<R> {
             let mut local = Inspection::default();
             let candidates = inspect_record(source, &mut local);
             if ext_number != number && candidates.iter().any(|a| a.type_id() == 0x20) {
-                inspection.issue(ext_number, None, MftIssue::NestedAttributeList);
+                inspection.diagnose(ext_number, None, MftDiagnosticKind::NestedAttributeList);
             }
             let matched = candidates.into_iter().find(|attr| reference.matches(attr));
             match matched {
@@ -282,23 +287,23 @@ impl<R: Read + Seek> MftStream<R> {
                     }
                 }
                 Some(_) => {}
-                None => inspection.issue(
+                None => inspection.diagnose(
                     ext_number,
                     Some(reference.type_id),
-                    MftIssue::ExtensionMismatch,
+                    MftDiagnosticKind::ExtensionMismatch,
                 ),
             }
             if local
                 .diagnostics
                 .iter()
-                .any(|diagnostic| matches!(diagnostic.issue, MftIssue::MalformedAttribute))
+                .any(|diagnostic| matches!(diagnostic.kind, MftDiagnosticKind::MalformedAttribute))
             {
                 // A malformed extension may hide another required attribute. Do not
                 // claim completeness even if the selected attribute was accessible.
-                inspection.issue(
+                inspection.diagnose(
                     ext_number,
                     Some(reference.type_id),
-                    MftIssue::MalformedAttribute,
+                    MftDiagnosticKind::MalformedAttribute,
                 );
             }
         }
@@ -350,7 +355,7 @@ impl<R: Read + Seek> Iterator for MftStreamIter<'_, R> {
             Err(error) => error.is_io_error(),
             Ok(record) => record.diagnostics.iter().any(|d| {
                 matches!(
-                    &d.issue, MftIssue::ExtensionRead { error, .. } if error.is_io_error()
+                    &d.kind, MftDiagnosticKind::ExtensionRead { error, .. } if error.is_io_error()
                 )
             }),
         };

@@ -1,6 +1,6 @@
 //! Public offline API tests: no volume handles or elevated privileges.
 use ntfs_mft::{
-    MftError, MftFieldState as State, MftIssue, MftResult, MftStream, MftStreamOptions,
+    MftDiagnosticKind, MftError, MftFieldState as State, MftResult, MftStream, MftStreamOptions,
 };
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
@@ -209,7 +209,7 @@ fn absence_empty_data_and_unavailable_list_are_distinct() -> MftResult<()> {
         missing
             .diagnostics
             .iter()
-            .any(|d| matches!(d.issue, MftIssue::ExternalPayloadUnavailable))
+            .any(|d| matches!(d.kind, MftDiagnosticKind::ExternalPayloadUnavailable))
     );
     let external_data = stream.read_record(3)?;
     assert_eq!(
@@ -262,7 +262,7 @@ fn resident_extensions_select_exact_attributes_and_preserve_cursor() -> MftResul
         rows[1]
             .diagnostics
             .iter()
-            .any(|d| matches!(d.issue, MftIssue::ExtensionRecordOnly))
+            .any(|d| matches!(d.kind, MftDiagnosticKind::ExtensionRecordOnly))
     );
     Ok(())
 }
@@ -322,7 +322,7 @@ fn missing_mismatched_and_recursive_extensions_remain_partial() -> MftResult<()>
     assert!(
         base.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, MftIssue::NestedAttributeList))
+            .any(|d| matches!(d.kind, MftDiagnosticKind::NestedAttributeList))
     );
     Ok(())
 }
@@ -350,7 +350,7 @@ fn malformed_attributes_never_imply_absence() -> MftResult<()> {
             .read_record(0)?
             .diagnostics
             .iter()
-            .any(|d| matches!(d.issue, MftIssue::MalformedAttributeList))
+            .any(|d| matches!(d.kind, MftDiagnosticKind::MalformedAttributeList))
     );
     Ok(())
 }
@@ -368,7 +368,7 @@ fn split_data_is_not_reported_as_complete_metadata() -> MftResult<()> {
     assert!(
         row.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, MftIssue::SplitDataStream))
+            .any(|d| matches!(d.kind, MftDiagnosticKind::SplitDataStream))
     );
     Ok(())
 }
@@ -434,8 +434,8 @@ fn extension_io_failure_is_preserved_and_stops_iteration() -> MftResult<()> {
         .ok_or(MftError::InvalidRecordData("expected base"))??;
     assert_eq!(row.metadata.unnamed_data, State::Unknown);
     assert!(row.diagnostics.iter().any(|d| matches!(
-        &d.issue,
-        MftIssue::ExtensionRead {
+        &d.kind,
+        MftDiagnosticKind::ExtensionRead {
             error: MftError::Io(_),
             ..
         }
@@ -523,7 +523,7 @@ fn overlapping_attribute_names_and_payloads_are_rejected() -> MftResult<()> {
         assert!(
             row.diagnostics
                 .iter()
-                .any(|d| matches!(d.issue, MftIssue::MalformedAttribute))
+                .any(|d| matches!(d.kind, MftDiagnosticKind::MalformedAttribute))
         );
     }
     // A named runlist immediately after the name is valid (no required gap).
@@ -559,7 +559,7 @@ fn impossible_initialized_size_is_not_complete_metadata() -> MftResult<()> {
     assert!(
         row.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, MftIssue::MalformedAttribute))
+            .any(|d| matches!(d.kind, MftDiagnosticKind::MalformedAttribute))
     );
     let mut continuation = nonresident(0x80, 1, 1);
     continuation[56..64].copy_from_slice(&u64::MAX.to_le_bytes());
@@ -569,7 +569,7 @@ fn impossible_initialized_size_is_not_complete_metadata() -> MftResult<()> {
     assert!(
         !row.diagnostics
             .iter()
-            .any(|d| matches!(d.issue, MftIssue::MalformedAttribute))
+            .any(|d| matches!(d.kind, MftDiagnosticKind::MalformedAttribute))
     );
     Ok(())
 }

@@ -186,8 +186,8 @@ batch vector. Both preserve ordered result delivery.
 ## Benchmarks and tests
 
 `benches/raw_mft_ingest.rs` and its profile example share
-`support/raw_mft_ingest_support.rs`. The benchmark disables ADS, run summaries,
-and DOS aliases; both planning and scanning exclude unused records. Its defaults
+`support/raw_mft_ingest_support.rs`. The benchmark disables ADS and DOS aliases;
+both planning and scanning exclude unused records. Its defaults
 are 2,048-record chunks, 256 KiB/16 KiB buffers, and available parallelism capped
 at 10 workers. These are workload-specific benchmark settings.
 

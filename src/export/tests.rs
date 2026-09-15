@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    AdsInfo, FileAttributes, Filetime, MftDiagnostic, MftError, MftFieldState, MftIssue, MftStream,
-    MftStreamOptions, RawMftLink, RawMftScanOptions,
+    AdsInfo, FileAttributes, Filetime, MftDiagnostic, MftDiagnosticKind, MftError, MftFieldState,
+    MftStream, MftStreamOptions, RawMftLink, RawMftScanOptions,
 };
 use std::{ffi::OsString, io::Cursor};
 
@@ -188,7 +188,7 @@ fn offline_evidence_and_raw_collection_policy() -> Result<(), Box<dyn std::error
     record.diagnostics.push(MftDiagnostic {
         record_number: 5,
         attribute_type: Some(0x20),
-        issue: MftIssue::ExtensionRead {
+        kind: MftDiagnosticKind::ExtensionRead {
             reference: u64::MAX,
             error: MftError::FixupMismatch { number: 42 },
         },

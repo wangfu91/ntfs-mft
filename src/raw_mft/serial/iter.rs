@@ -127,11 +127,15 @@ impl Iterator for RawMftDiagnosticIter<'_> {
         let inner = &mut self.inner;
         let result = next_record_output(inner.mft, &mut inner.scan, &mut inner.reader, |record| {
             use crate::raw_mft::stream::inspect::{Inspection, inspect_view};
-            use crate::{MftFieldState, MftIssue};
+            use crate::{MftDiagnosticKind, MftFieldState};
             let mut inspection = Inspection::default();
             let attrs = inspect_view(record, &mut inspection);
             if attrs.iter().any(|a| a.type_id() == 0x20) {
-                inspection.issue(record.number, None, MftIssue::EnrichmentNotVerified);
+                inspection.diagnose(
+                    record.number,
+                    None,
+                    MftDiagnosticKind::EnrichmentNotVerified,
+                );
             }
             let entry = build_rich_entry(
                 inner.mft,

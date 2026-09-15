@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
-    Filetime, MftError, MftFieldState, MftIssue, MftStreamRecord, NtfsFileReference, RawMftEntry,
+    Filetime, MftDiagnosticKind, MftError, MftFieldState, MftStreamRecord, NtfsFileReference,
+    RawMftEntry,
 };
 use chrono::{Datelike, TimeZone, Utc};
 use std::ffi::OsStr;
@@ -262,23 +263,29 @@ impl ExportRecordV1 {
         self.diagnostics = diagnostics
             .iter()
             .map(|d| {
-                let (code, reference, error) = match &d.issue {
-                    MftIssue::EnrichmentNotVerified => ("enrichment_not_verified", None, None),
-                    MftIssue::MalformedAttribute => ("malformed_attribute", None, None),
-                    MftIssue::ExtensionsNotResolved => ("extensions_not_resolved", None, None),
-                    MftIssue::ExternalPayloadUnavailable => {
+                let (code, reference, error) = match &d.kind {
+                    MftDiagnosticKind::EnrichmentNotVerified => {
+                        ("enrichment_not_verified", None, None)
+                    }
+                    MftDiagnosticKind::MalformedAttribute => ("malformed_attribute", None, None),
+                    MftDiagnosticKind::ExtensionsNotResolved => {
+                        ("extensions_not_resolved", None, None)
+                    }
+                    MftDiagnosticKind::ExternalPayloadUnavailable => {
                         ("external_payload_unavailable", None, None)
                     }
-                    MftIssue::MalformedAttributeList => ("malformed_attribute_list", None, None),
-                    MftIssue::ExtensionRead { reference, error } => (
+                    MftDiagnosticKind::MalformedAttributeList => {
+                        ("malformed_attribute_list", None, None)
+                    }
+                    MftDiagnosticKind::ExtensionRead { reference, error } => (
                         "extension_read",
                         Some(NtfsFileReference::new(*reference).into()),
                         Some(error.into()),
                     ),
-                    MftIssue::ExtensionMismatch => ("extension_mismatch", None, None),
-                    MftIssue::NestedAttributeList => ("nested_attribute_list", None, None),
-                    MftIssue::SplitDataStream => ("split_data_stream", None, None),
-                    MftIssue::ExtensionRecordOnly => ("extension_record_only", None, None),
+                    MftDiagnosticKind::ExtensionMismatch => ("extension_mismatch", None, None),
+                    MftDiagnosticKind::NestedAttributeList => ("nested_attribute_list", None, None),
+                    MftDiagnosticKind::SplitDataStream => ("split_data_stream", None, None),
+                    MftDiagnosticKind::ExtensionRecordOnly => ("extension_record_only", None, None),
                 };
                 ExportDiagnostic {
                     record_number: d.record_number.to_string(),
