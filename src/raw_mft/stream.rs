@@ -18,7 +18,9 @@ use std::{
 /// Configuration for an extracted MFT stream. No geometry is guessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MftStreamOptions {
+    /// Size in bytes of each MFT record.
     record_size: usize,
+    /// Whether to resolve referenced extension records.
     resolve_extensions: bool,
 }
 
