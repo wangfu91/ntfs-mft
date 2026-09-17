@@ -31,6 +31,7 @@ use crate::{
     },
 };
 
+#[cfg(not(windows))]
 use super::executor::{open_parallel_volume, reusable_parallel_volume_source};
 
 /// A base record whose enrichment is deferred to phase 2.
@@ -84,8 +85,14 @@ impl RawMft<'_> {
         let collect_dos = options.entry.collect_dos_file_name_links;
         let worker_count = worker_count.get().min(chunks.len()).max(1);
 
-        // Phase 1: parallel capture. Workers reopen their own volume handle (the
-        // raw `HANDLE` is not `Send`) and share only `Send` state.
+        // Phase 1: parallel capture. Windows workers duplicate a scan-local
+        // file object so reopening does not repeat NTFS first-read volume work.
+        // Readers use independent explicit offsets and completion events. Other
+        // platforms retain their existing reopen behavior. Only owned Send
+        // sources cross threads; a worker owns and closes its resulting handle.
+        #[cfg(windows)]
+        let source = self.volume().shared_read_source()?;
+        #[cfg(not(windows))]
         let source = reusable_parallel_volume_source(self.volume())?;
         let boot = self.boot.clone();
         let extent_map = std::sync::Arc::clone(&self.extent_map);
@@ -106,6 +113,9 @@ impl RawMft<'_> {
                 let init = &init;
                 let fold = &fold;
                 handles.push(scope.spawn(move || -> Result<WorkerOutput<T>, E> {
+                    #[cfg(windows)]
+                    let volume = source.open()?;
+                    #[cfg(not(windows))]
                     let volume = open_parallel_volume(&source)?;
                     let worker_mft = RawMft {
                         volume: &volume,

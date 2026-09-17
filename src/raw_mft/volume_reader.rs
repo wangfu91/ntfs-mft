@@ -15,8 +15,12 @@ use std::num::NonZeroUsize;
 use std::os::unix::fs::FileExt;
 #[cfg(windows)]
 use windows::Win32::{
-    Foundation::HANDLE,
-    Storage::FileSystem::{FILE_BEGIN, ReadFile, SetFilePointerEx},
+    Foundation::{ERROR_HANDLE_EOF, ERROR_IO_PENDING, HANDLE},
+    Storage::FileSystem::ReadFile,
+    System::{
+        IO::{GetOverlappedResult, OVERLAPPED},
+        Threading::CreateEventW,
+    },
 };
 
 /// Reads from a borrowed Windows volume handle or an owned Unix file clone.
@@ -30,6 +34,9 @@ pub(crate) struct VolumeReader {
     /// Borrowed raw volume handle.
     #[cfg(windows)]
     handle: HANDLE,
+    /// One completion event per reader; at most one outstanding request uses its buffer.
+    #[cfg(windows)]
+    event: std::os::windows::io::OwnedHandle,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     file: std::fs::File,
     /// Required sector alignment for I/O.
@@ -63,11 +70,21 @@ impl VolumeReader {
 
         let sectors = (buffer_bytes.get() as u64 / sector_size).max(1);
         let cap = (sectors * sector_size) as usize;
+        #[cfg(windows)]
+        let event = {
+            use std::os::windows::io::FromRawHandle;
+            // SAFETY: unnamed manual-reset event, no borrowed security/name pointers.
+            let event = unsafe { CreateEventW(None, true, false, None) }?;
+            // SAFETY: transfer the newly created event to its unique RAII owner.
+            unsafe { std::os::windows::io::OwnedHandle::from_raw_handle(event.0) }
+        };
         Ok(Self {
             #[cfg(test)]
             sparse_fixture: volume.sparse_fixture().cloned(),
             #[cfg(windows)]
             handle: volume.handle,
+            #[cfg(windows)]
+            event,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             file: volume.file.try_clone()?,
             sector_size,
@@ -90,18 +107,6 @@ impl VolumeReader {
         n & !(self.sector_size - 1)
     }
 
-    /// Seek the underlying volume handle to an absolute byte offset.
-    #[cfg(windows)]
-    fn raw_seek(&self, offset: u64) -> io::Result<()> {
-        let mut new_pos: i64 = 0;
-        // SAFETY: `self.handle` is a live volume handle owned by this
-        // `VolumeReader`; `&mut new_pos` is a unique stack out-pointer.
-        let res =
-            unsafe { SetFilePointerEx(self.handle, offset as i64, Some(&mut new_pos), FILE_BEGIN) };
-        res.map_err(io::Error::other)?;
-        Ok(())
-    }
-
     /// Refill the internal buffer starting at a sector-aligned volume offset.
     fn refill(&mut self, sector_pos: u64) -> io::Result<()> {
         #[cfg(test)]
@@ -111,9 +116,6 @@ impl VolumeReader {
             self.buf_len = count;
             return Ok(());
         }
-
-        #[cfg(windows)]
-        self.raw_seek(sector_pos)?;
 
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
@@ -132,21 +134,45 @@ impl VolumeReader {
         #[cfg(windows)]
         {
             let mut bytes_read: u32 = 0;
-            // SAFETY: `self.handle` is a live volume handle. The output
-            // buffer is `self.buf` of exactly the slice length we pass;
-            // `&mut bytes_read` is a unique stack out-pointer. The Win32
-            // `ReadFile` requires sector-aligned offsets and lengths for
-            // `FILE_FLAG_NO_BUFFERING` opens — the caller (`refill`) is
-            // responsible for invoking us with a sector-aligned offset.
+            use std::os::windows::io::AsRawHandle;
+            let mut overlapped = OVERLAPPED {
+                hEvent: HANDLE(self.event.as_raw_handle()),
+                ..OVERLAPPED::default()
+            };
+            overlapped.Anonymous.Anonymous.Offset = sector_pos as u32;
+            overlapped.Anonymous.Anonymous.OffsetHigh = (sector_pos >> 32) as u32;
+            // Explicit offsets also support duplicated handles sharing a file
+            // object. Each reader has its own event and only one request in flight.
+            // SAFETY: the handle is borrowed from a live Volume. The sector-aligned
+            // buffer, OVERLAPPED and event stay live and untouched until this
+            // request completes, including the pending asynchronous path below.
             let res = unsafe {
                 ReadFile(
                     self.handle,
                     Some(self.buf.as_mut_slice()),
-                    Some(&mut bytes_read),
                     None,
+                    Some(&mut overlapped),
                 )
             };
-            res.map_err(io::Error::other)?;
+            let res = match res {
+                Ok(()) => unsafe {
+                    GetOverlappedResult(self.handle, &overlapped, &mut bytes_read, false)
+                },
+                Err(error) if error == ERROR_IO_PENDING.into() => {
+                    // SAFETY: wait for this reader's event, never another worker's
+                    // completion on the shared file object. Do not release or
+                    // reuse the buffer/OVERLAPPED while the kernel may access it.
+                    unsafe { GetOverlappedResult(self.handle, &overlapped, &mut bytes_read, true) }
+                }
+                Err(error) => Err(error),
+            };
+            res.map_err(|error| {
+                if error == ERROR_HANDLE_EOF.into() {
+                    io::Error::new(io::ErrorKind::UnexpectedEof, "zero-length read from volume")
+                } else {
+                    io::Error::other(error)
+                }
+            })?;
             if bytes_read == 0 {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
@@ -393,5 +419,59 @@ mod tests {
         assert!(!r.buf_contains(3072, 1));
         r.buf_len = 0;
         assert!(!r.buf_contains(1024, 1));
+    }
+}
+
+#[cfg(all(test, windows))]
+mod shared_handle_tests {
+    use super::*;
+    use std::os::windows::io::IntoRawHandle;
+
+    #[test]
+    fn shared_file_object_reads_use_independent_explicit_offsets() {
+        for flags in [
+            0,
+            windows::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED.0,
+        ] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/sparse-volume-fixture/mft.bin");
+            let expected = std::fs::read(&path).unwrap();
+            use std::os::windows::fs::OpenOptionsExt;
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(flags)
+                .open(&path)
+                .unwrap();
+            let volume = Volume::mock(
+                HANDLE(file.into_raw_handle()),
+                crate::volume::VolumeSource::MountPoint(path),
+            );
+            let source = volume.shared_read_source().unwrap();
+            drop(volume); // The source must independently own a live duplicate.
+            std::thread::scope(|scope| {
+                for worker in 0..8 {
+                    let source = source.clone();
+                    let expected = &expected;
+                    scope.spawn(move || {
+                        let volume = source.open().unwrap();
+                        let mut reader =
+                            VolumeReader::new(&volume, 512, NonZeroUsize::new(4096).unwrap())
+                                .unwrap();
+                        for index in 0..256 {
+                            let offset = (index * 997 + worker * 173) % (expected.len() - 1024);
+                            assert_eq!(
+                                reader.buffer_at_mut(offset as u64, 1024).unwrap(),
+                                &expected[offset..offset + 1024]
+                            );
+                        }
+                        reader.seek(SeekFrom::Start(expected.len() as u64)).unwrap();
+                        assert_eq!(
+                            reader.read_exact(&mut [0u8; 1]).unwrap_err().kind(),
+                            io::ErrorKind::UnexpectedEof
+                        );
+                    });
+                }
+            });
+        }
     }
 }

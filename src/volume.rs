@@ -22,7 +22,7 @@ use windows::{
     Win32::{
         Foundation::{CloseHandle, ERROR_ACCESS_DENIED, HANDLE},
         Storage::FileSystem::{
-            CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_GENERIC_READ, FILE_SHARE_READ,
+            CreateFileW, FILE_FLAG_OVERLAPPED, FILE_GENERIC_READ, FILE_SHARE_READ,
             FILE_SHARE_WRITE, GetVolumeNameForVolumeMountPointW, OPEN_EXISTING,
         },
     },
@@ -52,7 +52,8 @@ pub struct Volume {
     ///
     /// This crate owns the handle and closes it exactly once in [`Drop`].
     /// Internal users may borrow it for Win32 calls but must never close,
-    /// duplicate, or transfer ownership of it.
+    /// transfer ownership of it. Scan-local duplicates are separately owned and
+    /// require explicit-offset reads because they share the OS file cursor.
     #[cfg(windows)]
     pub(crate) handle: HANDLE,
     /// Read-only Unix device file.
@@ -219,7 +220,7 @@ impl Drop for Volume {
             return;
         }
 
-        // SAFETY: `self.handle` was returned by a successful `CreateFileW`
+        // SAFETY: `self.handle` was returned by a successful open or duplication
         // call (see `from_drive_letter` / `from_mount_point`) and has not
         // been closed elsewhere. `Drop` runs at most once per `Volume`,
         // so this is the unique close. `CloseHandle` is safe to call on
@@ -254,7 +255,7 @@ fn get_volume_handle_from_drive_letter(drive_letter: char) -> Result<HANDLE, Mft
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             None,
             OPEN_EXISTING,
-            FILE_FLAGS_AND_ATTRIBUTES::default(),
+            FILE_FLAG_OVERLAPPED,
             None,
         )
     } {
@@ -314,7 +315,7 @@ fn get_volume_handle_from_mount_point(mount_point: &Path) -> Result<HANDLE, MftE
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             None,
             OPEN_EXISTING,
-            FILE_FLAGS_AND_ATTRIBUTES::default(),
+            FILE_FLAG_OVERLAPPED,
             None,
         )?
     };
@@ -508,6 +509,54 @@ mod tests {
                 result.is_err(),
                 "Should return an error for invalid mount point"
             );
+        }
+    }
+}
+
+/// Scan-local shared read source. Duplicates refer to the same kernel file object;
+/// Readers use explicit offsets and wait for their own completion event before
+/// reusing a buffer. They never depend on the shared file cursor.
+#[cfg(windows)]
+#[derive(Clone)]
+pub(crate) enum SharedVolumeSource {
+    #[cfg(test)]
+    Fixture(std::sync::Arc<sparse_fixture::SparseVolumeFixture>),
+    Handle {
+        handle: std::sync::Arc<std::os::windows::io::OwnedHandle>,
+        source: VolumeSource,
+    },
+}
+
+#[cfg(windows)]
+impl Volume {
+    /// Duplicate ownership without reopening the volume or repeating its first-read setup.
+    pub(crate) fn shared_read_source(&self) -> Result<SharedVolumeSource, MftError> {
+        use std::os::windows::io::BorrowedHandle;
+        #[cfg(test)]
+        if let Some(source) = self.sparse_fixture() {
+            return Ok(SharedVolumeSource::Fixture(std::sync::Arc::clone(source)));
+        }
+        // SAFETY: this borrow is bounded by &self and immediately duplicated.
+        let handle = unsafe { BorrowedHandle::borrow_raw(self.handle.0) }.try_clone_to_owned()?;
+        Ok(SharedVolumeSource::Handle {
+            handle: std::sync::Arc::new(handle),
+            source: self.source.clone(),
+        })
+    }
+}
+
+#[cfg(windows)]
+impl SharedVolumeSource {
+    /// Give one worker its own RAII handle referring to the same file object.
+    pub(crate) fn open(&self) -> Result<Volume, MftError> {
+        use std::os::windows::io::IntoRawHandle;
+        match self {
+            #[cfg(test)]
+            Self::Fixture(source) => source.open(),
+            Self::Handle { handle, source } => Ok(Volume {
+                handle: HANDLE(handle.try_clone()?.into_raw_handle()),
+                source: source.clone(),
+            }),
         }
     }
 }
