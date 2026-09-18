@@ -73,59 +73,6 @@ mod windows_live {
     use crate::volume::Volume;
     use std::env;
 
-    fn pick_drive() -> char {
-        env::var("NTFS_MFT_TEST_DRIVE")
-            .ok()
-            .and_then(|s| s.chars().next())
-            .map(|c| c.to_ascii_uppercase())
-            .unwrap_or('C')
-    }
-
-    fn open_volume_or_skip() -> Option<Volume> {
-        match Volume::from_drive_letter(pick_drive()) {
-            Ok(v) => Some(v),
-            Err(MftError::NotElevated) => {
-                eprintln!("skipping: requires admin privileges");
-                None
-            }
-            Err(e) => {
-                eprintln!("skipping: {e}");
-                None
-            }
-        }
-    }
-
-    #[test]
-    fn raw_mft_path_resolver_roundtrip() {
-        let Some(volume) = open_volume_or_skip() else {
-            return;
-        };
-        let mft = match RawMft::new(&volume) {
-            Ok(m) => m,
-            Err(MftError::UnsupportedFilesystem(_)) => return,
-            Err(e) => panic!("RawMft::new failed: {e}"),
-        };
-        let resolver = mft.path_resolver().expect("raw mft path resolver");
-        let mut resolved_any = false;
-        // Cap the search so the test stays bounded on huge volumes.
-        for r in mft.scan_entries().expect("iter").flatten().take(20_000) {
-            if r.is_directory || r.file_name.is_empty() {
-                continue;
-            }
-            if let Some(path) = resolver.resolve_path(&r) {
-                let s = path.to_string_lossy();
-                if s.len() > 3 {
-                    resolved_any = true;
-                    break;
-                }
-            }
-        }
-        assert!(
-            resolved_any,
-            "expected at least one resolvable path on the test drive"
-        );
-    }
-
     #[test]
     fn raw_mft_refs_returns_unsupported() {
         // D: is ReFS on the developer machine; skip unless NTFS_MFT_REFS_TEST_DRIVE

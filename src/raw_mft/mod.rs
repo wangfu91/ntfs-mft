@@ -48,12 +48,10 @@ pub use metadata::{
 #[path = "../../differential-tests/tests/mod.rs"]
 mod differential_tests;
 mod entry_build;
-pub mod history;
 pub(in crate::raw_mft) mod inspection;
 mod layout;
 mod options;
 mod parallel;
-mod path_resolver;
 mod reader;
 mod serial;
 mod stream;
@@ -86,7 +84,6 @@ pub use options::{
 };
 pub use parallel::RawMftParallelScheduling;
 pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
-pub use path_resolver::RawMftPathResolver;
 pub use serial::{RawMftDiagnosticEntryScan, RawMftEntryScan};
 pub use stream::{MftRecord, MftRecordIter, MftStream, MftStreamOptions};
 
@@ -149,21 +146,6 @@ impl<'a> RawMft<'a> {
     #[inline]
     pub fn file_record_size(&self) -> usize {
         self.boot.file_record_size as usize
-    }
-
-    /// Create a [`RawMftPathResolver`] for entries produced by this raw `$MFT` reader.
-    ///
-    /// Construction scans all base records, including root record 5, and stores
-    /// their selected names in memory: O(records + names) space and a full scan
-    /// of I/O. Scan I/O errors are propagated; malformed records may still be
-    /// skipped by the raw scanner. This is not an atomic snapshot. Build a
-    /// [`crate::MftPathIndex`] during an existing scan and use
-    /// [`RawMftPathResolver::from_index`] to avoid a second pass.
-    ///
-    /// Default lookups verify sequence numbers at every step. On Windows, call `RawMftPathResolver::with_live_fallback` if you
-    /// explicitly want best-effort current-volume fallback for snapshot misses.
-    pub fn path_resolver(&self) -> crate::MftResult<RawMftPathResolver<'a>> {
-        RawMftPathResolver::new(self)
     }
 
     /// Read a single record by number. Returns `Ok(None)` when the

@@ -24,8 +24,7 @@
 //!
 //! [`NtfsName`] preserves exact UTF-16 on every platform; display and native-path
 //! conversions are explicit. [`NtfsFileReference`] exposes checked NTFS identity.
-//! Build [`MftPathIndex`] during a scan to avoid the extra scan performed by
-//! [`RawMft::path_resolver`]. Include the root and all needed parent records.
+//! Full-path reconstruction and directory-tree policy belong to the caller.
 //! For a logical stream from an existing volume, [`MftStream::from_raw_mft`]
 //! derives record size and opens an independently owned byte reader.
 
@@ -36,8 +35,6 @@ pub mod errors;
 pub mod export;
 mod file_attributes;
 mod file_reference;
-mod path;
-pub use path::{MftPathError, MftPathIndex, MftPathQuality, MftPathResolution};
 #[cfg(windows)]
 mod privilege;
 pub mod raw_mft;
@@ -55,7 +52,6 @@ pub type MftResult<T> = std::result::Result<T, MftError>;
 pub mod prelude {
     pub use crate::{
         FileAttributes, Filetime, MftError, MftResult, MftStream, MftStreamOptions,
-        NtfsFileReference, NtfsName, RawMft, RawMftEntry, RawMftPathResolver, RawMftScanOptions,
-        Volume,
+        NtfsFileReference, NtfsName, RawMft, RawMftEntry, RawMftScanOptions, Volume,
     };
 }

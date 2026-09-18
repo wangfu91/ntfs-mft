@@ -2,6 +2,21 @@
 
 These are recorded local results, not the current CI status.
 
+## Path API removal (2026-09-18, Windows)
+
+- Default and all-feature test suites passed (187 and 194 library tests,
+  respectively), along with integration tests, export example tests, and doctests.
+- All-target/all-feature Clippy, rustdoc with warnings denied, and formatting passed.
+- All remaining examples built in release mode with all features enabled.
+- SpaceRover's spacerover-scan-advanced crate compiled against this local library
+  with its raw-mft feature enabled (offline, locked dependency resolution).
+- The independent Windows API harness and its Clippy checks passed; both live
+  parity checks explicitly skipped because the process was not elevated.
+- All 11 pinned parser differential tests and differential all-feature Clippy passed.
+- `cargo package --locked --allow-dirty` packaged and rebuilt the library.
+  Fixtures were hydrated. Linux/macOS execution and elevated live-volume behavior
+  were not validated in this run.
+
 ## macOS and sparse fixtures
 
 Host: Apple Silicon, macOS 27.0 build 26A5425a, Rust 1.97.1.

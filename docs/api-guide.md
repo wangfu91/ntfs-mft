@@ -89,15 +89,14 @@ and `to_string_lossy()` or `Display` for readable text. `to_os_string()` is
 lossless on Windows; Unix native paths replace unpaired surrogates.
 
 `NtfsFileReference::try_from_parts(record, sequence)` rejects record-number
-overflow. Its record and sequence accessors return values directly. Windows live path lookup uses the same NTFS type. A record number alone
+overflow. Its record and sequence accessors return values directly. A record number alone
 is not durable identity because deleted slots can be reused.
 
-Build `MftPathIndex` during an existing scan to avoid an extra scan. Include root
-record 5 and all required parents. Strict resolution verifies full references;
-best-effort resolution reports fallback or partial suffixes. Native path quality
-describes reference matching, not UTF-16 conversion fidelity. The convenience
-`raw.path_resolver()` performs an additional full scan and stores an in-memory
-index; it cannot guarantee coverage when malformed records were skipped.
+Full-path reconstruction belongs to the caller. Build your application's tree
+from the returned names, namespaces, file references, parent references, and
+hard-link metadata. Include root record 5 and required ancestors when scanning
+for a complete tree; default live scans start at record 24. Match full references,
+including sequence numbers, and handle missing parents and concurrent changes.
 
 ## Parsing a logical stream
 

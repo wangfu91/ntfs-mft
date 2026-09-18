@@ -13,11 +13,8 @@
 //! The filesystem is live, so a small mismatch rate is tolerated.
 
 use ntfs_mft::{MftError, RawMft, Volume as RawVolume};
-use std::collections::HashSet;
 
-use ntfs_mft_integration_tests::windows::{
-    Mft, MftIterOptions, PathResolver, UsnRecordVersion, Volume,
-};
+use ntfs_mft_integration_tests::windows::{Mft, MftIterOptions, UsnRecordVersion, Volume};
 
 struct SampledMftEntry {
     fid: ntfs_mft_integration_tests::Fid,
@@ -61,18 +58,12 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
     const SAMPLE_LIMIT: usize = 10_000;
     const MAX_MFT_SCAN: usize = 250_000;
     const MIN_COMPARED: usize = 200;
-    const PATH_TARGET: usize = 2_000;
-
-    let mft_path_resolver = PathResolver::new(&volume);
-    let mut mft_paths = HashSet::with_capacity(PATH_TARGET);
-
     let mut samples = Vec::with_capacity(SAMPLE_LIMIT);
     let mut mft_ok = 0usize;
     let mut mft_err = 0usize;
     let mut scanned = 0usize;
 
-    while (samples.len() < SAMPLE_LIMIT || mft_paths.len() < PATH_TARGET) && scanned < MAX_MFT_SCAN
-    {
+    while samples.len() < SAMPLE_LIMIT && scanned < MAX_MFT_SCAN {
         let Some(item) = iter.next() else {
             break;
         };
@@ -81,12 +72,6 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
         match item {
             Ok(entry) => {
                 mft_ok += 1;
-                if !entry.file_name.is_empty()
-                    && mft_paths.len() < PATH_TARGET
-                    && let Some(path) = mft_path_resolver.resolve_path(&entry)
-                {
-                    mft_paths.insert(path.to_string_lossy().to_ascii_lowercase());
-                }
                 if entry.fid.is_standard() && !entry.file_name.is_empty() {
                     samples.push(SampledMftEntry {
                         fid: entry.fid,
@@ -103,7 +88,7 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
         }
     }
 
-    if samples.is_empty() && mft_paths.is_empty() {
+    if samples.is_empty() {
         eprintln!(
             "raw_mft_mft_consistency: skipping (no comparable Mft entries, ok={mft_ok}, err={mft_err}, scanned={scanned})"
         );
@@ -189,59 +174,7 @@ fn raw_mft_and_mft_api_agree_on_sampled_entries() {
             "expected >= 90% agreement between RawMft and Mft API; got {agreements}/{compared} ({:.1}%), lookup_misses={lookup_misses}",
             agreement_rate * 100.0
         );
-        return;
     }
-
-    // Fallback for environments that only surface extended MFT IDs.
-    let mut raw_paths = HashSet::with_capacity(PATH_TARGET);
-    let raw_path_resolver = match raw_mft.path_resolver() {
-        Ok(resolver) => resolver,
-        Err(e) => {
-            eprintln!("raw_mft_mft_consistency: skipping raw path fallback ({e})");
-            return;
-        }
-    };
-    for raw_entry in raw_mft
-        .scan_entries()
-        .expect("RawMft::scan_entries failed")
-        .flatten()
-    {
-        if !raw_entry.is_used || raw_entry.file_name.is_empty() {
-            continue;
-        }
-        if let Some(path) = raw_path_resolver.resolve_path(&raw_entry) {
-            raw_paths.insert(path.to_string_lossy().to_ascii_lowercase());
-        }
-        if raw_paths.len() >= PATH_TARGET {
-            break;
-        }
-    }
-
-    if mft_paths.is_empty() || raw_paths.is_empty() {
-        eprintln!(
-            "raw_mft_mft_consistency: skipping path-overlap fallback (mft_paths={}, raw_paths={})",
-            mft_paths.len(),
-            raw_paths.len()
-        );
-        return;
-    }
-
-    let overlap = mft_paths.intersection(&raw_paths).count();
-    let mft_overlap_rate = overlap as f64 / mft_paths.len() as f64;
-    let raw_overlap_rate = overlap as f64 / raw_paths.len() as f64;
-
-    assert!(
-        mft_overlap_rate >= 0.70,
-        "expected >= 70% of sampled Mft paths to exist in sampled RawMft paths; got {overlap}/{} ({:.1}%)",
-        mft_paths.len(),
-        mft_overlap_rate * 100.0
-    );
-    assert!(
-        raw_overlap_rate >= 0.70,
-        "expected >= 70% of sampled RawMft paths to exist in sampled Mft paths; got {overlap}/{} ({:.1}%)",
-        raw_paths.len(),
-        raw_overlap_rate * 100.0
-    );
 }
 
 /// Strict record-by-record parity check using standard NTFS file IDs.

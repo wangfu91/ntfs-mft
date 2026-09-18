@@ -92,20 +92,10 @@ does not yield extensions as separate files. Raw iteration discards enrichment
 errors; consumers requiring completeness diagnostics should use `MftStream`.
 
 File references combine a 48-bit record number and a 16-bit sequence number.
-`MftPathIndex::resolve_strict` verifies full references, including parent and root
-sequence numbers. Reused slots return a structured mismatch error. The explicit
-`resolve_best_effort` method reports exact, record-fallback, or partial quality;
-partial paths are suffixes, not paths relative to the volume root. Cycles,
-missing parents, and excessive depth are reported.
-
-Build `MftPathIndex` during an existing scan with `insert` (rich or offline
-entries) or `insert_lean`, retaining root record 5 and all needed parents. It
-requires no volume and performs no I/O. Attach a volume prefix afterward with
-`RawMftPathResolver::from_index`. The convenience `mft.path_resolver()` performs
-a full additional scan, propagates scan I/O errors, and uses memory proportional
-to records and names. Neither construction path makes a live volume atomic.
-Raw scanners can still skip malformed records, so successful construction does
-not establish that the index covers every file.
+The scanner preserves both parts in file and parent references. Applications
+that reconstruct paths should validate complete references and handle missing
+ancestors, reused slots, cycles, and multiple hard links. The library does not
+construct paths or directory trees.
 
 ## Chunk planning
 
@@ -303,12 +293,10 @@ units without case folding or normalization.
 - `name.try_to_string()` rejects unpaired surrogates.
 - `name.to_string_lossy()` and `Display` provide readable text with replacement characters.
 - `name.to_os_string()` preserves units on Windows and replaces unpaired surrogates
-  on Unix. Native paths produced by path resolvers have this same limitation;
-  their quality describes reference matching, not lossless name conversion.
+  on Unix.
 
 Use `NtfsName::from("file.txt")` for Unicode text or
 `NtfsName::from_utf16(vec![0x61, 0xd800])` for exact code units. Names are stored
-once as UTF-16, without a second cached native string. `MftPathIndex::insert_reference`
-accepts `&NtfsName`; it validates path components separately. Export uses the
+once as UTF-16, without a second cached native string. Export uses the
 existing `windows_utf16` encoding tag for NTFS names on every platform and reports
 `name_fidelity: "ntfs_utf16_preserved"`.

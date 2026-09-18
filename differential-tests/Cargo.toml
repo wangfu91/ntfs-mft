@@ -20,7 +20,6 @@ unimplemented = "deny"
 unreachable = "deny"
 
 [features]
-windows-path-resolver-bench = []
 serde = ["dep:serde", "dep:chrono"]
 jsonl = ["serde", "dep:serde_json"]
 

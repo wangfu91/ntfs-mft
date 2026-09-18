@@ -5,8 +5,7 @@ Read-only NTFS Master File Table parsing and scanning for Windows, Linux, and ma
 This library reads the boot sector and fragmented `$MFT` streams directly,
 validates FILE records and update sequence arrays, and exposes timestamps,
 names, sizes, hard links, alternate data streams, and file attributes. It includes
-serial and parallel live volume scans, indexed path resolution, and experimental historical
-path reconstruction.
+serial and parallel live volume scans and logical MFT stream parsing.
 
 See [Choosing an MFT API](docs/api-guide.md) for scan defaults, metadata choices,
 error behavior, and migration examples.
@@ -104,8 +103,9 @@ parser options, pass `raw.byte_reader()?` to `MftStream::from_reader` and use
   on macOS); see [macOS access and validation](docs/macos-raw-volume-access.md).
   All device opens are read-only.
 - A live scan is not an atomic filesystem snapshot; concurrent changes can affect results.
-- Attribute-list enrichment is one level deep. Historical paths are best effort.
-- Snapshot paths are the default; Windows live fallback is explicitly opt-in.
+- Attribute-list enrichment is one level deep.
+- Full-path reconstruction and directory trees belong to the consumer. Records
+  retain names, namespaces, file/parent references, and hard-link metadata.
 
 ## Optional JSONL export
 
@@ -136,7 +136,6 @@ cargo run --example raw_mft_parallel_chunks -- C
 cargo run --example deletion_forensic -- C
 cargo bench --bench raw_mft
 cargo bench --bench raw_mft_ingest
-cargo bench --features windows-path-resolver-bench --bench path_resolver
 ```
 
 On Linux and macOS, pass an NTFS mount point or `/dev/...` device instead of `C`.

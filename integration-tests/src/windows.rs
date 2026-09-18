@@ -1,16 +1,7 @@
-//! Read-only FSCTL enumeration and live path resolution for parity tests.
+//! Read-only FSCTL enumeration for raw-record parity tests.
 use crate::{MftEntry, parse_record};
 use ntfs_mft::MftError;
-use crate::Fid;
-use std::{
-    cell::RefCell,
-    collections::{HashMap, VecDeque},
-    ffi::OsString,
-    io,
-    mem::size_of,
-    os::windows::ffi::OsStringExt,
-    path::PathBuf,
-};
+use std::{collections::VecDeque, io, mem::size_of};
 use windows::{
     Win32::{
         Foundation::{CloseHandle, ERROR_ACCESS_DENIED, ERROR_HANDLE_EOF, HANDLE},
@@ -191,93 +182,6 @@ impl Iterator for MftIter<'_> {
                 self.entries.clear();
                 return Some(Err(e));
             }
-        }
-    }
-}
-
-pub struct PathResolver<'a> {
-    volume: &'a Volume,
-    capacity: usize,
-    directories: RefCell<HashMap<Fid, PathBuf>>,
-}
-impl<'a> PathResolver<'a> {
-    pub fn new(volume: &'a Volume) -> Self {
-        Self {
-            volume,
-            capacity: 1024,
-            directories: RefCell::new(HashMap::new()),
-        }
-    }
-    pub fn with_directory_cache(mut self, capacity: usize) -> Self {
-        self.capacity = capacity;
-        self
-    }
-    pub fn resolve_path(&self, entry: &MftEntry) -> Option<PathBuf> {
-        if let Some(parent) = self.directories.borrow().get(&entry.parent_fid) {
-            return Some(parent.join(&entry.file_name));
-        }
-        if let Some(parent) = self.file_path(entry.parent_fid) {
-            if self.capacity > 0 {
-                let mut cache = self.directories.borrow_mut();
-                if cache.len() >= self.capacity {
-                    cache.clear();
-                }
-                cache.insert(entry.parent_fid, parent.clone());
-            }
-            return Some(parent.join(&entry.file_name));
-        }
-        self.file_path(entry.fid)
-    }
-    fn file_path(&self, fid: Fid) -> Option<PathBuf> {
-        let (kind, id) = match fid {
-            Fid::Standard(id) => (FileIdType, FILE_ID_DESCRIPTOR_0 { FileId: id as i64 }),
-            Fid::Extended(id) => (
-                ExtendedFileIdType,
-                FILE_ID_DESCRIPTOR_0 {
-                    ExtendedFileId: FILE_ID_128 {
-                        Identifier: id.to_le_bytes(),
-                    },
-                },
-            ),
-        };
-        let descriptor = FILE_ID_DESCRIPTOR {
-            dwSize: size_of::<FILE_ID_DESCRIPTOR>() as u32,
-            Type: kind,
-            Anonymous: id,
-        };
-        // SAFETY: valid borrowed volume handle and initialized descriptor; the
-        // returned handle is closed by OwnedHandle on every exit path.
-        let handle = OwnedHandle(unsafe {
-            OpenFileById(
-                self.volume.handle.0,
-                &descriptor,
-                0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                None,
-                FILE_FLAG_BACKUP_SEMANTICS,
-            )
-            .ok()?
-        });
-        let mut buffer = vec![0u16; 512];
-        loop {
-            // SAFETY: live file handle and writable UTF-16 output slice.
-            let length =
-                unsafe { GetFinalPathNameByHandleW(handle.0, &mut buffer, VOLUME_NAME_DOS) }
-                    as usize;
-            if length == 0 {
-                return None;
-            }
-            if length >= buffer.len() {
-                buffer.resize(length + 1, 0);
-                continue;
-            }
-            // Normalize the Win32 extended prefix to match the snapshot's drive paths.
-            let wide = if buffer[..length].starts_with(&[92, 92, 63, 92]) {
-                &buffer[4..length]
-            } else {
-                &buffer[..length]
-            };
-            return Some(PathBuf::from(OsString::from_wide(wide)));
         }
     }
 }

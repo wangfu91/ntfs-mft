@@ -1,15 +1,8 @@
-//! Enumerate deleted / unused raw `$MFT` records and print a best-effort path.
+//! Stream unused raw `$MFT` base records with their names and parent references.
 //!
-//! This example scans the raw `$MFT` with `include_unused_records(true)` so it
-//! can see slots whose `$BITMAP` bit is clear, then builds a snapshot-local
-//! historical path index from all named base records.
-//!
-//! Resolution quality tags:
-//! - `exact`: every component matched the exact `NtfsFileReference` stored in the record.
-//! - `record-fallback`: at least one parent step had to ignore stale sequence
-//!   bits and use the current snapshot occupant of that record number.
-//! - `partial`: the chain broke before reaching the root, so the printed path
-//!   includes an unresolved-parent marker.
+//! Includes bitmap-unused slots and prints records whose FILE header marks them
+//! unused. Stops at the result limit; it neither indexes paths nor retains all
+//! deleted records. Unused metadata may be stale and is not proof of recovery.
 //!
 //! On Windows, pass a drive letter from an elevated shell. On Linux and macOS, pass an
 //! NTFS mount or device path with read permission for its backing device:
@@ -25,7 +18,7 @@ mod raw_volume;
 
 use ntfs_mft::{
     errors::MftError,
-    raw_mft::{RawMft, RawMftScanOptions, history::HistoricalPathIndex},
+    raw_mft::{RawMft, RawMftScanOptions},
 };
 
 const DEFAULT_LIMIT: usize = 1_000;
@@ -62,45 +55,27 @@ fn run() -> Result<(), MftError> {
         .collect_dos_file_name_links(false)
         .build();
 
-    let mut index = HistoricalPathIndex::new();
-    let mut deleted_records = Vec::new();
-
-    for result in mft.scan_entries_with_options(options)? {
-        let entry = match result {
-            Ok(entry) => entry,
-            Err(error) => {
-                eprintln!("error: {error}");
-                continue;
-            }
+    println!("unused raw MFT records on {source}: showing up to {limit}");
+    let mut scan = mft.scan_entries_with_options(options)?;
+    let mut count = 0;
+    while count < limit {
+        let Some(result) = scan.next() else {
+            break;
         };
-
-        index.insert(&entry);
-        if !entry.is_used {
-            deleted_records.push(entry);
+        let record = result?;
+        if record.is_used {
+            continue;
         }
-    }
-
-    println!(
-        "unused raw MFT records on {source}: ({} total, showing up to {})",
-        deleted_records.len(),
-        limit
-    );
-
-    for record in deleted_records.iter().take(limit) {
-        let resolved = index.resolve_entry_best_effort(&volume, record);
         let kind = if record.is_directory { "DIR " } else { "FILE" };
         println!(
-            "{kind} #{:>10} seq={:>5} quality={:<15} {}",
+            "{kind} #{:>10} seq={:>5} parent={} name={}",
             record.record_number,
             record.sequence_number,
-            resolved.quality,
-            resolved.path.display(),
+            record.parent_reference,
+            record.file_name.to_string_lossy(),
         );
+        count += 1;
     }
-
-    if deleted_records.len() > limit {
-        eprintln!("truncated output at {limit} records; rerun with a higher limit to inspect more");
-    }
-
+    eprintln!("Done. Yielded {count} unused records (limit {limit}).");
     Ok(())
 }

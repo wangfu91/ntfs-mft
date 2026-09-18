@@ -17,9 +17,6 @@ pub enum MftError {
     /// Caller supplied an invalid NTFS file reference.
     #[error("Invalid file reference: {0}")]
     InvalidFileReference(#[from] FileReferenceError),
-    /// Indexed path construction failed.
-    #[error("Path index error: {0}")]
-    PathIndex(#[from] crate::MftPathError),
     /// Serialization of an export item failed.
     #[cfg(feature = "jsonl")]
     #[error("Export serialization error: {0}")]

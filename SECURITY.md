@@ -30,7 +30,7 @@ input device or stream and the scan configuration. Raw-volume permissions are
 provided by the operating system; this crate does not grant those permissions.
 
 Security review should cover the parser, arithmetic and allocation decisions,
-stream and volume I/O, unsafe code and FFI, path reconstruction, and exports.
+stream and volume I/O, unsafe code and FFI, and exports.
 Properties that must hold include:
 
 - Volume access stays read-only.

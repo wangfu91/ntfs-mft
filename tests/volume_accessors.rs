@@ -1,8 +1,6 @@
 #![cfg(windows)]
 
-//! Integration tests for the `Volume` convenience accessors
-//! (`journal()`, `mft()`, `raw_mft()`, `path_resolver()`) and a couple of
-//! MFT enumeration edge cases.
+//! Integration tests for the Volume::raw_mft convenience accessor.
 //!
 //! Each accessor must be equivalent to the explicit constructor it wraps.
 //! Tests run against the `NTFS_MFT_TEST_DRIVE` volume (default `C`) and skip
