@@ -27,22 +27,25 @@ be hydrated before tests or packaging; a small text file beginning with
 
 ## Validation
 
+The root library intentionally leaves Cargo.lock untracked; root commands resolve
+dependencies and reuse the generated local lockfile. The two standalone test
+harnesses track their lockfiles and use --locked for reproducible comparisons.
+
 Run from the repository root:
 
 ```sh
 cargo fmt --all -- --check
-cargo test --locked
-cargo test --locked --all-features
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo doc --locked --all-features --no-deps
-cargo package --locked
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo doc --no-deps
+cargo package
 ```
 
 For parser changes, also run the pinned comparison harness:
 
 ```sh
 cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
-cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets -- -D warnings
 ```
 
 For Windows API or live-volume behavior, see the
@@ -52,12 +55,12 @@ State which checks ran, which skipped, and whether results came from fixtures,
 live devices, or CI. Do not treat a skipped device check as evidence of device
 correctness. Use only devices you are authorized to inspect.
 
-The minimum supported Rust version (MSRV) is 1.88. CI checks the library with all
-features on Rust 1.88.0 on each supported desktop OS. To reproduce locally:
+The minimum supported Rust version (MSRV) is 1.88. CI checks the library
+on Rust 1.88.0 on each supported desktop OS. To reproduce locally:
 
 ```sh
 rustup toolchain install 1.88.0 --profile minimal
-cargo +1.88.0 test --locked --lib --all-features
+cargo +1.88.0 test --lib
 ```
 
 Call out any proposed MSRV increase in the PR. Keep the separate harness

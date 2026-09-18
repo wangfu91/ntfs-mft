@@ -8,7 +8,7 @@ records provide separate checks.
 ```sh
 git lfs pull
 cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
-cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets -- -D warnings
 ```
 
 Run from the repository root; add `--offline` after fetching dependencies.

@@ -2,6 +2,9 @@
 
 ## 0.1.0 (unreleased)
 
+- Align CI and contributor commands with the untracked root lockfile; retain
+  locked dependency resolution for the standalone test harnesses.
+
 - Remove optional serialization/export APIs, JSONL tooling, and schema validation
   dependencies; consumers own their serialization format.
 

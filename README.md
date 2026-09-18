@@ -118,7 +118,7 @@ cargo build
 cargo fmt --all -- --check
 cargo test
 cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets -- -D warnings
 cargo package
 cargo run --example raw_mft_serial_read -- C
 cargo run --example raw_mft_parallel_chunks -- C

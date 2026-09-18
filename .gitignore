@@ -2,4 +2,4 @@
 /integration-tests/target
 /differential-tests/target
 /.idea
-Cargo.lock
+/Cargo.lock

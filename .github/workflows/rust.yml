@@ -36,15 +36,15 @@ jobs:
             . -> target
             differential-tests -> target
             integration-tests -> target
-      - run: cargo build --locked
+      - run: cargo build
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
-      - run: cargo test --locked
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
       - run: cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
-      - run: cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets --all-features -- -D warnings
+      - run: cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo test --manifest-path integration-tests/Cargo.toml --locked
       - run: cargo clippy --manifest-path integration-tests/Cargo.toml --locked --all-targets -- -D warnings
-      - run: cargo package --locked
+      - run: cargo package
       - name: Show sccache statistics
         if: always()
         run: sccache --show-stats
@@ -63,4 +63,4 @@ jobs:
         with:
           lfs: true
       - run: rustup toolchain install 1.88.0 --profile minimal
-      - run: cargo +1.88.0 test --locked --lib --all-features
+      - run: cargo +1.88.0 test --lib
