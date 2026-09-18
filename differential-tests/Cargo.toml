@@ -20,36 +20,22 @@ unimplemented = "deny"
 unreachable = "deny"
 
 
-# Keep this block identical to the root manifest. build.rs checks for drift.
 [dependencies]
-bitflags = "2"
-log = "0.4"
-rustc-hash = "2"
-thiserror = "2"
-zerocopy = { version = "0.8.48", features = ["derive"] }
+bitflags.workspace = true
+log.workspace = true
+rustc-hash.workspace = true
+thiserror.workspace = true
+zerocopy.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-libc = "0.2"
+libc.workspace = true
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.62"
-features = [
-    "Win32_Foundation",
-    "Win32_System_IO",
-    "Win32_Storage_FileSystem",
-    "Win32_Security",
-    "Win32_System_WindowsProgramming",
-    "Win32_System_Ioctl",
-    "Win32_System_Time",
-    "Win32_System_Threading",
-]
+workspace = true
 
 [dev-dependencies]
-serde_json = "1"
-mft = { git = "https://github.com/omerbenamram/mft", rev = "dc36db7d3b83d68c0eecb75225c9955cfd7b2f2d", default-features = false }
+serde_json.workspace = true
+mft.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-injectorpp = "0.5"
-
-[profile.test]
-incremental = false
+injectorpp.workspace = true

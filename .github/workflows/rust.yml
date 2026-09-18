@@ -30,12 +30,8 @@ jobs:
       - name: Cache Cargo dependencies and build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          # The differential harness is a separate Cargo project.
           # Keep target artifacts as well: sccache cannot cache Clippy metadata.
-          workspaces: |
-            . -> target
-            differential-tests -> target
-            integration-tests -> target
+          workspaces: . -> target
       - run: cargo build
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings

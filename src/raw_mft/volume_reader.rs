@@ -433,8 +433,12 @@ mod shared_handle_tests {
             0,
             windows::Win32::Storage::FileSystem::FILE_FLAG_OVERLAPPED.0,
         ] {
+            #[cfg(not(ntfs_mft_differential))]
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/sparse-volume-fixture/mft.bin");
+            #[cfg(ntfs_mft_differential)]
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../tests/fixtures/sparse-volume-fixture/mft.bin");
             let expected = std::fs::read(&path).unwrap();
             use std::os::windows::fs::OpenOptionsExt;
             let file = std::fs::OpenOptions::new()
