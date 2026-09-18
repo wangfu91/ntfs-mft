@@ -107,17 +107,6 @@ parser options, pass `raw.byte_reader()?` to `MftStream::from_reader` and use
 - Full-path reconstruction and directory trees belong to the consumer. Records
   retain names, namespaces, file/parent references, and hard-link metadata.
 
-## Optional JSONL export
-
-Enable `jsonl` for streaming export of raw scan results or `MftStream`
-records. Enable only `serde` for the separate versioned DTOs. Both are optional.
-The [export guide and schema](docs/export.md) describe exact identifiers,
-timestamps, lossless NTFS names, native path encodings, metadata completeness, and known parser limits.
-
-```text
-cargo run --example raw_mft_export --features jsonl -- file extracted.MFT 1024
-```
-
 ## Development
 
 Install [Git LFS](https://git-lfs.com/) before cloning, then run `git lfs pull`

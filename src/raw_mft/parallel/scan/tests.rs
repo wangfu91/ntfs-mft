@@ -405,13 +405,6 @@ fn diagnostic_scan_counts_skips_bounds_errors_and_retains_metadata_evidence() ->
     ));
     assert_eq!(report.omitted_diagnostics, 1);
     assert!(report.reached_end);
-    #[cfg(feature = "serde")]
-    assert_eq!(
-        crate::export::ExportRecordV1::from_diagnostic(&first)
-            .metadata
-            .alternate_data_streams,
-        crate::export::FieldState::NotCollected
-    );
     Ok(())
 }
 

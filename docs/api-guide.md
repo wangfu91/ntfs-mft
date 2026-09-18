@@ -106,5 +106,4 @@ an explicit `usize` record size. If you already have a `RawMft`, use
 The resulting stream can outlive `raw` and its volume. For custom options, use
 `from_reader(raw.byte_reader()?, options)` with `raw.file_record_size()`.
 
-See [raw scan details](raw-mft-read.md), [MFT stream parsing](offline-mft.md),
-and [versioned export](export.md) for their full contracts.
+See [raw scan details](raw-mft-read.md) and [MFT stream parsing](offline-mft.md) for their full contracts.

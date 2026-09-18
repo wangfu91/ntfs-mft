@@ -2,6 +2,9 @@
 
 ## 0.1.0 (unreleased)
 
+- Remove optional serialization/export APIs, JSONL tooling, and schema validation
+  dependencies; consumers own their serialization format.
+
 - Remove path resolvers, in-memory path indexes, historical reconstruction, and
   Windows live-path fallback before publication. Path/tree policy belongs to
   consumers; raw names, identities, parent references, and links remain available.

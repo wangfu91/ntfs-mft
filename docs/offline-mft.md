@@ -139,5 +139,5 @@ their independent parser. They should compare per-slot errors separately, and
 account for explicit rejection of malformed payloads.
 Export consumers should preserve the metadata states and diagnostics, rather than
 converting unknown values to zero, empty strings or null without explanation.
-See [JSONL export](export.md) for optional serialization. MFT-stream parsing
+Serialization belongs to the consumer. MFT-stream parsing
 does not reconstruct paths or provide parallel scans.

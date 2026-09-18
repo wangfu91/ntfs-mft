@@ -31,8 +31,6 @@
 mod ntfs_name;
 pub use ntfs_name::NtfsName;
 pub mod errors;
-#[cfg(feature = "serde")]
-pub mod export;
 mod file_attributes;
 mod file_reference;
 #[cfg(windows)]

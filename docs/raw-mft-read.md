@@ -297,6 +297,5 @@ units without case folding or normalization.
 
 Use `NtfsName::from("file.txt")` for Unicode text or
 `NtfsName::from_utf16(vec![0x61, 0xd800])` for exact code units. Names are stored
-once as UTF-16, without a second cached native string. Export uses the
-existing `windows_utf16` encoding tag for NTFS names on every platform and reports
-`name_fidelity: "ntfs_utf16_preserved"`.
+once as UTF-16, without a second cached native string. Consumers that serialize
+names should preserve these original code units alongside any display text.

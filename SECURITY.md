@@ -24,13 +24,13 @@ not have a separate maintenance commitment.
 ## Scope and trust boundaries
 
 This library parses NTFS records from offline streams and live volumes and can
-export metadata. Filesystem bytes, names, record references, attribute lengths,
-runlists, and exported text may be attacker-controlled. A caller chooses the
+expose metadata. Filesystem bytes, names, record references, attribute lengths,
+runlists, and display text may be attacker-controlled. A caller chooses the
 input device or stream and the scan configuration. Raw-volume permissions are
 provided by the operating system; this crate does not grant those permissions.
 
 Security review should cover the parser, arithmetic and allocation decisions,
-stream and volume I/O, unsafe code and FFI, and exports.
+stream and volume I/O, unsafe code and FFI.
 Properties that must hold include:
 
 - Volume access stays read-only.
@@ -38,9 +38,9 @@ Properties that must hold include:
   arithmetic that bypasses validation.
 - Malformed records do not cause unintended reads outside the supplied stream
   or captured ranges, or nonterminating parsing.
-- Names and reconstructed paths remain data. They must not trigger execution
+- Names remain data. They must not trigger execution
   or filesystem writes inside the library.
-- Export preserves the documented distinction between known, unknown, and
+- Diagnostic metadata preserves the documented distinction between known, unknown, and
   partial metadata.
 
 Please report memory-safety issues, unintended writes or disclosure, and
@@ -50,9 +50,9 @@ large scan are useful context when assessing resource-exhaustion reports.
 
 ## Documented limitations
 
-Live scans are not atomic snapshots. Historical and best-effort paths can be
-partial; they are not authorization decisions or a sandbox for later file I/O.
-Callers must validate paths before using them for other operations. Scan output
+Live scans are not atomic snapshots. Names and references are metadata, not
+authorization decisions or a sandbox for later file I/O. Callers must validate
+any paths they construct before using them for other operations. Scan output
 can contain private filesystem metadata and is not automatically anonymized.
 
 These limitations provide context, not blanket exclusions for vulnerabilities.

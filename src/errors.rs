@@ -17,10 +17,6 @@ pub enum MftError {
     /// Caller supplied an invalid NTFS file reference.
     #[error("Invalid file reference: {0}")]
     InvalidFileReference(#[from] FileReferenceError),
-    /// Serialization of an export item failed.
-    #[cfg(feature = "jsonl")]
-    #[error("Export serialization error: {0}")]
-    Export(#[from] serde_json::Error),
     /// The process lacks the Administrator privileges required to open a volume.
     #[error("This operation requires Administrator privileges")]
     NotElevated,
