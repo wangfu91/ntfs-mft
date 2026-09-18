@@ -32,31 +32,15 @@ jobs:
         with:
           # Keep target artifacts as well: sccache cannot cache Clippy metadata.
           workspaces: . -> target
-      - run: cargo build
+      - run: cargo build --locked
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
       - run: cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
       - run: cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo test --manifest-path integration-tests/Cargo.toml --locked
       - run: cargo clippy --manifest-path integration-tests/Cargo.toml --locked --all-targets -- -D warnings
-      - run: cargo package
+      - run: cargo package --locked
       - name: Show sccache statistics
         if: always()
         run: sccache --show-stats
-
-  msrv:
-    name: Rust 1.88.0 (${{ matrix.os }})
-    strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    env:
-      # This job uses the exact MSRV toolchain without the stable job's wrapper.
-      RUSTC_WRAPPER: ""
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - run: rustup toolchain install 1.88.0 --profile minimal
-      - run: cargo +1.88.0 test --lib

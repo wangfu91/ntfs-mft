@@ -17,11 +17,10 @@ contents fail the size check. CI runs on Windows, Linux, and macOS.
 
 ## Harness and comparison contract
 
-This unpublished package has its own lockfile and is excluded from the main
-Cargo package. It compiles `../src/lib.rs`; its build script alone enables
-`ntfs_mft_differential`. No comparison API or upstream dependency is exposed by
-the main crate. The build checks that production dependency declarations match
-the root manifest. Review transitive version changes when updating its lockfile.
+This unpublished workspace package is excluded from the main Cargo package. It
+compiles `../src/lib.rs`; its build script alone enables `ntfs_mft_differential`.
+No comparison API or upstream dependency is exposed by the main crate. Review
+transitive version changes when updating the workspace lockfile.
 
 Each parser receives a separate copy of the original USA-protected bytes and
 the same physical slot number. Comparisons retain:

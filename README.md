@@ -24,7 +24,7 @@ policy are separate. A live volume scan is not an atomic filesystem snapshot.
 
 ## Installation
 
-Requires Rust 1.88 or newer. For the crates.io release:
+This crate does not declare a minimum supported Rust version. For the crates.io release:
 
 ```toml
 [dependencies]
@@ -114,12 +114,12 @@ from the repository root. Tests and packaging need the actual fixture bytes;
 Git LFS pointer files are not usable fixtures.
 
 ```text
-cargo build
+cargo build --locked
 cargo fmt --all -- --check
-cargo test
+cargo test --locked
 cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
-cargo clippy --all-targets -- -D warnings
-cargo package
+cargo clippy --locked --all-targets -- -D warnings
+cargo package --locked
 cargo run --example raw_mft_serial_read -- C
 cargo run --example raw_mft_parallel_chunks -- C
 cargo run --example deletion_forensic -- C

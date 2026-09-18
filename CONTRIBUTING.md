@@ -9,7 +9,7 @@ privately as described in [SECURITY.md](SECURITY.md).
 
 ## Setup
 
-Use Rust 1.88 or newer, a platform linker/toolchain, Python 3, and
+Use the latest stable Rust toolchain, a platform linker/toolchain, Python 3, and
 [Git LFS](https://git-lfs.com/). Windows builds use the MSVC toolchain and Visual
 Studio C++ build tools. CI covers Windows, Linux, and macOS.
 
@@ -27,18 +27,17 @@ be hydrated before tests or packaging; a small text file beginning with
 
 ## Validation
 
-The root library intentionally leaves Cargo.lock untracked; root commands resolve
-dependencies and reuse the generated local lockfile. The two standalone test
-harnesses track their lockfiles and use --locked for reproducible comparisons.
+The workspace tracks its root `Cargo.lock` so development and CI checks use the
+same dependency graph. Published library consumers resolve their own graph.
 
 Run from the repository root:
 
 ```sh
 cargo fmt --all -- --check
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo doc --no-deps
-cargo package
+cargo test --locked
+cargo clippy --locked --all-targets -- -D warnings
+cargo doc --locked --no-deps
+cargo package --locked
 ```
 
 For parser changes, also run the pinned comparison harness:
@@ -76,16 +75,8 @@ device. Build tests with `--no-run`, then run the exact executable printed by
 Cargo with `--ignored --nocapture` in a context allowed to read that device.
 See [macOS instructions](docs/macos-raw-volume-access.md) for an example.
 
-The minimum supported Rust version (MSRV) is 1.88. CI checks the library
-on Rust 1.88.0 on each supported desktop OS. To reproduce locally:
-
-```sh
-rustup toolchain install 1.88.0 --profile minimal
-cargo +1.88.0 test --lib
-```
-
-Call out any proposed MSRV increase in the PR. Keep the separate harness
-dependency declarations in sync where their build scripts require it.
+The project does not declare or test a minimum supported Rust version. CI uses
+the latest stable toolchain on each supported desktop OS.
 
 ## Changes and pull requests
 
