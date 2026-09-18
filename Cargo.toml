@@ -5,7 +5,7 @@ edition = "2024"
 autoexamples = false
 exclude = [
     ".github/**",
-    "Agent.md",
+    "AGENTS.md",
     "clippy.toml",
     "integration-tests/**",
     "differential-tests/**",

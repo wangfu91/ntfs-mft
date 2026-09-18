@@ -2,28 +2,14 @@
 
 ## 0.1.0 (unreleased)
 
-- Consolidate live-device test configuration and duplicate parity/ReFS checks.
-  Device tests are ignored by default and fail on missing prerequisites or
-  runtime errors when explicitly selected.
+Initial public release.
 
-- Centralize workspace dependencies, track one root lockfile, and use locked
-  dependency resolution for local and CI validation.
-
-- Remove optional serialization/export APIs, JSONL tooling, and schema validation
-  dependencies; consumers own their serialization format.
-
-- Remove path resolvers, in-memory path indexes, historical reconstruction, and
-  Windows live-path fallback before publication. Path/tree policy belongs to
-  consumers; raw names, identities, parent references, and links remain available.
-- Stream unused-record previews without constructing a historical path index.
-
-- Use the latest stable Rust toolchain without declaring an MSRV.
-- Add contribution, security-reporting, and community guidance for the public release.
-- Document and automate the GitHub and crates.io release-readiness checks.
-
-- Extract raw NTFS MFT reading from usn-journal-rs as an independent crate.
-- Preserve serial/parallel scans, metadata parsing,
-  and Windows/Linux/macOS read-only volume access.
-- Add native macOS mount lookup, raw disk reads with device-block alignment,
-  and macOS CI coverage.
-- Expose MftError and MftResult and root-level raw reader exports.
+- Read NTFS Master File Tables directly from volumes on Windows, Linux, and
+  macOS using read-only I/O.
+- Scan live volumes serially or in parallel, including fragmented `$MFT` data.
+- Parse extracted logical `$MFT` streams from files, byte buffers, and custom
+  `Read + Seek` sources.
+- Expose record metadata including names, timestamps, sizes, file attributes,
+  hard links, alternate data streams, and parent references.
+- Report corrupt records as item-level errors where scanning can safely
+  continue.

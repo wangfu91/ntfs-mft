@@ -181,8 +181,8 @@ both planning and scanning exclude unused records. Its defaults
 are 2,048-record chunks, 256 KiB/16 KiB buffers, and available parallelism capped
 at 10 workers. These are workload-specific benchmark settings.
 
-See [parallel measurements and commands](raw_mft_parallel_ingest_findings.md)
-and [serial measurements](raw_mft_serial_read_findings.md). The
+See [parallel measurements and commands](raw-mft-parallel-ingest-findings.md)
+and [serial measurements](raw-mft-serial-read-findings.md). The
 [sparse-volume fixture](../tests/fixtures/sparse-volume-fixture/README.md) tests bootstrapping,
 fragmented bitmap loading, and serial/parallel agreement without a device.
 The [module map](../src/raw_mft/README.md) locates the implementation.

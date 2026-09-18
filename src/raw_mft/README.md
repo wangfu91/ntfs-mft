@@ -14,7 +14,7 @@ fixup → attributes. Extent lookup handles fragmented storage; each parallel
 worker owns its readers and shares immutable discovery data.
 
 See [reader internals](../../docs/raw-mft-read.md) for behavior and constraints,
-[serial findings](../../docs/raw_mft_serial_read_findings.md) and
-[parallel findings](../../docs/raw_mft_parallel_ingest_findings.md) for measured
+[serial findings](../../docs/raw-mft-serial-read-findings.md) and
+[parallel findings](../../docs/raw-mft-parallel-ingest-findings.md) for measured
 performance. Use Criterion benchmarks for timing and the matching profile
 examples for flamegraphs or ETW.
