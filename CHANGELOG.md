@@ -6,8 +6,8 @@
   Device tests are ignored by default and fail on missing prerequisites or
   runtime errors when explicitly selected.
 
-- Align CI and contributor commands with the untracked root lockfile; retain
-  locked dependency resolution for the standalone test harnesses.
+- Centralize workspace dependencies, track one root lockfile, and use locked
+  dependency resolution for local and CI validation.
 
 - Remove optional serialization/export APIs, JSONL tooling, and schema validation
   dependencies; consumers own their serialization format.
@@ -17,8 +17,9 @@
   consumers; raw names, identities, parent references, and links remain available.
 - Stream unused-record previews without constructing a historical path index.
 
-- Declare Rust 1.88 as the minimum supported version and add MSRV CI coverage.
+- Use the latest stable Rust toolchain without declaring an MSRV.
 - Add contribution, security-reporting, and community guidance for the public release.
+- Document and automate the GitHub and crates.io release-readiness checks.
 
 - Extract raw NTFS MFT reading from usn-journal-rs as an independent crate.
 - Preserve serial/parallel scans, metadata parsing,

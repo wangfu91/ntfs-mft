@@ -40,7 +40,11 @@ jobs:
       - run: cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets -- -D warnings
       - run: cargo test --manifest-path integration-tests/Cargo.toml --locked
       - run: cargo clippy --manifest-path integration-tests/Cargo.toml --locked --all-targets -- -D warnings
+      - run: cargo doc --package ntfs-mft --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
       - run: cargo package --locked
+      - run: cargo publish --dry-run --locked
       - name: Show sccache statistics
         if: always()
         run: sccache --show-stats

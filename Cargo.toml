@@ -3,10 +3,18 @@ name = "ntfs-mft"
 version = "0.1.0"
 edition = "2024"
 autoexamples = false
-exclude = ["integration-tests/**", "differential-tests/**"]
+exclude = [
+    ".github/**",
+    "Agent.md",
+    "clippy.toml",
+    "integration-tests/**",
+    "differential-tests/**",
+]
 description = "Read-only raw NTFS Master File Table parsing and serial/parallel scanning on Windows, Linux, and macOS."
 license = "MIT"
+readme = "README.md"
 repository = "https://github.com/wangfu91/ntfs-mft"
+documentation = "https://docs.rs/ntfs-mft"
 keywords = ["filesystem", "ntfs", "mft", "forensics"]
 categories = ["filesystem"]
 

@@ -38,6 +38,7 @@ cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo doc --locked --no-deps
 cargo package --locked
+cargo publish --dry-run --locked
 ```
 
 For parser changes, also run the pinned comparison harness:
@@ -77,6 +78,9 @@ See [macOS instructions](docs/macos-raw-volume-access.md) for an example.
 
 The project does not declare or test a minimum supported Rust version. CI uses
 the latest stable toolchain on each supported desktop OS.
+
+Maintainers preparing a release should follow the
+[GitHub and crates.io release checklist](docs/releasing.md).
 
 ## Changes and pull requests
 

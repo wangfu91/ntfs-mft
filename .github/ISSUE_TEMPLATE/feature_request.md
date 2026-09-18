@@ -16,5 +16,5 @@ Describe the API or behavior, including a small usage example if helpful.
 
 ## Alternatives and compatibility
 
-What alternatives have you considered? Note platform, API compatibility, or
-minimum Rust version implications. Do not include private filesystem data.
+What alternatives have you considered? Note platform, public API, or Rust
+toolchain compatibility implications. Do not include private filesystem data.

@@ -10,6 +10,20 @@ serial and parallel live volume scans and logical MFT stream parsing.
 See [Choosing an MFT API](docs/api-guide.md) for scan defaults, metadata choices,
 error behavior, and migration examples.
 
+## Choose an API
+
+| Need | Start with | Input |
+| --- | --- | --- |
+| Scan an NTFS volume serially | `Volume::raw_mft` and `RawMft::scan_entries` | Mounted volume or device |
+| Process a volume in parallel | `RawMft::scan_entries_parallel` | Mounted volume or device |
+| Parse an extracted `$MFT` | `MftStream::from_path` | Logical `$MFT` file |
+| Parse bytes or a custom stream | `MftStream::from_reader` | `Read + Seek` source |
+| Read arbitrary logical MFT bytes | `RawMft::byte_reader` | Existing `RawMft` |
+
+All volume access is read-only. Parsing reports corrupt records as item-level
+errors where iteration can safely continue. See the [API guide](docs/api-guide.md)
+for metadata completeness, attribute-list enrichment, and error contracts.
+
 ## Terminology
 
 - **Live volume scan** reads MFT records directly from an NTFS volume/device.
@@ -24,15 +38,16 @@ policy are separate. A live volume scan is not an atomic filesystem snapshot.
 
 ## Installation
 
-This crate does not declare a minimum supported Rust version. For the crates.io release:
+This crate does not declare a minimum supported Rust version. After publication,
+add it from crates.io with:
 
 ```toml
 [dependencies]
 ntfs-mft = "0.1"
 ```
 
-Version 0.1.0 is being prepared for its first publication. Until it is available
-on crates.io, clone this repository and use a local path dependency:
+Version 0.1.0 is being prepared for its first publication. Until then, clone this
+repository and use a local path dependency:
 
 ```toml
 [dependencies]
@@ -142,6 +157,8 @@ See [Windows API parity tests](integration-tests/README.md),
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, validation, and fixture
 requirements, and the [Code of Conduct](CODE_OF_CONDUCT.md) for community
 expectations. Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
+Maintainers can use the [release checklist](docs/releasing.md) for GitHub and
+crates.io publication.
 
 ## License
 
