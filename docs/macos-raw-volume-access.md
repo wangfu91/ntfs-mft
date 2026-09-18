@@ -31,10 +31,10 @@ sudo ./target/debug/examples/raw_mft_serial_read /Volumes/Windows
 cargo test --test macos_raw_mft --no-run
 ```
 
-For the test, use the exact executable filename printed by Cargo:
+The device test is ignored by default. Use the exact executable filename printed by Cargo:
 
 ```sh
-sudo env NTFS_MFT_TEST_VOLUME=/Volumes/Windows ./target/debug/deps/macos_raw_mft-EXACT_HASH --nocapture
+sudo env NTFS_MFT_TEST_VOLUME=/Volumes/Windows ./target/debug/deps/macos_raw_mft-EXACT_HASH --ignored --nocapture
 ```
 
 Repeat with `NTFS_MFT_TEST_VOLUME=/dev/diskNsM` for direct-device access. The test checks

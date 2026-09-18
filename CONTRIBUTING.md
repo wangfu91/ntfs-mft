@@ -50,10 +50,31 @@ cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-target
 
 For Windows API or live-volume behavior, see the
 [parity harness](integration-tests/README.md) and [validation guide](docs/VALIDATION.md).
-Tests may skip device access when privileges or a suitable volume are unavailable.
-State which checks ran, which skipped, and whether results came from fixtures,
-live devices, or CI. Do not treat a skipped device check as evidence of device
-correctness. Use only devices you are authorized to inspect.
+Live-device tests are marked `#[ignore]`; ordinary test runs and CI execute
+portable/fixture checks and report device checks as ignored. Running them with
+`--ignored` requires explicit volume configuration and appropriate permissions.
+Missing configuration, failed opens, unexpected filesystems, scan errors, and
+insufficient comparison data fail the selected test; they are not success skips.
+Use only devices you are authorized to inspect. Distinguish fixture, live-device,
+and CI evidence when reporting results.
+
+From an independent Administrator PowerShell on Windows:
+
+```powershell
+$env:NTFS_MFT_TEST_DRIVE = 'C'
+cargo test --test mft_byte_reader --test volume_accessors --test raw_mft_parallel_chunk_consistency -- --ignored --nocapture
+cargo test --manifest-path integration-tests/Cargo.toml --locked --test raw_mft_mft_consistency -- --ignored --nocapture
+```
+
+The separate ReFS check requires `NTFS_MFT_REFS_TEST_DRIVE` to name an actual
+ReFS volume; select it explicitly with
+`cargo test --test refs_unsupported -- --ignored --nocapture`.
+There are no default test drive letters.
+
+On Linux/macOS, set `NTFS_MFT_TEST_VOLUME` to the NTFS mount root or `/dev/...`
+device. Build tests with `--no-run`, then run the exact executable printed by
+Cargo with `--ignored --nocapture` in a context allowed to read that device.
+See [macOS instructions](docs/macos-raw-volume-access.md) for an example.
 
 The minimum supported Rust version (MSRV) is 1.88. CI checks the library
 on Rust 1.88.0 on each supported desktop OS. To reproduce locally:

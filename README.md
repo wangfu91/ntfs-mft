@@ -128,11 +128,12 @@ cargo bench --bench raw_mft_ingest
 ```
 
 On Linux and macOS, pass an NTFS mount point or `/dev/...` device instead of `C`.
-Device tests skip when privileges or a suitable volume are unavailable.
-Tests and benchmarks use `NTFS_MFT_TEST_DRIVE` on Windows and
-`NTFS_MFT_TEST_VOLUME` on Linux/macOS. ReFS rejection tests use
-`NTFS_MFT_REFS_TEST_DRIVE`. Benchmark tuning uses `NTFS_MFT_BENCH_*` and
-`NTFS_MFT_SERIAL_*`.
+Device tests are ignored by default. Select them with `--ignored` and explicitly
+set `NTFS_MFT_TEST_DRIVE` on Windows or `NTFS_MFT_TEST_VOLUME` on Linux/macOS;
+ReFS rejection uses `NTFS_MFT_REFS_TEST_DRIVE`. Once selected, missing prerequisites
+and runtime errors fail the test. See [live-test commands](CONTRIBUTING.md#validation).
+Benchmarks use the same source variables with their own defaults; tuning uses
+`NTFS_MFT_BENCH_*` and `NTFS_MFT_SERIAL_*`.
 
 See [Windows API parity tests](integration-tests/README.md),
 [offline parser differential tests](differential-tests/README.md), and

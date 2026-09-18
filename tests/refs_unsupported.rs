@@ -1,66 +1,36 @@
 #![cfg(windows)]
 
-//! Integration test: raw-MFT iteration on a ReFS volume returns
-//! `MftError::UnsupportedFilesystem`.
-//!
-//! On the developer machine D: is ReFS; `RawMft::new` must reject it.
-//! The test gracefully skips when:
-//!   * D: does not exist or cannot be opened (no drive or no privileges).
-//!   * D: is actually NTFS (in which case the assertion is not exercised).
-//!
-//! The `NTFS_MFT_REFS_TEST_DRIVE` environment variable may override the drive
-//! letter (default: `D`).
+//! Explicit ReFS rejection check. The selected volume must actually be ReFS.
+use ntfs_mft::{MftError, MftResult, RawMft, Volume};
+use windows::{Win32::Storage::FileSystem::GetVolumeInformationW, core::HSTRING};
 
-use ntfs_mft::{errors::MftError, raw_mft::RawMft, volume::Volume};
+#[path = "../support/live_volume.rs"]
+mod live_volume;
 
 #[test]
-fn refs_volume_returns_unsupported_filesystem() {
-    let drive = std::env::var("NTFS_MFT_REFS_TEST_DRIVE")
-        .ok()
-        .and_then(|s| s.chars().next())
-        .map(|c| c.to_ascii_uppercase())
-        .unwrap_or('D');
-
-    let volume = match Volume::from_drive_letter(drive) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!(
-                "refs_unsupported: skipping — drive {drive}: not available or not accessible: {e}"
-            );
-            return;
-        }
-    };
-
-    match RawMft::new(&volume) {
-        Err(MftError::UnsupportedFilesystem(msg)) => {
-            // Expected path: drive is ReFS and raw-MFT is rejected.
-            assert!(
-                !msg.is_empty(),
-                "UnsupportedFilesystem message must not be empty"
-            );
-            assert!(
-                matches!(
-                    RawMft::new(&volume),
-                    Err(MftError::UnsupportedFilesystem(_))
-                ),
-                "UnsupportedFilesystem must be returned consistently"
-            );
-        }
-        Err(other) => {
-            // Drive {drive} opened but failed for another reason.  This can
-            // happen when the drive is neither NTFS nor recognized as ReFS
-            // (e.g., FAT32, exFAT).  Accept gracefully.
-            eprintln!(
-                "refs_unsupported: drive {drive}: returned {other} \
-                 (not UnsupportedFilesystem — may not be ReFS; skipping assertion)"
-            );
-        }
-        Ok(_) => {
-            // Drive {drive} is NTFS — UnsupportedFilesystem not exercised.
-            eprintln!(
-                "refs_unsupported: drive {drive}: is NTFS; \
-                 UnsupportedFilesystem variant was not triggered (skipping assertion)"
-            );
-        }
+#[ignore = "requires NTFS_MFT_REFS_TEST_DRIVE and Administrator privileges"]
+fn refs_volume_returns_unsupported_filesystem() -> MftResult<()> {
+    let drive = live_volume::drive_from_env("NTFS_MFT_REFS_TEST_DRIVE")?;
+    let root = HSTRING::from(format!("{drive}:\\"));
+    let mut filesystem = [0u16; 32];
+    // SAFETY: root is terminated by HSTRING, and the output slice is writable
+    // for the duration of this synchronous call. No raw pointers are retained.
+    unsafe {
+        GetVolumeInformationW(&root, None, None, None, None, Some(&mut filesystem))?;
     }
+    let length = filesystem
+        .iter()
+        .position(|&c| c == 0)
+        .unwrap_or(filesystem.len());
+    assert_eq!(
+        String::from_utf16_lossy(&filesystem[..length]),
+        "ReFS",
+        "selected test volume must be ReFS"
+    );
+    let volume = Volume::from_drive_letter(drive)?;
+    assert!(matches!(
+        RawMft::new(&volume),
+        Err(MftError::UnsupportedFilesystem(_))
+    ));
+    Ok(())
 }

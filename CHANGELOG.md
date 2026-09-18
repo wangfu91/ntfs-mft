@@ -2,6 +2,10 @@
 
 ## 0.1.0 (unreleased)
 
+- Consolidate live-device test configuration and duplicate parity/ReFS checks.
+  Device tests are ignored by default and fail on missing prerequisites or
+  runtime errors when explicitly selected.
+
 - Align CI and contributor commands with the untracked root lockfile; retain
   locked dependency resolution for the standalone test harnesses.
 

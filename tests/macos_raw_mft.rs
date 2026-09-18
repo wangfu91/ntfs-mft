@@ -4,7 +4,7 @@
 
 use ntfs_mft::{
     MftResult, MftStream, MftStreamOptions, RawMftChunkPlanOptions, RawMftParallelScheduling,
-    RawMftScanOptions, Volume,
+    RawMftScanOptions,
 };
 use std::{
     io::{Read, Seek, SeekFrom},
@@ -12,22 +12,20 @@ use std::{
     path::Path,
 };
 
+#[path = "../support/live_volume.rs"]
+mod live_volume;
+
 #[test]
+#[ignore = "requires NTFS_MFT_TEST_VOLUME and raw-device permissions"]
 fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
-    let Some(source) = std::env::var_os("NTFS_MFT_TEST_VOLUME") else {
-        eprintln!("SKIP: set NTFS_MFT_TEST_VOLUME to an NTFS mount root or /dev/diskNsM");
-        return Ok(());
-    };
+    let source = live_volume::configured_source("NTFS_MFT_TEST_VOLUME")?;
     let source = Path::new(&source);
-    let volume = if source.starts_with("/dev") {
-        let volume = Volume::from_device_path(source)?;
+    let volume = live_volume::open()?;
+    if source.starts_with("/dev") {
         assert_eq!(volume.device_path(), Some(source));
-        volume
     } else {
-        let volume = Volume::from_mount_point(source)?;
         assert_eq!(volume.mount_point(), Some(source.canonicalize()?.as_path()));
-        volume
-    };
+    }
     let raw = volume.raw_mft()?;
     let options = RawMftScanOptions::builder().end_record(Some(4096)).build();
     let serial = raw

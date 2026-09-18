@@ -9,44 +9,17 @@ use std::num::{NonZeroU64, NonZeroUsize};
 
 use ntfs_mft::{
     NtfsFileReference,
-    errors::MftError,
     raw_mft::{RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftScanOptions},
-    volume::Volume,
 };
 
-fn pick_drive() -> char {
-    std::env::var("NTFS_MFT_TEST_DRIVE")
-        .ok()
-        .and_then(|s| s.chars().next())
-        .map(|c| c.to_ascii_uppercase())
-        .unwrap_or('C')
-}
+#[path = "../support/live_volume.rs"]
+mod live_volume;
 
 #[test]
+#[ignore = "requires NTFS_MFT_TEST_DRIVE and Administrator privileges"]
 fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String> {
-    let drive = pick_drive();
-    let volume = match Volume::from_drive_letter(drive) {
-        Ok(volume) => volume,
-        Err(MftError::NotElevated) => {
-            eprintln!("raw_mft_parallel_chunk_consistency: skipping (requires admin privileges)");
-            return Ok(());
-        }
-        Err(error) => {
-            eprintln!("raw_mft_parallel_chunk_consistency: skipping on {drive}: {error}");
-            return Ok(());
-        }
-    };
-
-    let raw_mft = match RawMft::new(&volume) {
-        Ok(raw_mft) => raw_mft,
-        Err(MftError::UnsupportedFilesystem(message)) => {
-            eprintln!(
-                "raw_mft_parallel_chunk_consistency: skipping (unsupported filesystem on {drive}: {message})"
-            );
-            return Ok(());
-        }
-        Err(error) => return Err(format!("RawMft::new failed on {drive}: {error}")),
-    };
+    let volume = live_volume::open().map_err(|e| e.to_string())?;
+    let raw_mft = RawMft::new(&volume).map_err(|e| e.to_string())?;
 
     let Some(max_records_per_chunk) = NonZeroU64::new(1024) else {
         return Err("max_records_per_chunk must be non-zero".into());
@@ -65,8 +38,7 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
         .take(8)
         .collect();
     if chunks.is_empty() {
-        eprintln!("raw_mft_parallel_chunk_consistency: skipping (no work chunks in sampled range)");
-        return Ok(());
+        return Err("no work chunks in sampled range; select a populated NTFS volume".into());
     }
 
     let serial_entries: Vec<_> = chunks

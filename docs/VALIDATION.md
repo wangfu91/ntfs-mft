@@ -2,6 +2,26 @@
 
 These are recorded local results, not the current CI status.
 
+## Scope cleanup phases (2026-09-18, Windows)
+
+- Export removal: default tests, all-target Clippy, rustdoc with warnings denied,
+  both test harnesses, formatting, and offline package rebuild passed. The
+  sparse-fixture JSON parser and binary fixtures were retained.
+- Lockfile policy: a fresh tracked-file copy without a root Cargo.lock resolved
+  dependencies and compiled all targets offline. Both harnesses still passed
+  with their tracked lockfiles and `--locked`.
+- Live-test consolidation: 183 library tests, offline integration tests, two
+  configuration tests, and doctests passed. Four root live tests and one parity
+  test were explicitly reported as ignored. All 11 differential comparisons and
+  Clippy for the library and both harnesses passed.
+- Explicitly selecting live tests with missing or malformed configuration
+  produced the expected failures; these negative checks did not access a device.
+- Formatting, warning-free rustdoc, package rebuild, and the downstream
+  SpaceRover raw-mft consumer compile check passed after all phases.
+- Linux library cross-compilation passed. Linux all-target checking was blocked
+  by missing x86_64-linux-gnu-gcc for a C build dependency. Native Linux/macOS and
+  physical NTFS/ReFS execution were not performed in this run.
+
 ## Path API removal (2026-09-18, Windows)
 
 - Default and all-feature test suites passed (187 and 194 library tests,

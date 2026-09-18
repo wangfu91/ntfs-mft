@@ -1,46 +1,15 @@
 //! Live-volume smoke test; deterministic fragmented-device tests live in the module.
-use ntfs_mft::{MftError, MftResult, MftStream, MftStreamOptions, Volume};
+use ntfs_mft::{MftError, MftResult, MftStream, MftStreamOptions};
 use std::io::{Read, Seek, SeekFrom};
 
+#[path = "../support/live_volume.rs"]
+mod live_volume;
+
 #[test]
+#[ignore = "requires an explicitly configured NTFS volume and raw-device permissions"]
 fn volume_byte_reader_feeds_iterator_and_owns_independent_handle() -> MftResult<()> {
-    #[cfg(windows)]
-    let opened = {
-        let drive = std::env::var("NTFS_MFT_TEST_DRIVE")
-            .ok()
-            .and_then(|s| s.chars().next())
-            .unwrap_or('C');
-        eprintln!("Testing Windows volume {drive}:");
-        Volume::from_drive_letter(drive)
-    };
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let opened = {
-        let Ok(path) = std::env::var("NTFS_MFT_TEST_VOLUME") else {
-            eprintln!("SKIP: set NTFS_MFT_TEST_VOLUME to an NTFS device or mount point");
-            return Ok(());
-        };
-        if path.starts_with("/dev/") {
-            Volume::from_device_path(path)
-        } else {
-            Volume::from_mount_point(path)
-        }
-    };
-    let volume = match opened {
-        Ok(volume) => volume,
-        Err(error) => {
-            eprintln!("SKIP: volume unavailable: {error}");
-            return Ok(());
-        }
-    };
-    eprintln!("Opened volume; discovering raw MFT");
-    let raw = match volume.raw_mft() {
-        Ok(raw) => raw,
-        Err(MftError::UnsupportedFilesystem(reason)) => {
-            eprintln!("SKIP: {reason}");
-            return Ok(());
-        }
-        Err(error) => return Err(error),
-    };
+    let volume = live_volume::open()?;
+    let raw = volume.raw_mft()?;
     eprintln!("Discovered raw MFT; reading root through existing API");
     let record_size = raw.file_record_size();
     let expected = raw

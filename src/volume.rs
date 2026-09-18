@@ -433,83 +433,14 @@ mod linux_tests {
 
 #[cfg(all(test, windows))]
 mod tests {
-    use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, HANDLE};
+    use windows::Win32::Foundation::HANDLE;
 
-    use crate::{
-        errors::MftError,
-        volume::{Volume, VolumeSource},
-    };
+    use crate::volume::{Volume, VolumeSource};
 
     #[test]
     fn volume_source_accessors_construct_without_io() {
         let volume = Volume::mock(HANDLE(std::ptr::null_mut()), VolumeSource::DriveLetter('C'));
         assert_eq!(volume.drive_letter(), Some('C'));
-    }
-
-    // Integration tests that require actual filesystem access
-    mod integration_tests {
-        use super::*;
-
-        #[test]
-        fn test_get_volume_handle_from_valid_drive_letter() -> Result<(), MftError> {
-            let drive_letter = 'C';
-            match Volume::from_drive_letter(drive_letter) {
-                Ok(volume) => {
-                    assert!(!volume.handle.is_invalid(), "Volume handle should be valid");
-                    assert_eq!(
-                        volume.drive_letter(),
-                        Some(drive_letter),
-                        "Drive letter should match"
-                    );
-                    assert!(volume.mount_point().is_none(), "Mount point should be None");
-                    Ok(())
-                }
-                Err(MftError::NotElevated) => {
-                    eprintln!("Skipping test - requires admin privileges");
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
-        }
-
-        #[test]
-        fn test_get_volume_handle_from_invalid_drive_letter() {
-            let drive_letter = 'W'; // Assuming W is not a valid drive letter
-            let result = Volume::from_drive_letter(drive_letter);
-
-            // The test should always return an error - either permission denied or file not found
-            assert!(
-                result.is_err(),
-                "Should return an error for invalid drive letter"
-            );
-
-            // Log the specific error for debugging purposes
-            match result {
-                Err(MftError::NotElevated) => {
-                    eprintln!("Got permission error - test requires admin privileges");
-                }
-                Err(MftError::WinApi(err)) if err.code() == ERROR_FILE_NOT_FOUND.into() => {
-                    eprintln!("Got expected file not found error");
-                }
-                Err(other_err) => {
-                    eprintln!("Got other error (acceptable): {other_err:?}");
-                }
-                Ok(_) => {
-                    panic!("Unexpected success - drive W should not exist");
-                }
-            }
-        }
-
-        #[test]
-        fn test_get_volume_handle_from_invalid_mount_point() {
-            let mount_point = r"C:\invalid\mount\point";
-            let result = Volume::from_mount_point(std::path::Path::new(mount_point));
-            eprintln!("Result: {result:?}");
-            assert!(
-                result.is_err(),
-                "Should return an error for invalid mount point"
-            );
-        }
     }
 }
 

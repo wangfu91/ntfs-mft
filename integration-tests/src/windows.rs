@@ -51,35 +51,6 @@ impl Volume {
     }
 }
 
-pub fn pick_drive() -> char {
-    std::env::var("NTFS_MFT_TEST_DRIVE")
-        .ok()
-        .and_then(|s| s.chars().next())
-        .map(|c| c.to_ascii_uppercase())
-        .unwrap_or('C')
-}
-
-pub enum UsnRecordVersion {
-    V2,
-}
-pub struct MftIterOptions {
-    max_version: u16,
-}
-impl MftIterOptions {
-    pub fn builder() -> Self {
-        Self { max_version: 3 }
-    }
-    pub fn max_usn_record_version(mut self, version: UsnRecordVersion) -> Self {
-        self.max_version = match version {
-            UsnRecordVersion::V2 => 2,
-        };
-        self
-    }
-    pub fn build(self) -> Self {
-        self
-    }
-}
-
 pub struct Mft<'a> {
     volume: &'a Volume,
 }
@@ -88,9 +59,6 @@ impl<'a> Mft<'a> {
         Self { volume }
     }
     pub fn try_iter(&self) -> io::Result<MftIter<'a>> {
-        self.try_iter_with_options(MftIterOptions::builder().build())
-    }
-    pub fn try_iter_with_options(&self, options: MftIterOptions) -> io::Result<MftIter<'a>> {
         let mut iter = MftIter {
             volume: self.volume,
             request: MFT_ENUM_DATA_V1 {
@@ -98,7 +66,8 @@ impl<'a> Mft<'a> {
                 LowUsn: 0,
                 HighUsn: i64::MAX,
                 MinMajorVersion: 2,
-                MaxMajorVersion: options.max_version,
+                // Pin V2 for standard 64-bit NTFS identities in parity checks.
+                MaxMajorVersion: 2,
             },
             entries: VecDeque::new(),
             done: false,

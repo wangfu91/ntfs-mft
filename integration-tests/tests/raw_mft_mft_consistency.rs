@@ -1,343 +1,79 @@
 #![cfg(windows)]
 
-//! Integration test: compare `RawMft` records with `Mft` API records.
-//!
-//! We sample entries from `Mft` (`FSCTL_ENUM_USN_DATA`), then look up the
-//! corresponding raw FILE record by record number via `RawMft::read_record`.
-//! The test asserts high agreement on core identity fields:
-//!   - file ID (`fid` / `file_reference`)
-//!   - parent file ID
-//!   - directory bit
-//!   - file name (case-insensitive)
-//!
-//! The filesystem is live, so a small mismatch rate is tolerated.
+//! Compare raw records with independently enumerated Windows V2 records.
+//! Run explicitly on a configured NTFS volume with Administrator privileges.
+use ntfs_mft::{MftResult, RawMft};
+use ntfs_mft_integration_tests::windows::{Mft, Volume};
 
-use ntfs_mft::{MftError, RawMft, Volume as RawVolume};
-
-use ntfs_mft_integration_tests::windows::{Mft, MftIterOptions, UsnRecordVersion, Volume};
-
-struct SampledMftEntry {
-    fid: ntfs_mft_integration_tests::Fid,
-    parent_fid: ntfs_mft_integration_tests::Fid,
-    is_dir: bool,
-    file_name: std::ffi::OsString,
-}
-
-fn pick_drive() -> char {
-    std::env::var("NTFS_MFT_TEST_DRIVE")
-        .ok()
-        .and_then(|s| s.chars().next())
-        .map(|c| c.to_ascii_uppercase())
-        .unwrap_or('C')
-}
+#[path = "../../support/live_volume.rs"]
+mod live_volume;
 
 #[test]
-fn raw_mft_and_mft_api_agree_on_sampled_entries() {
-    let drive = pick_drive();
-    let volume = match Volume::from_drive_letter(drive) {
-        Ok(v) => v,
-        Err(MftError::NotElevated) => {
-            eprintln!("raw_mft_mft_consistency: skipping (requires admin privileges)");
-            return;
-        }
-        Err(e) => {
-            eprintln!("raw_mft_mft_consistency: skipping on {drive}: {e}");
-            return;
-        }
-    };
-
+#[ignore = "requires NTFS_MFT_TEST_DRIVE and Administrator privileges"]
+fn raw_mft_and_mft_api_record_parity_standard_ids() -> MftResult<()> {
+    let drive = live_volume::drive_from_env("NTFS_MFT_TEST_DRIVE")?;
+    let raw_volume = live_volume::open()?;
+    let raw_mft = RawMft::new(&raw_volume)?;
+    let volume = Volume::from_drive_letter(drive)?;
     let mft = Mft::new(&volume);
-    let mut iter = match mft.try_iter() {
-        Ok(it) => it,
-        Err(e) => {
-            eprintln!("raw_mft_mft_consistency: skipping (Mft::try_iter failed: {e})");
-            return;
-        }
-    };
-
-    const SAMPLE_LIMIT: usize = 10_000;
-    const MAX_MFT_SCAN: usize = 250_000;
-    const MIN_COMPARED: usize = 200;
-    let mut samples = Vec::with_capacity(SAMPLE_LIMIT);
-    let mut mft_ok = 0usize;
-    let mut mft_err = 0usize;
-    let mut scanned = 0usize;
-
-    while samples.len() < SAMPLE_LIMIT && scanned < MAX_MFT_SCAN {
-        let Some(item) = iter.next() else {
-            break;
-        };
-        scanned += 1;
-
-        match item {
-            Ok(entry) => {
-                mft_ok += 1;
-                if entry.fid.is_standard() && !entry.file_name.is_empty() {
-                    samples.push(SampledMftEntry {
-                        fid: entry.fid,
-                        parent_fid: entry.parent_fid,
-                        is_dir: entry.is_dir(),
-                        file_name: entry.file_name,
-                    });
-                }
-            }
-            Err(_) => {
-                // Keep scanning: individual record parse errors are expected to be non-fatal.
-                mft_err += 1;
-            }
-        }
-    }
-
-    if samples.is_empty() {
-        eprintln!(
-            "raw_mft_mft_consistency: skipping (no comparable Mft entries, ok={mft_ok}, err={mft_err}, scanned={scanned})"
-        );
-        return;
-    }
-
-    let raw_volume = RawVolume::from_drive_letter(drive).expect("open raw volume");
-    let raw_mft = match RawMft::new(&raw_volume) {
-        Ok(m) => m,
-        Err(MftError::UnsupportedFilesystem(msg)) => {
-            eprintln!(
-                "raw_mft_mft_consistency: skipping (unsupported filesystem on {drive}: {msg})"
-            );
-            return;
-        }
-        Err(e) => panic!("RawMft::new failed: {e}"),
-    };
-
-    if !samples.is_empty() {
-        let mut compared = 0usize;
-        let mut agreements = 0usize;
-        let mut lookup_misses = 0usize;
-        let mut logged_disagreements = 0usize;
-
-        for entry in &samples {
-            let Some(record_number) = entry.fid.record_number() else {
-                continue;
-            };
-
-            let raw_entry = match raw_mft.read_record(record_number) {
-                Ok(Some(r)) => r,
-                Ok(None) => {
-                    lookup_misses += 1;
-                    continue;
-                }
-                Err(e) => panic!(
-                    "RawMft::read_record({record_number}) failed for fid {}: {e}",
-                    entry.fid
-                ),
-            };
-
-            if !raw_entry.is_used {
-                lookup_misses += 1;
-                continue;
-            }
-
-            compared += 1;
-
-            let same_fid = Some(raw_entry.file_reference.get()) == entry.fid.as_u64();
-            let same_parent = Some(raw_entry.parent_reference.get()) == entry.parent_fid.as_u64();
-            let same_dir = raw_entry.is_directory == entry.is_dir;
-            let same_name = raw_entry
-                .file_name
-                .to_string_lossy()
-                .eq_ignore_ascii_case(&entry.file_name.to_string_lossy());
-
-            if same_fid && same_parent && same_dir && same_name {
-                agreements += 1;
-            } else if logged_disagreements < 10 {
-                logged_disagreements += 1;
-                eprintln!(
-                    "raw_mft_mft_consistency: mismatch fid={} record={} name(raw='{}', mft='{}') parent(raw={}, mft={}) dir(raw={}, mft={})",
-                    entry.fid,
-                    record_number,
-                    raw_entry.file_name.to_string_lossy(),
-                    entry.file_name.to_string_lossy(),
-                    raw_entry.parent_reference,
-                    entry.parent_fid,
-                    raw_entry.is_directory,
-                    entry.is_dir,
-                );
-            }
-        }
-
-        assert!(
-            compared >= MIN_COMPARED,
-            "expected to compare at least {MIN_COMPARED} entries; got {compared} (lookup_misses={lookup_misses})"
-        );
-
-        let agreement_rate = agreements as f64 / compared as f64;
-        assert!(
-            agreement_rate >= 0.90,
-            "expected >= 90% agreement between RawMft and Mft API; got {agreements}/{compared} ({:.1}%), lookup_misses={lookup_misses}",
-            agreement_rate * 100.0
-        );
-    }
-}
-
-/// Strict record-by-record parity check using standard NTFS file IDs.
-///
-/// Pins `max_usn_record_version` to `2` so `FSCTL_ENUM_USN_DATA` always
-/// returns `USN_RECORD_V2` (standard 64-bit NTFS file IDs), even on Windows 11
-/// builds that otherwise prefer V3.
-///
-/// For each entry the matching raw FILE record is fetched by record number
-/// with [`RawMft::read_record`] and compared field-by-field.  Because the
-/// filesystem is live (log files are created and deleted continuously),
-/// a few mismatches between the two reads are normal and tolerated.
-///
-/// Skips automatically when:
-///  - the process is not elevated, or
-///  - `C:` (or the drive set by `NTFS_MFT_TEST_DRIVE`) is not NTFS.
-#[test]
-fn raw_mft_and_mft_api_record_parity_standard_ids() {
-    let drive = pick_drive();
-    let volume = match Volume::from_drive_letter(drive) {
-        Ok(v) => v,
-        Err(MftError::NotElevated) => {
-            eprintln!("raw_mft_record_parity: skipping (requires admin privileges)");
-            return;
-        }
-        Err(e) => {
-            eprintln!("raw_mft_record_parity: skipping on {drive}: {e}");
-            return;
-        }
-    };
-
     const SAMPLE_LIMIT: usize = 500;
-
-    // Pin MaxMajorVersion=2: forces USN_RECORD_V2 (64-bit standard IDs) even
-    // on Windows 11 builds that would otherwise return USN_RECORD_V3.
-    let options = MftIterOptions::builder()
-        .max_usn_record_version(UsnRecordVersion::V2)
-        .build();
-
-    let mft = Mft::new(&volume);
-    let iter = match mft.try_iter_with_options(options) {
-        Ok(it) => it,
-        Err(e) => {
-            eprintln!("raw_mft_record_parity: skipping (Mft::try_iter_with_options failed: {e})");
-            return;
-        }
-    };
-
-    // V2 records always carry standard 64-bit IDs; no need to filter.
-    let samples: Vec<SampledMftEntry> = iter
-        .flatten()
-        .filter(|e| !e.file_name.is_empty())
-        .take(SAMPLE_LIMIT)
-        .map(|e| SampledMftEntry {
-            fid: e.fid,
-            parent_fid: e.parent_fid,
-            is_dir: e.is_dir(),
-            file_name: e.file_name,
-        })
-        .collect();
-
-    if samples.is_empty() {
-        eprintln!("raw_mft_record_parity: skipping (no Mft entries found)");
-        return;
-    }
-
-    let raw_volume = RawVolume::from_drive_letter(drive).expect("open raw volume");
-    let raw_mft = match RawMft::new(&raw_volume) {
-        Ok(m) => m,
-        Err(MftError::UnsupportedFilesystem(msg)) => {
-            eprintln!("raw_mft_record_parity: skipping (unsupported filesystem: {msg})");
-            return;
-        }
-        Err(e) => panic!("RawMft::new failed: {e}"),
-    };
-
-    let mut compared = 0usize;
-    let mut agreements = 0usize;
-    // Entries not found or already freed between the two reads.
-    let mut transient_misses = 0usize;
-    let mut logged_disagreements = 0usize;
-
-    for entry in &samples {
-        let record_number = match entry.fid.record_number() {
-            Some(n) => n,
-            None => continue,
-        };
-
-        let raw_entry = match raw_mft.read_record(record_number) {
-            Ok(Some(r)) => r,
-            // Record freed between the Mft scan and the RawMft lookup — fine.
-            Ok(None) => {
-                transient_misses += 1;
-                continue;
+    let mut samples = Vec::new();
+    for item in mft.try_iter()? {
+        // An enumeration/decoder failure must fail the test, not disappear in flatten().
+        let entry = item?;
+        if !entry.file_name.is_empty() {
+            samples.push(entry);
+            if samples.len() == SAMPLE_LIMIT {
+                break;
             }
-            Err(e) => panic!(
-                "RawMft::read_record({record_number}) failed for fid {}: {e}",
-                entry.fid
-            ),
+        }
+    }
+    assert!(
+        !samples.is_empty(),
+        "no named records available for parity comparison"
+    );
+    let mut compared = 0;
+    let mut agreements = 0;
+    let mut transient_misses = 0;
+    for entry in &samples {
+        let number = entry
+            .fid
+            .record_number()
+            .expect("V2 must return standard NTFS IDs");
+        let Some(raw_entry) = raw_mft.read_record(number)? else {
+            transient_misses += 1;
+            continue;
         };
-
         if !raw_entry.is_used {
-            // Same: allocated then freed in the window between scans.
             transient_misses += 1;
             continue;
         }
-
         compared += 1;
-
         let same_fid = Some(raw_entry.file_reference.get()) == entry.fid.as_u64();
         let same_parent = Some(raw_entry.parent_reference.get()) == entry.parent_fid.as_u64();
-        let same_dir = raw_entry.is_directory == entry.is_dir;
-        // Case-insensitive: NTFS is case-insensitive and the two APIs may
-        // normalise differently for short names vs long names.
+        let same_dir = raw_entry.is_directory == entry.is_dir();
         let same_name = raw_entry
             .file_name
             .to_string_lossy()
             .eq_ignore_ascii_case(&entry.file_name.to_string_lossy());
-
         if same_fid && same_parent && same_dir && same_name {
             agreements += 1;
-        } else {
-            if logged_disagreements < 10 {
-                logged_disagreements += 1;
-                eprintln!(
-                    "raw_mft_record_parity: disagreement record={record_number} \
-                     fid_ok={same_fid} parent_ok={same_parent} dir_ok={same_dir} name_ok={same_name}\n  \
-                     raw: name='{}' parent={} dir={}\n  \
-                     mft: name='{}' parent={} dir={}",
-                    raw_entry.file_name.to_string_lossy(),
-                    raw_entry.parent_reference,
-                    raw_entry.is_directory,
-                    entry.file_name.to_string_lossy(),
-                    entry.parent_fid,
-                    entry.is_dir,
-                );
-            }
+        } else if compared - agreements <= 10 {
+            eprintln!(
+                "record {number}: fid={same_fid} parent={same_parent} directory={same_dir} name={same_name}"
+            );
         }
     }
-
-    if compared == 0 {
-        eprintln!(
-            "raw_mft_record_parity: skipping assertion \
-             (all {} sampled records were transient misses — \
-             filesystem churn too high to compare)",
-            samples.len()
-        );
-        return;
-    }
-
-    // Allow up to 5 % disagreement to absorb live-filesystem churn
-    // (files renamed, moved, or recreated between the two reads).
-    let agreement_rate = agreements as f64 / compared as f64;
     assert!(
-        agreement_rate >= 0.95,
-        "expected >= 95% field agreement between RawMft and Mft API on standard-ID records; \
-         got {agreements}/{compared} ({:.1}%), transient_misses={transient_misses}",
-        agreement_rate * 100.0
+        compared >= samples.len().min(200),
+        "insufficient comparable records: {compared}, transient misses: {transient_misses}"
     );
-
-    eprintln!(
-        "raw_mft_record_parity: {agreements}/{compared} ({:.1}%) agreement, \
-         transient_misses={transient_misses}",
-        agreement_rate * 100.0
+    // Allow up to 5% disagreement from concurrent filesystem changes.
+    let rate = agreements as f64 / compared as f64;
+    assert!(
+        rate >= 0.95,
+        "expected >=95% identity/metadata agreement: {agreements}/{compared}, transient misses: {transient_misses}"
     );
+    eprintln!("Live parity: {agreements}/{compared} matched; transient misses: {transient_misses}");
+    Ok(())
 }
