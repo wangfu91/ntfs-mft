@@ -13,14 +13,13 @@
 //! | [`RawMft::scan_entries`] | Rich entries | `24..`, bitmap-used base records | Skipped |
 //! | [`RawMft::parallel`] then `.rich()` | Rich batches | Same raw selection | Skipped |
 //! | [`RawMft::parallel`] then `.lean()` | Lean batches | Same raw selection | Skipped |
-//! | [`RawMft::scan_entries_diagnostic`] | Rich entries and evidence | Supplied raw selection | Counted, bounded retention |
 //! | [`MftStream::iter_records`] | Stream records and evidence | Every slot from zero | Returned per slot |
 //!
-//! Scan I/O errors are returned. Diagnostic and stream iterators stop on I/O
-//! failure; parse errors can be recoverable. No live scan is an atomic snapshot.
+//! Scan I/O errors are returned. Stream iterators stop on I/O failure; parse
+//! errors can be recoverable. No live scan is an atomic snapshot.
 //! Rich entries retain their [`RawMftEntryOptions`]; lean options omit metadata
 //! settings for fields they cannot return. Empty ordinary fields do not prove
-//! absence: retain diagnostic metadata when completeness matters.
+//! absence: use [`MftStream`] and retain its metadata when completeness matters.
 //!
 //! [`NtfsName`] preserves exact UTF-16 on every platform; display and native-path
 //! conversions are explicit. [`NtfsFileReference`] exposes checked NTFS identity.

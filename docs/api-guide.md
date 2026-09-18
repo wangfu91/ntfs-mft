@@ -1,9 +1,8 @@
 # Choosing an MFT API
 
-Use a live volume scan for a best-effort base-record listing from a volume. Use a
-diagnostic live volume scan when skipped-record counts and metadata evidence matter.
-Use `MftStream` when each logical record position, including invalid or extension records,
-needs an explicit outcome.
+Use a live volume scan for a best-effort base-record listing from a volume. Use
+`MftStream` when each logical record position, including invalid or extension
+records, needs an explicit outcome or metadata evidence.
 
 A **live volume scan** reads directly from an NTFS volume/device. An **offline
 MFT scan** parses an extracted logical `$MFT` file or buffer. `read` denotes a
@@ -16,14 +15,13 @@ record interpretation. `RawMft` and `MftStream` name the data access abstraction
 | `raw.scan_entries()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
 | `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
 | `raw.parallel().lean()` | Batches of `RawMftBatchEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
-| `raw.scan_entries_diagnostic(options, limit)` | `RawMftDiagnosticRecord` plus final report | Supplied raw selection | Counts skipped categories, retains bounded parser errors; scan I/O error returned once, then stops |
 | `stream.iter_records()` | `MftRecord` per valid record position | All record positions from zero, including unused and extensions | Parse errors returned per position and iteration continues; I/O error stops iteration |
 
 MftStream extension I/O failures are attached to the base record's diagnostics;
 the iterator yields that record and then stops. Ordinary live volume scans use the
 bitmap for selection; if it is unavailable, inspect each entry's `is_used`.
-Neither a successful raw scan nor reaching the end of a diagnostic scan proves
-complete metadata. Live volumes are not atomic snapshots.
+A successful raw scan does not prove complete metadata. Live volumes are not
+atomic snapshots.
 
 ## Selection and metadata are separate choices
 
@@ -75,10 +73,10 @@ another callback fails; completed side effects are not rolled back.
 
 ## Preserve evidence, names, and identity
 
-Use `RawMftDiagnosticRecord.metadata` to distinguish absent, present, unknown,
-and not-collected fields. Keep its diagnostics and the iterator's final report.
-Raw attribute-list enrichment remains selective and is reported as unverified;
-use `MftStream` inspection for its supported extension-validation evidence.
+Use `MftRecord.metadata` to distinguish absent, present, and unknown fields, and
+retain its diagnostics when completeness matters. Raw attribute-list enrichment
+remains selective; use `MftStream` inspection for its supported
+extension-validation evidence.
 `MftStreamOptions::new(size)` defaults to no extension resolution; enable
 `.resolve_extensions(true)` for one level of resident attribute-list references.
 An MFT-only source cannot recover arbitrary nonresident attribute payloads.

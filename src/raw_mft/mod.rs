@@ -37,9 +37,7 @@ mod attr_list;
 mod bootstrap;
 mod byte_reader;
 mod chunk_plan;
-mod diagnostics;
 mod metadata;
-pub use diagnostics::{RawMftDiagnosticRecord, RawMftScanDiagnostic, RawMftScanReport};
 pub use metadata::{
     MftDiagnostic, MftDiagnosticKind, MftExternalPayload, MftFieldState, MftMetadata,
 };
@@ -84,7 +82,7 @@ pub use options::{
 };
 pub use parallel::RawMftParallelScheduling;
 pub use parallel::{Lean, RawMftParallelScan, Rich, Unselected};
-pub use serial::{RawMftDiagnosticEntryScan, RawMftEntryScan};
+pub use serial::RawMftEntryScan;
 pub use stream::{MftRecord, MftRecordIter, MftStream, MftStreamOptions};
 
 /// Default I/O buffer size for raw `$MFT` iteration.

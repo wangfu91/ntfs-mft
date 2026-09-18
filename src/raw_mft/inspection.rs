@@ -95,10 +95,6 @@ impl RecordInspection {
             .any(|diagnostic| matches!(diagnostic.kind, MftDiagnosticKind::MalformedAttribute))
     }
 
-    pub fn into_diagnostics(self) -> Vec<MftDiagnostic> {
-        self.diagnostics
-    }
-
     pub fn into_diagnostics_and_external_payloads(
         self,
     ) -> (Vec<MftDiagnostic>, Vec<MftExternalPayload>) {
