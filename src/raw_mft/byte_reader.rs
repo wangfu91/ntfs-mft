@@ -23,6 +23,15 @@ pub struct MftByteReader {
     _volume: Volume,
 }
 
+impl std::fmt::Debug for MftByteReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MftByteReader")
+            .field("length", &self.inner.length)
+            .field("position", &self.inner.position)
+            .finish_non_exhaustive()
+    }
+}
+
 impl RawMft<'_> {
     /// Open an independent, read-only logical `$MFT` byte stream.
     ///

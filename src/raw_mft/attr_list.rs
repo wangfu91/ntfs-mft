@@ -133,6 +133,7 @@ pub(super) fn enrich_from_attr_list(
         |reader, request| load_rich_extension(reader, boot, extent_map, request, build_options),
         |ext_entry| {
             if needs.file_name {
+                entry.observed_fields |= ext_entry.observed_fields & 2;
                 merge_extension_links(entry, &ext_entry);
                 if needs.data || needs.reparse {
                     merge_extension_data(entry, &ext_entry, needs);
@@ -534,7 +535,9 @@ fn batch_entry_enrichment_needs(entry: &RawMftBatchScratch) -> EnrichmentNeeds {
 
 fn merge_extension_data(entry: &mut RawMftEntry, ext_entry: &RawMftEntry, needs: EnrichmentNeeds) {
     if needs.data
-        && (ext_entry.real_size > entry.real_size
+        && ext_entry.has_unnamed_data
+        && (!entry.has_unnamed_data
+            || ext_entry.real_size > entry.real_size
             || ext_entry.allocated_size > entry.allocated_size)
     {
         entry.real_size = ext_entry.real_size;
@@ -548,6 +551,7 @@ fn merge_extension_data(entry: &mut RawMftEntry, ext_entry: &RawMftEntry, needs:
         entry.is_encrypted |= ext_entry.is_encrypted;
     }
     if needs.reparse {
+        entry.observed_fields |= ext_entry.observed_fields & 4;
         entry.is_reparse_point |= ext_entry.is_reparse_point;
         entry.reparse_tag = ext_entry.reparse_tag;
     }
@@ -564,7 +568,9 @@ fn merge_batch_extension_data(
     needs: EnrichmentNeeds,
 ) {
     if needs.data
-        && (ext_entry.entry.real_size > entry.entry.real_size
+        && ext_entry.have_unnamed_data
+        && (!entry.have_unnamed_data
+            || ext_entry.entry.real_size > entry.entry.real_size
             || ext_entry.entry.allocated_size > entry.entry.allocated_size)
     {
         entry.entry.real_size = ext_entry.entry.real_size;
@@ -785,12 +791,13 @@ mod tests {
 
     fn complete_entry() -> RawMftEntry {
         RawMftEntry {
+            observed_fields: 0,
             collection_options: crate::RawMftEntryOptions::default(),
             record_number: 10,
             sequence_number: 1,
             file_reference: NtfsFileReference::new(10),
             parent_reference: NtfsFileReference::new(5),
-            base_record_number: 0,
+            base_reference: NtfsFileReference::new(0),
             hard_link_count: 1,
             flags: 0,
             is_used: true,
@@ -823,6 +830,21 @@ mod tests {
     #[test]
     fn complete_entry_needs_no_enrichment() {
         assert!(!should_enrich_from_attr_list(&complete_entry()));
+    }
+
+    #[test]
+    fn extension_with_empty_data_still_establishes_presence() {
+        let mut base = complete_entry();
+        base.has_unnamed_data = false;
+        let extension = complete_entry();
+        let needs = raw_entry_enrichment_needs(&base);
+        merge_extension_data(&mut base, &extension, needs);
+        assert!(base.has_unnamed_data);
+        assert_eq!(base.real_size, 0);
+        assert_eq!(
+            base.metadata().unnamed_data,
+            crate::MftFieldState::Present { complete: false }
+        );
     }
 
     #[test]

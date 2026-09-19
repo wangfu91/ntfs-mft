@@ -5,7 +5,7 @@ use std::{marker::PhantomData, num::NonZeroUsize, thread};
 use crate::{
     errors::MftError,
     raw_mft::{
-        RawMft, RawMftBatchEntry, RawMftChunkBatch, RawMftChunkPlanOptions, RawMftEntry,
+        RawMft, RawMftChunkBatch, RawMftChunkPlanOptions, RawMftEntry, RawMftLeanEntry,
         RawMftLeanScanOptions, RawMftScanOptions, RawMftWorkChunk, parallel::ChunkScheduling,
     },
 };
@@ -31,13 +31,13 @@ impl From<RawMftParallelScheduling> for ChunkScheduling {
 }
 
 /// Metadata projection has not yet been selected.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Unselected;
 /// Full entry metadata, matching rich serial iteration.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Rich;
 /// Reduced entry metadata for high-throughput scans.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Lean;
 
 /// Configured parallel raw `$MFT` scan. Choose `rich()` or `lean()`
@@ -66,7 +66,7 @@ pub struct Lean;
 /// mft.parallel().lean().scan_options(ntfs_mft::RawMftScanOptions::default());
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[must_use]
 pub struct RawMftParallelScan<'m, 'v, P = Unselected> {
     projection: PhantomData<P>,

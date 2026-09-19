@@ -11,5 +11,6 @@ Initial public release.
   `Read + Seek` sources.
 - Expose record metadata including names, timestamps, sizes, file attributes,
   hard links, alternate data streams, and parent references.
-- Report corrupt records as item-level errors where scanning can safely
-  continue.
+- Preserve lossless UTF-16 names and complete NTFS file references.
+- Report record corruption and metadata completeness when parsing logical MFT
+  streams.

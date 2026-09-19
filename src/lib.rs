@@ -26,6 +26,30 @@
 //! Full-path reconstruction and directory-tree policy belong to the caller.
 //! For a logical stream from an existing volume, [`MftStream::from_raw_mft`]
 //! derives record size and opens an independently owned byte reader.
+//!
+//! # Quick start
+//!
+//! ```no_run
+//! use ntfs_mft::{MftResult, Volume};
+//! # fn main() -> MftResult<()> {
+//! #[cfg(windows)]
+//! let volume = Volume::from_drive_letter('C')?;
+//! #[cfg(target_os = "linux")]
+//! let volume = Volume::from_mount_point("/media/user/windows")?;
+//! #[cfg(target_os = "macos")]
+//! let volume = Volume::from_mount_point("/Volumes/Windows")?;
+//! let raw = volume.raw_mft()?;
+//! for entry in raw.scan_entries()?.take(20) {
+//!     println!("{}", entry?.file_name);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! Raw volume access requires suitable OS privileges. For an extracted `$MFT`,
+//! use [`MftStream::from_path`] with [`MftStreamOptions`], using ordinary file
+//! permissions. See the [API guide](https://github.com/wangfu91/ntfs-mft/blob/master/docs/api-guide.md)
+//! and [release notes](https://github.com/wangfu91/ntfs-mft/blob/master/CHANGELOG.md).
 
 mod ntfs_name;
 pub use ntfs_name::NtfsName;
@@ -37,11 +61,23 @@ mod privilege;
 pub mod raw_mft;
 mod time;
 pub mod volume;
+#[doc(inline)]
 pub use errors::{FileReferenceError, MftError, ScanError};
 pub use file_attributes::FileAttributes;
 pub use file_reference::NtfsFileReference;
-pub use raw_mft::*;
+#[doc(inline)]
+pub use raw_mft::{
+    AdsInfo, DEFAULT_ATTR_BUFFER_BYTES, DEFAULT_BUFFER_BYTES, FileNameNamespace, Lean,
+    MftByteReader, MftDiagnostic, MftDiagnosticKind, MftExternalPayload, MftFieldState,
+    MftMetadata, MftRecord, MftRecordIter, MftStream, MftStreamOptions, RawMft, RawMftChunkBatch,
+    RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawMftEntry, RawMftEntryOptions,
+    RawMftEntryOptionsBuilder, RawMftEntryScan, RawMftLeanEntry, RawMftLeanScanOptions,
+    RawMftLeanScanOptionsBuilder, RawMftLink, RawMftParallelScan, RawMftParallelScheduling,
+    RawMftReadBuffers, RawMftRecordRange, RawMftScanOptions, RawMftScanOptionsBuilder,
+    RawMftWorkChunk, Rich, Unselected,
+};
 pub use time::Filetime;
+#[doc(inline)]
 pub use volume::Volume;
 /// Result of an NTFS MFT operation.
 pub type MftResult<T> = std::result::Result<T, MftError>;

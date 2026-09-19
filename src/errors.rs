@@ -70,6 +70,16 @@ pub enum MftError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// An extension dependency failed and prevented the scan from completing.
+    /// The same source is retained in the partial record's diagnostic.
+    #[error("Failed to read extension {reference}: {source}")]
+    ExtensionRead {
+        /// Full reference of the failed extension dependency.
+        reference: crate::NtfsFileReference,
+        /// Original error, shared with the partial record without copying it.
+        source: std::sync::Arc<MftError>,
+    },
+
     /// A Win32 API call failed.
     #[error("Win32 API error: {0}")]
     #[cfg(windows)]
@@ -140,9 +150,10 @@ pub enum MftError {
 impl MftError {
     /// Return `true` if this error came from operating-system I/O.
     #[must_use]
-    pub const fn is_io_error(&self) -> bool {
+    pub fn is_io_error(&self) -> bool {
         match self {
             Self::Io(_) => true,
+            Self::ExtensionRead { source, .. } => source.is_io_error(),
             #[cfg(windows)]
             Self::WinApi(_) => true,
             _ => false,
@@ -444,4 +455,13 @@ pub enum ScanError<E> {
     /// An application callback failed.
     #[error("Scan consumer failed: {0}")]
     Consumer(#[source] E),
+}
+
+impl From<ScanError<std::convert::Infallible>> for MftError {
+    fn from(error: ScanError<std::convert::Infallible>) -> Self {
+        match error {
+            ScanError::Scanner(error) => error,
+            ScanError::Consumer(never) => match never {},
+        }
+    }
 }

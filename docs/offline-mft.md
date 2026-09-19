@@ -10,6 +10,10 @@ Single-record and byte operations are called **reads**.
 `from_path` uses a read-only buffered file. `Cursor<Vec<u8>>` and `Cursor<&[u8]>`
 support owned and borrowed buffers. No device access or elevated privileges are required.
 
+The parser retains one reusable base-record byte buffer, bounded by the configured
+record size (at most 64 KiB). Extension records use independent buffers. Returned
+records own their metadata and remain valid after later reads or parser disposal.
+
 ## Reading directly from a volume
 
 `RawMft::byte_reader()` supplies a `MftByteReader` implementing `Read + Seek`.
@@ -68,8 +72,10 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
 - `iter_records()` starts at zero and yields every slot, including system records,
   unused records and extension records. A non-FILE slot is an item-level error.
   Parse errors allow iteration to continue. I/O errors terminate iteration after
-  one report. Extension I/O errors are attached to the yielded base entry and also
-  terminate iteration. Restarting iteration or explicitly reading a slot is allowed.
+  one report. Extension I/O errors are attached to the yielded partial base entry;
+  the iterator then returns `MftError::ExtensionRead` once before terminating.
+  This error describes the failed dependency, not an additional record slot.
+  The original error is shared with the diagnostic so both retain its source. Restarting iteration or explicitly reading a slot is allowed.
 - The iterator exclusively borrows the stream. Extension reads use the same
   reader; subsequent slot reads seek explicitly, so random lookups cannot disturb
   iteration order. `into_inner` makes no promise about the final cursor position.
@@ -94,8 +100,7 @@ categories remain incomplete because its base was not inspected.
 
 Completeness covers the supported metadata representation, not every NTFS
 attribute type and not file-content availability. Unknown attributes are not
-decoded into `RawMftEntry`. Non-resident data headers can provide valid sizes and
-valid sizes while their contents remain outside the input. `external_payloads`
+decoded into `RawMftEntry`. Non-resident data headers can provide valid sizes while their contents remain outside the input. `external_payloads`
 identifies observed non-resident attributes by record number, type and instance
 ID. An empty list is not evidence of absence if inspection was incomplete.
 

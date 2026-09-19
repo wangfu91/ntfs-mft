@@ -74,21 +74,21 @@ impl Filetime {
         system_time_to_filetime_raw(value).map(Self)
     }
 
-    /// Number of seconds since the Unix epoch (may be negative).
+    /// Number of seconds since the Unix epoch (may be negative), rounded down.
     #[must_use]
     #[inline]
     pub fn to_unix_seconds(self) -> i64 {
         let intervals = self.0 as i128 - WINDOWS_TO_UNIX_OFFSET_100NS as i128;
-        let seconds = intervals / 10_000_000;
+        let seconds = intervals.div_euclid(10_000_000);
         seconds.clamp(i64::MIN as i128, i64::MAX as i128) as i64
     }
 
-    /// Number of milliseconds since the Unix epoch (may be negative).
+    /// Number of milliseconds since the Unix epoch (may be negative), rounded down.
     #[must_use]
     #[inline]
     pub fn to_unix_millis(self) -> i64 {
         let intervals = self.0 as i128 - WINDOWS_TO_UNIX_OFFSET_100NS as i128;
-        let millis = intervals / 10_000;
+        let millis = intervals.div_euclid(10_000);
         millis.clamp(i64::MIN as i128, i64::MAX as i128) as i64
     }
 
@@ -195,6 +195,23 @@ fn system_time_to_filetime_raw(value: SystemTime) -> Option<u64> {
 mod portable_tests {
     use super::*;
     use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn unix_units_round_down_on_both_sides_of_epoch() {
+        for (ticks, seconds, millis) in [
+            (-10_000_001, -2, -1001),
+            (-10_000_000, -1, -1000),
+            (-1, -1, -1),
+            (0, 0, 0),
+            (1, 0, 0),
+            (10_000_001, 1, 1000),
+        ] {
+            let value = Filetime::new((WINDOWS_TO_UNIX_OFFSET_100NS as i128 + ticks) as u64);
+            assert_eq!(value.to_unix_seconds(), seconds);
+            assert_eq!(value.to_unix_millis(), millis);
+            assert_eq!(value.to_unix_nanos(), ticks * 100);
+        }
+    }
 
     #[test]
     fn raw_value_and_zero_sentinel_are_preserved() {

@@ -25,7 +25,7 @@ use crate::{
     raw_mft::{
         RawMft, RawMftWorkChunk,
         attr_list::{enrich_batch_from_attr_list_cached, should_enrich_batch_from_attr_list},
-        entry_build::{AttributeListInfo, RawMftBatchEntry, RawMftBatchScratch},
+        entry_build::{AttributeListInfo, RawMftBatchScratch, RawMftLeanEntry},
         options::RawMftScanOptions,
         serial::engine::{SerialParseState, for_each_record_capturing},
     },
@@ -75,7 +75,7 @@ impl RawMft<'_> {
     where
         E: From<MftError> + Send,
         Init: Fn() -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E> + Sync,
+        Fold: Fn(&mut T, RawMftLeanEntry) -> Result<(), E> + Sync,
         Visit: FnMut(T) -> Result<(), E>,
         T: Send,
     {
@@ -184,7 +184,7 @@ impl RawMft<'_> {
     where
         E: From<MftError> + Send,
         Init: Fn() -> T,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E>,
+        Fold: Fn(&mut T, RawMftLeanEntry) -> Result<(), E>,
     {
         let mut acc = init();
         let mut ext_cache: HashMap<u64, Box<[u8]>> = HashMap::new();
@@ -252,7 +252,7 @@ impl RawMft<'_> {
     where
         E: From<MftError> + Send,
         Init: Fn() -> T,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E>,
+        Fold: Fn(&mut T, RawMftLeanEntry) -> Result<(), E>,
     {
         let mut acc = init();
         // Read non-resident attribute lists and extensions outside the captured selection.

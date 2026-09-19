@@ -106,7 +106,7 @@ fn fixture_public_iteration_and_random_access() -> MftResult<()> {
             Ok(r) => {
                 counts.0 += 1;
                 counts.2 += usize::from(r.entry.is_used);
-                counts.3 += usize::from(r.entry.base_record_number != 0);
+                counts.3 += usize::from(r.entry.base_reference().is_some());
                 assert_eq!(r.stream_offset, r.entry.record_number * 1024);
             }
             Err(e) => {
@@ -195,10 +195,16 @@ fn absence_empty_data_and_unavailable_list_are_distinct() -> MftResult<()> {
     .concat();
     let mut stream =
         MftStream::from_reader(Cursor::new(bytes), options()?.resolve_extensions(true))?;
-    assert_eq!(stream.read_record(0)?.metadata.unnamed_data, State::Absent);
+    let absent = stream.read_record(0)?;
+    assert_eq!(absent.metadata.unnamed_data, State::Absent);
+    assert_eq!(absent.entry.metadata().unnamed_data, State::Unknown);
     let empty = stream.read_record(1)?;
     assert!(empty.entry.has_unnamed_data);
     assert_eq!(empty.entry.real_size, 0);
+    assert_eq!(
+        empty.entry.metadata().unnamed_data,
+        State::Present { complete: false }
+    );
     assert_eq!(
         empty.metadata.unnamed_data,
         State::Present { complete: true }
@@ -221,6 +227,57 @@ fn absence_empty_data_and_unavailable_list_are_distinct() -> MftResult<()> {
         stream.read_record(4)?.metadata.reparse_point,
         State::Unknown
     );
+    Ok(())
+}
+
+#[test]
+fn base_identity_preserves_sequence_and_record_zero() -> MftResult<()> {
+    for base in [0, 7 << 48, (9 << 48) | 42] {
+        let mut stream = MftStream::from_reader(Cursor::new(record(1024, base, &[])), options()?)?;
+        let row = stream.read_record(0)?;
+        assert_eq!(
+            row.entry
+                .base_reference()
+                .map(ntfs_mft::NtfsFileReference::get),
+            (base != 0).then_some(base)
+        );
+        let lean = ntfs_mft::RawMftLeanEntry::from(row.entry);
+        assert_eq!(
+            lean.base_reference().map(ntfs_mft::NtfsFileReference::get),
+            (base != 0).then_some(base)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn owned_records_survive_buffer_reuse_and_parse_errors() -> MftResult<()> {
+    for size in [512, 1024, 65536] {
+        let mut corrupt = record(size, 0, &[]);
+        corrupt[size - 2..].fill(0);
+        let bytes = [
+            record(size, 0, &[resident(0x80, 1, "kept", b"payload")]),
+            record(size, 0, &[]),
+            corrupt,
+            record(size, 0, &[resident(0x80, 1, "", b"next")]),
+        ]
+        .concat();
+        let mut stream = MftStream::from_reader(Cursor::new(bytes), MftStreamOptions::new(size)?)?;
+        let first = stream.read_record(0)?;
+        let empty = stream.read_record(1)?;
+        assert!(empty.entry.alternate_data_streams.is_empty());
+        assert_eq!(empty.metadata.alternate_data_streams, State::Absent);
+        assert!(matches!(
+            stream.read_record(2),
+            Err(MftError::FixupMismatch { .. })
+        ));
+        assert_eq!(stream.read_record(3)?.entry.real_size, 4);
+        assert_eq!(first.entry.alternate_data_streams[0].name, "kept");
+        assert_eq!(first.entry.alternate_data_streams[0].real_size, 7);
+        let reread = stream.read_record(0)?;
+        assert_eq!(reread.entry, first.entry);
+        assert_eq!(reread.metadata, first.metadata);
+    }
     Ok(())
 }
 
@@ -436,11 +493,26 @@ fn extension_io_failure_is_preserved_and_stops_iteration() -> MftResult<()> {
     assert!(row.diagnostics.iter().any(|d| matches!(
         &d.kind,
         MftDiagnosticKind::ExtensionRead {
-            error: MftError::Io(_),
+            error,
             ..
-        }
+        } if matches!(error.as_ref(), MftError::Io(_))
     )));
+    let terminal = iter
+        .next()
+        .ok_or(MftError::InvalidRecordData("missing terminal error"))?
+        .expect_err("extension I/O must fail the scan");
+    assert!(terminal.is_io_error());
+    assert!(matches!(terminal, MftError::ExtensionRead { .. }));
     assert!(iter.next().is_none());
+    assert!(iter.next().is_none());
+
+    // Standard Result collection must observe terminal dependency failures too.
+    assert!(
+        stream
+            .iter_records()
+            .collect::<MftResult<Vec<_>>>()
+            .is_err()
+    );
     Ok(())
 }
 

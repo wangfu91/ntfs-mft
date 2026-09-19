@@ -56,8 +56,8 @@ fn fragmented_stream_matches_pinned_parser_and_public_iterator() -> TestResult {
         assert_eq!(entry.record_number, reference.number);
         assert_eq!(entry.sequence_number, reference.sequence);
         assert_eq!(
-            entry.base_record_number,
-            reference.base & 0x0000_ffff_ffff_ffff
+            entry.base_reference().map(crate::NtfsFileReference::get),
+            (reference.base != 0).then_some(reference.base)
         );
         assert_eq!(entry.flags & 0xf, reference.flags);
         assert_eq!(entry.hard_link_count, reference.links);

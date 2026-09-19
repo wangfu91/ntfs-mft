@@ -17,12 +17,13 @@ use super::engine::{SerialParseState, next_record_output};
 ///
 /// Default selection starts at record 24 and excludes bitmap-unused slots.
 /// Sparse, non-FILE, malformed, and extension records are skipped. Scan I/O
-/// errors are returned as items; a caller that continues may visit later slots.
+/// errors are returned once, then iteration stops.
 /// Attribute-list enrichment errors are not returned. Successful collection
 /// does not establish complete metadata. Use [`crate::MftStream`] for per-slot
 /// outcomes and metadata evidence.
 /// A live volume scan is not an atomic snapshot.
 pub struct RawMftEntryScan<'a> {
+    stopped: bool,
     /// Parent raw-MFT reader.
     mft: &'a RawMft<'a>,
     /// Sector-aligned volume reader reused across iteration.
@@ -56,6 +57,7 @@ impl<'a> RawMft<'a> {
         let build_options = entry_build_options(&options);
 
         Ok(RawMftEntryScan {
+            stopped: false,
             mft: self,
             reader,
             attr_reader,
@@ -69,6 +71,9 @@ impl<'a> Iterator for RawMftEntryScan<'a> {
     type Item = Result<RawMftEntry, MftError>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.stopped {
+            return None;
+        }
         match next_record_output(self.mft, &mut self.scan, &mut self.reader, |record| {
             Ok(build_rich_entry(
                 self.mft,
@@ -79,7 +84,21 @@ impl<'a> Iterator for RawMftEntryScan<'a> {
         }) {
             Ok(Some(entry)) => Some(Ok(entry)),
             Ok(None) => None,
-            Err(error) => Some(Err(error)),
+            Err(error) => {
+                self.stopped = true;
+                Some(Err(error))
+            }
         }
+    }
+}
+
+impl std::iter::FusedIterator for RawMftEntryScan<'_> {}
+
+impl std::fmt::Debug for RawMftEntryScan<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawMftEntryScan")
+            .field("mft", &self.mft)
+            .field("stopped", &self.stopped)
+            .finish_non_exhaustive()
     }
 }

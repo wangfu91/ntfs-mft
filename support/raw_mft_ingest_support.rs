@@ -13,7 +13,7 @@ use ntfs_mft::{
     NtfsFileReference, NtfsName,
     errors::MftError,
     raw_mft::{
-        FileNameNamespace, RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftEntry,
+        FileNameNamespace, RawMft, RawMftChunkPlanOptions, RawMftEntry, RawMftLeanEntry,
         RawMftLink, RawMftParallelScheduling, RawMftScanOptions, RawMftWorkChunk,
     },
 };
@@ -425,8 +425,8 @@ fn merge_partial_ingest(partial: PartialIngest, targets: &mut BenchTargets<'_>) 
 }
 
 /// Convert a batch entry into the compact benchmark representation.
-fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest) {
-    if entry.base_record_number != 0 {
+fn ingest_raw_entry_partial(entry: RawMftLeanEntry, partial: &mut PartialIngest) {
+    if entry.base_reference().is_some() {
         return;
     }
 
@@ -464,7 +464,7 @@ fn ingest_raw_entry_partial(entry: RawMftBatchEntry, partial: &mut PartialIngest
 
 /// Convert a full iterator entry into the compact benchmark representation.
 fn ingest_iter_entry(entry: RawMftEntry, targets: &mut BenchTargets<'_>) {
-    if entry.base_record_number != 0 {
+    if entry.base_reference().is_some() {
         return;
     }
 

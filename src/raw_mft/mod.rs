@@ -1,27 +1,27 @@
 //! Raw `$MFT` reader for NTFS volumes.
 //!
 //! This module reads the `$MFT` file directly from the volume and parses
-//! each FILE record to expose rich per-record metadata that the USN-based
-//! the Windows FSCTL-based `Mft` enumerator cannot surface (full timestamps, real
+//! each FILE record to expose rich per-record metadata (full timestamps, real
 //! and allocated size, hard link count, alternate data streams, sparse
 //! / compressed flags, file-name namespace, etc.).
 //!
 //! Quick start:
 //!
 //! ```no_run
-//! use ntfs_mft::{volume::Volume, raw_mft::RawMft};
+//! use ntfs_mft::{MftResult, Volume};
 //!
+//! # fn main() -> MftResult<()> {
 //! # #[cfg(windows)] {
-//! let volume = Volume::from_drive_letter('C').expect("open volume");
-//! let mft = RawMft::new(&volume).expect("read $MFT");
-//! for entry in mft.scan_entries().expect("scan") {
-//!     match entry {
-//!         Ok(e) if e.is_used => {
-//!             println!("{:>8}: {}", e.record_number, e.file_name.to_string_lossy());
-//!         }
-//!         _ => {}
+//! let volume = Volume::from_drive_letter('C')?;
+//! let mft = volume.raw_mft()?;
+//! for entry in mft.scan_entries()? {
+//!     let entry = entry?;
+//!     if entry.is_used {
+//!         println!("{:>8}: {}", entry.record_number, entry.file_name);
 //!     }
 //! }
+//! # }
+//! # Ok(())
 //! # }
 //! ```
 //!
@@ -73,7 +73,7 @@ use crate::{
 
 pub use byte_reader::MftByteReader;
 pub use chunk_plan::{RawMftChunkPlanOptions, RawMftChunkPlanOptionsBuilder, RawMftWorkChunk};
-pub use entry_build::{AdsInfo, RawMftBatchEntry, RawMftChunkBatch, RawMftEntry, RawMftLink};
+pub use entry_build::{AdsInfo, RawMftChunkBatch, RawMftEntry, RawMftLeanEntry, RawMftLink};
 pub use layout::attribute::FileNameNamespace;
 pub use options::{
     RawMftEntryOptions, RawMftEntryOptionsBuilder, RawMftLeanScanOptions,
@@ -98,7 +98,7 @@ pub const DEFAULT_BUFFER_BYTES: NonZeroUsize = unsafe {
 /// [`DEFAULT_BUFFER_BYTES`].
 #[allow(clippy::useless_nonzero_new_unchecked)]
 pub const DEFAULT_ATTR_BUFFER_BYTES: NonZeroUsize = unsafe {
-    // SAFETY: `64 * 1024` is a non-zero constant.
+    // SAFETY: `16 * 1024` is a non-zero constant.
     NonZeroUsize::new_unchecked(16 * 1024)
 };
 
@@ -146,8 +146,18 @@ impl<'a> RawMft<'a> {
         self.boot.file_record_size as usize
     }
 
-    /// Read a single record by number. Returns `Ok(None)` when the
-    /// record falls in a sparse hole or does not contain a valid FILE record.
+    /// Read a single record by number, including unused and extension records.
+    ///
+    /// Returns `Ok(None)` for a sparse hole or a rejected FILE header. A valid
+    /// header with a bad update sequence array instead returns an error.
+    /// Metadata uses the full collection options and selective, one-level
+    /// enrichment. Enrichment failures are tolerated; inspect
+    /// [`RawMftEntry::metadata`] for observed fields or use [`MftStream`] for
+    /// per-slot errors and detailed completeness evidence.
+    ///
+    /// # Errors
+    /// Returns I/O failures, invalid record numbers or extent arithmetic, and
+    /// fixup validation errors such as [`MftError::FixupMismatch`].
     #[must_use = "the returned record is discarded if not inspected"]
     pub fn read_record(&self, number: u64) -> Result<Option<RawMftEntry>, MftError> {
         let mut reader = self.volume_reader(DEFAULT_BUFFER_BYTES)?;
@@ -160,19 +170,40 @@ impl<'a> RawMft<'a> {
         )
     }
 
-    /// True if `record_number` is marked as in-use in the `$BITMAP`.
-    /// Returns `true` when no bitmap is available.
+    /// Cached allocation state from `$MFT::$BITMAP`.
+    ///
+    /// `Some(true)` is used, `Some(false)` is unused. `None` means the bitmap
+    /// does not cover this slot, is unavailable, or the number is outside this
+    /// reader's capacity. This snapshot can disagree with a live FILE header.
     #[must_use]
-    pub fn bitmap_used(&self, record_number: u64) -> bool {
-        if self.bitmap.is_empty() {
-            return true;
+    pub fn bitmap_usage(&self, record_number: u64) -> Option<bool> {
+        if record_number >= self.record_count() {
+            return None;
         }
-        let byte = (record_number / 8) as usize;
+        let byte = usize::try_from(record_number / 8).ok()?;
         let bit = (record_number % 8) as u8;
-        match self.bitmap.get(byte) {
-            Some(&b) => (b >> bit) & 1 != 0,
-            None => false,
-        }
+        self.bitmap.get(byte).map(|b| (b >> bit) & 1 != 0)
+    }
+
+    /// Internal selection is conservative when allocation evidence is missing.
+    pub(crate) fn bitmap_used(&self, record_number: u64) -> bool {
+        let Ok(byte) = usize::try_from(record_number / 8) else {
+            return true;
+        };
+        self.bitmap
+            .get(byte)
+            .is_none_or(|b| (b >> (record_number % 8)) & 1 != 0)
+    }
+}
+
+impl std::fmt::Debug for RawMft<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawMft")
+            .field("volume", &self.volume)
+            .field("record_count", &self.record_count())
+            .field("file_record_size", &self.file_record_size())
+            .field("bitmap_bytes", &self.bitmap.len())
+            .finish_non_exhaustive()
     }
 }
 

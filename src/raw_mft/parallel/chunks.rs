@@ -8,7 +8,7 @@ use crate::{
         RawMft,
         attr_list::{enrich_batch_from_attr_list, should_enrich_batch_from_attr_list},
         chunk_plan::{self, RawMftChunkPlanOptions, RawMftWorkChunk},
-        entry_build::{RawMftBatchEntry, RawMftBatchScratch, RawMftChunkBatch},
+        entry_build::{RawMftBatchScratch, RawMftChunkBatch, RawMftLeanEntry},
         options::RawMftScanOptions,
         serial::engine::{SerialParseState, next_record_output},
         volume_reader::VolumeReader,
@@ -52,45 +52,6 @@ impl<'a> RawMft<'a> {
         )
     }
 
-    /// Parse one logical work chunk into lean batch entries.
-    ///
-    /// This low-level operation uses the chunk range directly, ignoring the
-    /// range in `options`. For automatic range intersection use [`Self::parallel`].
-    pub fn read_chunk(
-        &self,
-        chunk: RawMftWorkChunk,
-        options: RawMftScanOptions,
-    ) -> Result<Vec<RawMftBatchEntry>, MftError> {
-        let (mut reader, mut attr_reader) = self.buffered_readers_for_options(&options)?;
-        self.read_chunk_with_reused_readers(chunk, &options, &mut reader, &mut attr_reader)
-    }
-
-    /// Parse one logical work chunk and fold lean batch entries into a caller-owned accumulator.
-    ///
-    /// As with [`Self::read_chunk`], the chunk supplies the range; the range in
-    /// `options` is ignored.
-    pub fn fold_chunk<T, Init, Fold>(
-        &self,
-        chunk: RawMftWorkChunk,
-        options: RawMftScanOptions,
-        init: &Init,
-        fold_entry: &Fold,
-    ) -> Result<T, MftError>
-    where
-        Init: Fn(RawMftWorkChunk) -> T,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), MftError>,
-    {
-        let (mut reader, mut attr_reader) = self.buffered_readers_for_options(&options)?;
-        self.fold_chunk_with_reused_readers(
-            chunk,
-            &options,
-            init,
-            fold_entry,
-            &mut reader,
-            &mut attr_reader,
-        )
-    }
-
     /// Visit each batch entry in a record-number range using caller-supplied
     /// readers so chunk workers can reuse their buffer state.
     fn for_each_batch_entry_in_range_with_readers<F, E>(
@@ -104,7 +65,7 @@ impl<'a> RawMft<'a> {
     ) -> Result<(), E>
     where
         E: From<MftError>,
-        F: FnMut(RawMftBatchEntry) -> Result<(), E>,
+        F: FnMut(RawMftLeanEntry) -> Result<(), E>,
     {
         let mut scan = SerialParseState::for_range(self, options, start_record, end_record);
 
@@ -145,7 +106,7 @@ impl<'a> RawMft<'a> {
         options: &RawMftScanOptions,
         reader: &mut VolumeReader,
         attr_reader: &mut VolumeReader,
-    ) -> Result<Vec<RawMftBatchEntry>, MftError> {
+    ) -> Result<Vec<RawMftLeanEntry>, MftError> {
         let mut entries = Vec::with_capacity(chunk.record_len().min(usize::MAX as u64) as usize);
         self.for_each_batch_entry_in_range_with_readers(
             chunk.start_record,
@@ -174,7 +135,7 @@ impl<'a> RawMft<'a> {
     where
         E: From<MftError>,
         Init: Fn(RawMftWorkChunk) -> T,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E>,
+        Fold: Fn(&mut T, RawMftLeanEntry) -> Result<(), E>,
     {
         let mut acc = init(chunk);
         self.for_each_batch_entry_in_range_with_readers(

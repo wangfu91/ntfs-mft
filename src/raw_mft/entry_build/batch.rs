@@ -30,7 +30,8 @@ use super::{
 /// The `entries` preserve the record order produced by the underlying chunk
 /// scan so callers can fold or compare batches deterministically.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawMftChunkBatch<E = RawMftBatchEntry> {
+#[non_exhaustive]
+pub struct RawMftChunkBatch<E = RawMftLeanEntry> {
     /// Logical chunk that produced this batch.
     pub chunk: RawMftWorkChunk,
     /// Entries parsed from the chunk in chunk order.
@@ -43,16 +44,16 @@ pub struct RawMftChunkBatch<E = RawMftBatchEntry> {
 /// needed by the chunk/batch APIs and omits richer fields such as timestamps
 /// from `$FILE_NAME` and alternate data stream details.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawMftBatchEntry {
+#[non_exhaustive]
+pub struct RawMftLeanEntry {
     /// Record number in the `$MFT`.
     pub record_number: u64,
     /// Full file reference for this record.
     pub file_reference: NtfsFileReference,
     /// Parent directory file reference from the selected `$FILE_NAME`.
     pub parent_reference: NtfsFileReference,
-    /// Base-record number for extension records, excluding sequence bits.
-    /// Zero for base records and also for extensions of record zero.
-    pub base_record_number: u64,
+    // Packed on-disk value; exposed as an Option by `base_reference()`.
+    pub(crate) base_reference: NtfsFileReference,
     /// Whether the FILE header marks this record as in use.
     pub is_used: bool,
     /// Whether the record is marked as a directory.
@@ -75,12 +76,25 @@ pub struct RawMftBatchEntry {
     pub links: Box<[RawMftLink]>,
 }
 
+impl RawMftLeanEntry {
+    /// Full base reference for an extension record; `None` for a base record.
+    /// Includes the sequence number, even for extensions of record zero.
+    #[must_use]
+    pub const fn base_reference(&self) -> Option<NtfsFileReference> {
+        if self.base_reference.get() == 0 {
+            None
+        } else {
+            Some(self.base_reference)
+        }
+    }
+}
+
 /// Internal batch-entry shape that keeps the extra state needed during parse
 /// and `$ATTRIBUTE_LIST` enrichment.
 #[derive(Debug)]
 pub(crate) struct RawMftBatchScratch {
     /// Lean batch entry being incrementally built from one FILE record.
-    pub(crate) entry: RawMftBatchEntry,
+    pub(crate) entry: RawMftLeanEntry,
     /// Hard-link count used to decide whether extension records may carry
     /// additional file-name links.
     pub(crate) hard_link_count: u16,
@@ -97,7 +111,7 @@ impl RawMftBatchScratch {
         attributes: impl IntoIterator<Item = NtfsAttribute<'a>>,
         collect_dos_file_name_links: bool,
     ) -> Self {
-        let mut builder = RawMftBatchEntryBuilder::new(record, collect_dos_file_name_links);
+        let mut builder = RawMftLeanEntryBuilder::new(record, collect_dos_file_name_links);
         for attr in attributes {
             super::fold::fold_attribute(&attr, &mut builder);
         }
@@ -110,24 +124,24 @@ impl RawMftBatchScratch {
         record: &FileRecord<'_>,
         collect_dos_file_name_links: bool,
     ) -> (Self, Option<AttributeListInfo>) {
-        let mut builder = RawMftBatchEntryBuilder::new(record, collect_dos_file_name_links);
+        let mut builder = RawMftLeanEntryBuilder::new(record, collect_dos_file_name_links);
         fold_record_attributes(record, &mut builder);
         builder.build()
     }
 
     /// Drop scratch-only bookkeeping and return the lean public batch entry.
-    pub(crate) fn into_entry(self) -> RawMftBatchEntry {
+    pub(crate) fn into_entry(self) -> RawMftLeanEntry {
         self.entry
     }
 }
 
-impl From<RawMftEntry> for RawMftBatchEntry {
+impl From<RawMftEntry> for RawMftLeanEntry {
     fn from(entry: RawMftEntry) -> Self {
         Self {
             record_number: entry.record_number,
             file_reference: entry.file_reference,
             parent_reference: entry.parent_reference,
-            base_record_number: entry.base_record_number,
+            base_reference: entry.base_reference,
             is_used: entry.is_used,
             is_directory: entry.is_directory,
             reparse_tag: entry.reparse_tag,
@@ -142,21 +156,21 @@ impl From<RawMftEntry> for RawMftBatchEntry {
     }
 }
 
-struct RawMftBatchEntryBuilder {
+struct RawMftLeanEntryBuilder {
     scratch: RawMftBatchScratch,
     file_names: FileNameSelector,
     attr_list: Option<AttributeListInfo>,
 }
 
-impl RawMftBatchEntryBuilder {
+impl RawMftLeanEntryBuilder {
     fn new(record: &FileRecord<'_>, collect_dos_file_name_links: bool) -> Self {
         Self {
             scratch: RawMftBatchScratch {
-                entry: RawMftBatchEntry {
+                entry: RawMftLeanEntry {
                     record_number: record.number,
                     file_reference: NtfsFileReference::new(record.file_reference()),
                     parent_reference: NtfsFileReference::new(0),
-                    base_record_number: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
+                    base_reference: NtfsFileReference::new(record.base_reference()),
                     is_used: record.is_used(),
                     is_directory: record.is_directory(),
                     reparse_tag: None,
@@ -254,7 +268,7 @@ impl RawMftBatchEntryBuilder {
     }
 }
 
-impl AttributeConsumer for RawMftBatchEntryBuilder {
+impl AttributeConsumer for RawMftLeanEntryBuilder {
     fn on_standard_information(&mut self, attr: &NtfsAttribute<'_>) {
         self.apply_standard_information(attr);
     }

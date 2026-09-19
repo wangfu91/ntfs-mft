@@ -110,6 +110,10 @@ harness = false
 name = "raw_mft_ingest"
 harness = false
 
+[[bench]]
+name = "mft_stream"
+harness = false
+
 [target.'cfg(windows)'.dev-dependencies]
 injectorpp.workspace = true
 

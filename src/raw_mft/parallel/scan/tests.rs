@@ -60,6 +60,87 @@ fn plan() -> RawMftChunkPlanOptions {
         .build()
 }
 
+#[test]
+fn allocation_queries_distinguish_unknown_and_keep_unknown_slots() -> MftResult<()> {
+    let volume = volume()?;
+    let mut raw = mft(&volume);
+    assert_eq!(raw.bitmap_usage(2), Some(true));
+    assert_eq!(raw.bitmap_usage(3), Some(false));
+    assert_eq!(raw.bitmap_usage(32), None);
+    assert_eq!(raw.bitmap_usage(u64::MAX), None);
+    raw.bitmap = Arc::from([]);
+    assert_eq!(raw.bitmap_usage(2), None);
+    let entries = raw
+        .scan_entries_with_options(RawMftScanOptions::builder().range(..).build())?
+        .collect::<MftResult<Vec<_>>>()?;
+    assert_eq!(entries.len(), 32);
+    Ok(())
+}
+
+#[test]
+fn infallible_callbacks_preserve_order_and_scanner_errors() -> MftResult<()> {
+    let volume = volume()?;
+    let raw = mft(&volume);
+    let options = RawMftScanOptions::builder().range(..).build();
+    let mut rich = Vec::new();
+    raw.parallel()
+        .rich()
+        .scan_options(options.clone())
+        .chunk_plan(plan())
+        .for_each_batch(|batch| rich.extend(batch.entries.into_iter().map(|e| e.record_number)))?;
+    let mut lean = Vec::new();
+    raw.parallel()
+        .lean()
+        .scan_options(options.clone().into_lean())
+        .chunk_plan(plan())
+        .for_each_batch(|batch| lean.extend(batch.entries.into_iter().map(|e| e.record_number)))?;
+    assert_eq!(rich, vec![2, 26]);
+    assert_eq!(lean, rich);
+    // Infallible application errors can also propagate through MftResult via `?`.
+    raw.parallel()
+        .rich()
+        .try_for_each_batch(|_| Ok::<_, std::convert::Infallible>(()))?;
+    let error = raw
+        .parallel()
+        .rich()
+        .scan_options(options)
+        .chunks(vec![
+            RawMftWorkChunk {
+                start_record: 0,
+                end_record: 4
+            };
+            2
+        ])
+        .for_each_batch(|_| {})
+        .expect_err("overlapping chunks must fail");
+    assert!(matches!(error, MftError::InvalidOptions(_)));
+    Ok(())
+}
+
+#[test]
+fn serial_scan_fuses_after_io_failure() -> MftResult<()> {
+    let volume = volume()?;
+    let mut raw = mft(&volume);
+    raw.extent_map = Arc::new(ExtentMap::from_runs(
+        &[DataRun::Data {
+            lcn: 0,
+            clusters: 64,
+        }],
+        1024,
+        1024,
+    ));
+    let mut scan = raw.scan_entries_with_options(
+        RawMftScanOptions::builder()
+            .range(32..)
+            .include_unused_records(true)
+            .build(),
+    )?;
+    assert!(matches!(scan.next(), Some(Err(MftError::Io(_)))));
+    assert!(scan.next().is_none());
+    assert!(scan.next().is_none());
+    Ok(())
+}
+
 fn numbers(batches: Vec<RawMftChunkBatch>) -> Vec<u64> {
     batches
         .into_iter()

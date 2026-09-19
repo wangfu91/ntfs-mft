@@ -30,7 +30,7 @@ fn fixture_inventory_and_all_file_records_parse() -> MftResult<()> {
         files += 1;
         used += usize::from(parsed.is_used);
         directories += usize::from(parsed.is_directory);
-        extensions += usize::from(parsed.base_record_number != 0);
+        extensions += usize::from(parsed.base_reference().is_some());
         assert_eq!(parsed.record_number, number as u64);
     }
     assert_eq!(

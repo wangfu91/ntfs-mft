@@ -55,6 +55,7 @@ pub(crate) enum AttributeListInfo {
 /// Information about a single named alternate data stream (`$DATA`
 /// attribute with a non-empty attribute name).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct AdsInfo {
     /// Alternate data stream name.
     pub name: NtfsName,
@@ -68,6 +69,7 @@ pub struct AdsInfo {
 
 /// One `$FILE_NAME` link carried by an MFT record.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct RawMftLink {
     /// Parent directory file reference for this link.
     pub parent_reference: NtfsFileReference,
@@ -79,7 +81,10 @@ pub struct RawMftLink {
 
 /// Comprehensive metadata for one MFT record.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct RawMftEntry {
+    // Successfully decoded SI, FILE_NAME, and resident REPARSE_POINT, in three bits.
+    pub(crate) observed_fields: u8,
     /// Materialization choices that produced this entry. Empty collections do
     /// not establish absence; use diagnostic or MFT-stream metadata for evidence.
     pub collection_options: crate::RawMftEntryOptions,
@@ -91,9 +96,9 @@ pub struct RawMftEntry {
     pub file_reference: NtfsFileReference,
     /// Parent directory file reference from `$FILE_NAME`.
     pub parent_reference: NtfsFileReference,
-    /// Base-record number for extension records, excluding sequence bits.
-    /// Zero for base records and also for extensions of record zero.
-    pub base_record_number: u64,
+    // Packed on-disk value; zero denotes a base record. Avoid enlarging every
+    // entry for the optional public view returned by `base_reference()`.
+    pub(crate) base_reference: NtfsFileReference,
     /// Number of hard links to the file.
     pub hard_link_count: u16,
     /// Raw FILE-record flags.
@@ -171,6 +176,48 @@ impl fmt::Display for RawMftEntry {
 }
 
 impl RawMftEntry {
+    /// Full base reference for an extension record; `None` for a base record.
+    /// Includes the sequence number, even for extensions of record zero.
+    #[must_use]
+    pub const fn base_reference(&self) -> Option<NtfsFileReference> {
+        if self.base_reference.get() == 0 {
+            None
+        } else {
+            Some(self.base_reference)
+        }
+    }
+
+    /// Metadata observed while materializing this entry, without extra parsing.
+    ///
+    /// Raw scans inspect attributes selectively. This conservative view returns
+    /// `Present { complete: false }`, `Unknown`, or `NotCollected`; it never
+    /// establishes absence or completeness. Zero timestamps and sizes remain
+    /// valid observed values. A tag copied from `$FILE_NAME` does not establish
+    /// the presence of a `$REPARSE_POINT` attribute. For a logical stream,
+    /// [`crate::MftRecord::metadata`] provides the more precise parser evidence.
+    #[must_use]
+    pub fn metadata(&self) -> crate::MftMetadata {
+        use crate::MftFieldState::{NotCollected, Present, Unknown};
+        let observed = |present| {
+            if present {
+                Present { complete: false }
+            } else {
+                Unknown
+            }
+        };
+        crate::MftMetadata {
+            standard_information: observed(self.observed_fields & 1 != 0),
+            file_names: observed(self.observed_fields & 2 != 0),
+            unnamed_data: observed(self.has_unnamed_data),
+            alternate_data_streams: if self.collection_options.collect_alternate_data_streams() {
+                observed(!self.alternate_data_streams.is_empty())
+            } else {
+                NotCollected
+            },
+            reparse_point: observed(self.observed_fields & 4 != 0),
+        }
+    }
+
     /// Build metadata from a caller-selected, validated attribute sequence.
     pub(crate) fn from_attributes<'a>(
         record: &FileRecord<'_>,
@@ -230,6 +277,7 @@ impl RawMftEntryBuilder {
     fn new(record: &FileRecord<'_>, options: EntryBuildOptions) -> Self {
         Self {
             entry: RawMftEntry {
+                observed_fields: 0,
                 collection_options: crate::RawMftEntryOptions {
                     collect_alternate_data_streams: options.collect_alternate_data_streams,
                     collect_dos_file_name_links: options.collect_dos_file_name_links,
@@ -238,7 +286,7 @@ impl RawMftEntryBuilder {
                 sequence_number: record.sequence_value(),
                 file_reference: NtfsFileReference::new(record.file_reference()),
                 parent_reference: NtfsFileReference::new(0),
-                base_record_number: record.base_reference() & 0x0000_FFFF_FFFF_FFFF,
+                base_reference: NtfsFileReference::new(record.base_reference()),
                 hard_link_count: record.link_count(),
                 flags: record.header.flags,
                 is_used: record.is_used(),
@@ -277,6 +325,7 @@ impl RawMftEntryBuilder {
     /// Fold `$STANDARD_INFORMATION` values into the entry.
     fn apply_standard_information(&mut self, attr: &NtfsAttribute<'_>) {
         if let Some(si) = attr.as_standard_info() {
+            self.entry.observed_fields |= 1;
             self.entry.si_created = Filetime::new(si.creation_time);
             self.entry.si_modified = Filetime::new(si.modification_time);
             self.entry.si_mft_modified = Filetime::new(si.mft_record_modification_time);
@@ -291,6 +340,7 @@ impl RawMftEntryBuilder {
             let Some(file_name) = ntfs_name_from_utf16le(name_bytes) else {
                 return;
             };
+            self.entry.observed_fields |= 2;
             let ns = FileNameNamespace::from_u8(header.namespace);
             let parent_reference = NtfsFileReference::new(header.parent_directory_reference);
             let should_replace = self.file_names.consider(
@@ -381,6 +431,7 @@ impl RawMftEntryBuilder {
         };
         self.entry.is_reparse_point = true;
         self.entry.reparse_tag = Some(reparse_tag);
+        self.entry.observed_fields |= 4;
     }
 
     /// Fold a resident `$DATA` attribute into the entry.
@@ -699,5 +750,38 @@ mod tests {
         );
         assert_eq!(entry.file_name, NtfsName::from("hello.txt"));
         assert!(!entry.is_directory);
+    }
+
+    #[test]
+    fn observed_metadata_keeps_zero_timestamps_and_disabled_ads_distinct() {
+        use crate::MftFieldState::{NotCollected, Present, Unknown};
+        let mut bytes = build_test_record(42);
+        let attrs = u16::from_le_bytes([bytes[20], bytes[21]]) as usize;
+        let value = u16::from_le_bytes([bytes[attrs + 20], bytes[attrs + 21]]) as usize;
+        bytes[attrs + value..attrs + value + 32].fill(0);
+        let record = FileRecord::parse(42, None, &mut bytes).unwrap();
+        for collect in [false, true] {
+            let (entry, _) = RawMftEntry::from_record_with_attr_list(
+                &record,
+                EntryBuildOptions {
+                    collect_alternate_data_streams: collect,
+                    collect_dos_file_name_links: true,
+                },
+            );
+            assert!(entry.si_created.is_zero());
+            let metadata = entry.metadata();
+            assert_eq!(metadata.standard_information, Present { complete: false });
+            assert_eq!(metadata.file_names, Present { complete: false });
+            assert_eq!(metadata.unnamed_data, Present { complete: false });
+            assert_eq!(metadata.reparse_point, Unknown);
+            assert_eq!(
+                metadata.alternate_data_streams,
+                if collect {
+                    Present { complete: false }
+                } else {
+                    NotCollected
+                }
+            );
+        }
     }
 }

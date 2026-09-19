@@ -71,8 +71,9 @@ handles. A live scan is not an atomic snapshot.
 5. Build a `RawMftEntry` and enrich missing metadata from its attribute list.
 
 Default scans start at record 24 and exclude unused records. Invalid records
-are logged and skipped; scan I/O errors are returned. If no bitmap is available,
-`bitmap_used` returns true and callers must inspect `entry.is_used` themselves.
+are logged and skipped; scan I/O errors are returned once and terminate iteration.
+`bitmap_usage` returns `None` when allocation evidence is unavailable; those
+slots remain scan candidates. Inspect `entry.is_used` for the FILE-header state.
 This output is a best-effort base-record view, not a guaranteed Explorer listing.
 Use [MftStream](offline-mft.md) to inspect every logical record position and its errors.
 
@@ -110,7 +111,7 @@ unless the scan options include unused records.
 use ntfs_mft::{MftResult, RawMft, RawMftChunkPlanOptions, RawMftScanOptions};
 use std::num::NonZeroU64;
 
-fn scan(raw: &RawMft<'_>) -> Result<(), ntfs_mft::ScanError<std::convert::Infallible>> {
+fn scan(raw: &RawMft<'_>) -> MftResult<()> {
     let options = RawMftScanOptions::builder()
         .start_record(0)
         .end_record(Some(1000))
@@ -121,9 +122,8 @@ fn scan(raw: &RawMft<'_>) -> Result<(), ntfs_mft::ScanError<std::convert::Infall
         .chunk_plan(RawMftChunkPlanOptions::builder()
             .max_records_per_chunk(NonZeroU64::new(256).unwrap())
             .build())
-        .try_for_each_batch(|batch| {
+        .for_each_batch(|batch| {
             println!("{} entries", batch.entries.len());
-            Ok(())
         })
 }
 ```
@@ -139,23 +139,14 @@ Calling `.chunk_plan(...)` switches back to automatic planning.
 
 For manual planning, call `raw.plan_chunks_with_options(chunk_options, &scan_options)`
 and pass the same scan options to parallel execution. Prefer automatic planning
-when the selection may change. The low-level `read_chunk` and `fold_chunk`
-methods take their range directly from the supplied chunk; their scan-option
-range is not applied.
-
-### Migrating selection from chunk-plan options
-
-Move `range`, `start_record`, `end_record`, and `include_unused_records` from
-`RawMftChunkPlanOptions::builder()` to `RawMftScanOptions::builder()` and pass
-the resulting options to `.scan_options(...)`. These selection methods and
-getters have been removed from chunk-plan options. Manual planning now also
-requires a borrowed scan-options argument. Explicit parallel chunks no longer
-override the scan range: set `start_record(0)` when including system records.
-Overlapping effective chunks now return an error; provide disjoint ranges.
+when the selection may change. For sequential chunk execution, configure
+`.parallel().lean().workers(NonZeroUsize::MIN)`;
+manual chunks use the same selection contract as multi-worker execution.
 
 ## Parallel execution
 
-`RawMft::parallel()` requires `.rich()` or `.lean()` before execution. Both provide `collect_batches`, `try_for_each_batch`, `try_map_chunks_for_each`,
+`RawMft::parallel()` requires `.rich()` or `.lean()` before execution. Both provide
+`collect_batches`, `for_each_batch`, `try_for_each_batch`, `try_map_chunks_for_each`,
 and `try_fold_chunks`. One worker falls back to serial chunk processing.
 
 Each worker reopens the source and owns sequential and attribute readers.
@@ -187,26 +178,22 @@ and [serial measurements](raw-mft-serial-read-findings.md). The
 fragmented bitmap loading, and serial/parallel agreement without a device.
 The [module map](../src/raw_mft/README.md) locates the implementation.
 
-## Metadata projection migration
+## Metadata projections
 
-Choose `.parallel().rich()` for the full `RawMftEntry` shape used by serial
-iteration, or `.parallel().lean()` for `RawMftBatchEntry`. Rich scans honor ADS,
-and DOS-link collection settings. Lean scans accept
-`RawMftLeanScanOptions`, which exposes only selection, buffers, and DOS-link
-collection. Both entry shapes carry `is_used` from the FILE header.
-
-Existing parallel consumers can preserve their lean output by adding `.lean()`
-and using `RawMftLeanScanOptions::builder()`. When adapting an existing rich scan
-configuration intentionally, `.into_lean()` retains selection, buffers, and
-DOS-link policy while discarding rich-only collection choices. Cached enrichment
-remains a lean-only execution method. Rich parallel scans use the same inline
-materialization and enrichment implementation as rich serial scans.
+Choose `.parallel().rich()` for `RawMftEntry` or `.parallel().lean()` for
+`RawMftLeanEntry`. Lean scan options expose only supported selection, buffers,
+and DOS-link collection. `.into_lean()` explicitly discards rich-only settings.
+Cached enrichment is lean-only. Rich serial and parallel scans share the same
+materialization and enrichment implementation.
 
 ## Metadata evidence
 
 The fast raw APIs remain tolerant: malformed, non-FILE, and extension records
 may be skipped, and an empty collected field does not prove that metadata is
-absent. When each logical record position and its parsing evidence matter, use
+absent. `RawMftEntry::metadata()` reports cheaply observed presence and disabled
+collection; it conservatively leaves completeness unverified and missing fields
+unknown. It does not reparse attributes or allocate diagnostics. When each logical
+record position and its parsing evidence matter, use
 `MftStream::from_raw_mft(raw)` or construct a stream with custom options from
 `raw.byte_reader()`. Retain each `MftRecord`'s `metadata`, `diagnostics`, and
 `external_payloads` when exporting or auditing results.
@@ -223,49 +210,16 @@ These are terminal operations returning `Result<_, ScanError<E>>`:
 application error. `E` must be `Send` because worker callbacks can fail.
 Annotate a callback's return type when inference cannot determine `E`.
 
-The `try_*` methods are the only fallible callback entry points. Returning a
+For callbacks that cannot fail, use `for_each_batch`, returning `MftResult<()>`.
+The `try_*` methods preserve fallible application callbacks. Returning a
 callback error stops further result delivery, but
 already-running worker callbacks may finish before the call returns. No
 rollback of prior callback side effects is implied. Mapping and folding run
 on workers; ordered visitation runs on the calling thread.
 
-## NTFS reference migration
+## NTFS identity
 
-Raw rich/lean entries, name links, and path indexes now use `NtfsFileReference`
-for file and parent references. `record_number()` returns `u64`, `sequence()`
-returns `u16`, and `get()` returns the packed `u64`, without optional branches.
-`try_from_parts(record_number, sequence)` rejects numbers above 48 bits instead
-of silently truncating them. `new(raw)` preserves all bits of an existing NTFS
-reference. Production APIs use only `NtfsFileReference`; no generic or ReFS
-identifier type is exported.
-
-The old `base_record_reference` field was already a truncated record number;
-it is now named `base_record_number` to state that meaning. Its zero value does
-not distinguish a base record from an extension of record zero. The versioned
-export DTO retains its existing `base_record_number` wire representation.
-
-## Standard record ranges
-
-Rich and lean option builders accept `.range(100..200)`, `.range(24..)`,
-`.range(..)`, and inclusive forms such as `.range(..=100)`. A standalone
-`RawMftRecordRange::default()` now means `0..`; scan-option defaults still mean
-`24..`, preserving the ordinary scan policy. Empty ranges remain empty, and an
-inclusive `u64::MAX` upper bound becomes an unbounded end clipped to the MFT.
-
-### Lossless NTFS names
-
-`RawMftEntry::file_name`, `RawMftBatchEntry::file_name`, hard-link names, and ADS
-names use `NtfsName`. Parsing and extension merging preserve every original
-UTF-16 code unit on Windows, Linux, and macOS. Equality and hashing use those
-units without case folding or normalization.
-
-- `name.as_utf16()` borrows the exact original units; `into_utf16()` takes ownership.
-- `name.try_to_string()` rejects unpaired surrogates.
-- `name.to_string_lossy()` and `Display` provide readable text with replacement characters.
-- `name.to_os_string()` preserves units on Windows and replaces unpaired surrogates
-  on Unix.
-
-Use `NtfsName::from("file.txt")` for Unicode text or
-`NtfsName::from_utf16(vec![0x61, 0xd800])` for exact code units. Names are stored
-once as UTF-16, without a second cached native string. Consumers that serialize
-names should preserve these original code units alongside any display text.
+File and parent references use `NtfsFileReference`, preserving both the 48-bit
+record number and 16-bit sequence. `base_reference` is `None` for base records
+and `Some(full_reference)` for extensions, including extensions of record zero.
+Record numbers alone cannot identify reused slots reliably.

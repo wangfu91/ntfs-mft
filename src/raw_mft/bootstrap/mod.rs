@@ -26,6 +26,11 @@ use super::RawMft;
 impl<'a> RawMft<'a> {
     /// Open the volume's `$MFT`, parse the boot sector and record 0, and
     /// build the shared extent map plus `$BITMAP` snapshot used by later scans.
+    ///
+    /// # Errors
+    /// Returns volume I/O failures, [`MftError::UnsupportedFilesystem`] for
+    /// non-NTFS input, or structural boot-sector, record, attribute, and extent
+    /// errors that prevent safe discovery. This performs I/O eagerly.
     pub fn new(volume: &'a Volume) -> Result<Self, MftError> {
         let boot = read_boot_sector(volume)?;
 

@@ -15,7 +15,7 @@ use std::{
     path::Path,
 };
 
-/// Configuration for an extracted MFT stream. No geometry is guessed.
+/// Configuration for a logical MFT stream from any source. No geometry is guessed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MftStreamOptions {
     /// Size in bytes of each MFT record.
@@ -56,6 +56,7 @@ impl MftStreamOptions {
 
 /// Metadata and provenance for one successfully parsed MFT record.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct MftRecord {
     /// Existing metadata representation. Interpret default values using `metadata`.
     pub entry: RawMftEntry,
@@ -78,6 +79,8 @@ pub struct MftRecord {
 /// remain unchanged while borrowed by this parser. Constructors seek to zero
 /// regardless of the reader's initial position. `Cursor<&[u8]>`, `Cursor<Vec<u8>>`,
 /// and files are supported. This API does not read arbitrary file contents.
+/// The parser reuses one base-record byte buffer (at most 64 KiB); returned
+/// records own their metadata and remain independent of subsequent reads.
 ///
 /// ```no_run
 /// use ntfs_mft::{MftResult, MftStream, MftStreamOptions};
@@ -96,10 +99,23 @@ pub struct MftStream<R: Read + Seek> {
     reader: R,
     options: MftStreamOptions,
     record_count: u64,
+    record_buffer: Vec<u8>,
+}
+
+impl<R: Read + Seek> std::fmt::Debug for MftStream<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MftStream")
+            .field("options", &self.options)
+            .field("record_count", &self.record_count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl MftStream<BufReader<File>> {
     /// Open an extracted MFT file read-only, with ordinary user file permissions.
+    ///
+    /// # Errors
+    /// Returns file I/O errors or the geometry errors from [`Self::from_reader`].
     pub fn from_path(path: impl AsRef<Path>, options: MftStreamOptions) -> MftResult<Self> {
         Self::from_reader(BufReader::new(File::open(path)?), options)
     }
@@ -123,6 +139,11 @@ impl MftStream<MftByteReader> {
 impl<R: Read + Seek> MftStream<R> {
     /// Create a parser, rejecting incomplete trailing records.
     /// Empty input is valid. FILE headers are validated when their slots are read.
+    ///
+    /// # Errors
+    /// Returns seek errors, [`MftError::TruncatedRecord`] for a partial trailing
+    /// slot, or [`MftError::InvalidOptions`] when the slot count exceeds NTFS's
+    /// 48-bit record number space. The reader is positioned at zero on success.
     pub fn from_reader(mut reader: R, options: MftStreamOptions) -> MftResult<Self> {
         let size = reader.seek(SeekFrom::End(0))?;
         let record_size = options.record_size as u64;
@@ -145,6 +166,7 @@ impl<R: Read + Seek> MftStream<R> {
             reader,
             options,
             record_count: size / record_size,
+            record_buffer: Vec::new(),
         })
     }
 
@@ -164,6 +186,10 @@ impl<R: Read + Seek> MftStream<R> {
     }
 
     fn load(&mut self, number: u64) -> MftResult<RecordData> {
+        self.load_into(number, Vec::new())
+    }
+
+    fn load_into(&mut self, number: u64, mut bytes: Vec<u8>) -> MftResult<RecordData> {
         if number >= self.record_count {
             return Err(MftError::InvalidMftRecord {
                 number,
@@ -177,7 +203,7 @@ impl<R: Read + Seek> MftStream<R> {
                     "MFT stream record offset overflow",
                 ))?;
         self.reader.seek(SeekFrom::Start(offset))?;
-        let mut bytes = vec![0; self.options.record_size];
+        bytes.resize(self.options.record_size, 0);
         self.reader.read_exact(&mut bytes)?;
         let record = FileRecord::parse(number, None, &mut bytes)?;
         let header = record.header;
@@ -191,7 +217,8 @@ impl<R: Read + Seek> MftStream<R> {
     /// Read one slot. Non-FILE slots, bad USA fixups, and out-of-range numbers
     /// are errors; incomplete metadata retains the entry with diagnostics.
     pub fn read_record(&mut self, number: u64) -> MftResult<MftRecord> {
-        let base = self.load(number)?;
+        let buffer = std::mem::take(&mut self.record_buffer);
+        let base = self.load_into(number, buffer)?;
         let mut inspection = RecordInspection::default();
         let base_attrs = inspect_view(&base.view(), &mut inspection);
         let mut references = Vec::new();
@@ -250,8 +277,8 @@ impl<R: Read + Seek> MftStream<R> {
                         *ext_number,
                         None,
                         MftDiagnosticKind::ExtensionRead {
-                            reference: reference.file_reference,
-                            error,
+                            reference: crate::NtfsFileReference::new(reference.file_reference),
+                            error: std::sync::Arc::new(error),
                         },
                     );
                     None
@@ -350,6 +377,9 @@ impl<R: Read + Seek> MftStream<R> {
         );
         let metadata = inspection.metadata();
         let (diagnostics, external_payloads) = inspection.into_diagnostics_and_external_payloads();
+        // Entries own their metadata. Reuse only the base record's bytes, after
+        // all borrowed attributes have been consumed; extensions stay independent.
+        self.record_buffer = base.bytes;
         Ok(MftRecord {
             entry,
             stream_offset: number * self.options.record_size as u64,
@@ -361,13 +391,16 @@ impl<R: Read + Seek> MftStream<R> {
 
     /// Iterate every record position from zero. Parse errors consume one position and
     /// iteration continues. An I/O error is returned once, then iteration stops.
-    /// A recoverable extension I/O error is attached to its base entry and also
-    /// stops this iterator after yielding that entry.
+    /// An extension I/O error is attached to its partial base entry. After that
+    /// entry, the iterator yields [`MftError::ExtensionRead`] once and then stops.
+    /// This terminal error describes a dependency failure, not another record slot,
+    /// so `collect::<MftResult<Vec<_>>>()` cannot mistake truncation for success.
     pub fn iter_records(&mut self) -> MftRecordIter<'_, R> {
         MftRecordIter {
             stream: self,
             next: 0,
             stopped: false,
+            pending_error: None,
         }
     }
 }
@@ -393,11 +426,28 @@ pub struct MftRecordIter<'a, R: Read + Seek> {
     stream: &'a mut MftStream<R>,
     next: u64,
     stopped: bool,
+    // Keep the hot iterator state compact; construct the terminal error only
+    // when returning it, sharing the source already owned by the diagnostic.
+    pending_error: Option<(crate::NtfsFileReference, std::sync::Arc<MftError>)>,
+}
+
+impl<R: Read + Seek> std::fmt::Debug for MftRecordIter<'_, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MftRecordIter")
+            .field("next_record", &self.next)
+            .field("stopped", &self.stopped)
+            .field("pending_error", &self.pending_error)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<R: Read + Seek> Iterator for MftRecordIter<'_, R> {
     type Item = MftResult<MftRecord>;
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some((reference, source)) = self.pending_error.take() {
+            self.stopped = true;
+            return Some(Err(MftError::ExtensionRead { reference, source }));
+        }
         if self.stopped || self.next >= self.stream.record_count {
             return None;
         }
@@ -405,11 +455,21 @@ impl<R: Read + Seek> Iterator for MftRecordIter<'_, R> {
         self.next += 1;
         self.stopped = match &result {
             Err(error) => error.is_io_error(),
-            Ok(record) => record.diagnostics.iter().any(|d| {
-                matches!(
-                    &d.kind, MftDiagnosticKind::ExtensionRead { error, .. } if error.is_io_error()
-                )
-            }),
+            Ok(record) => {
+                self.pending_error =
+                    record
+                        .diagnostics
+                        .iter()
+                        .find_map(|diagnostic| match &diagnostic.kind {
+                            MftDiagnosticKind::ExtensionRead { reference, error }
+                                if error.is_io_error() =>
+                            {
+                                Some((*reference, std::sync::Arc::clone(error)))
+                            }
+                            _ => None,
+                        });
+                false
+            }
         };
         Some(result)
     }

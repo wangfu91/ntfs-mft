@@ -8,20 +8,20 @@ names, sizes, hard links, alternate data streams, and file attributes. It includ
 serial and parallel live volume scans and logical MFT stream parsing.
 
 See [Choosing an MFT API](docs/api-guide.md) for scan defaults, metadata choices,
-error behavior, and migration examples.
+error behavior, and examples.
 
 ## Choose an API
 
 | Need | Start with | Input |
 | --- | --- | --- |
 | Scan an NTFS volume serially | `Volume::raw_mft` and `RawMft::scan_entries` | Mounted volume or device |
-| Process a volume in parallel | `RawMft::scan_entries_parallel` | Mounted volume or device |
+| Process a volume in parallel | `RawMft::parallel().rich()` or `.lean()` | Mounted volume or device |
 | Parse an extracted `$MFT` | `MftStream::from_path` | Logical `$MFT` file |
 | Parse bytes or a custom stream | `MftStream::from_reader` | `Read + Seek` source |
 | Read arbitrary logical MFT bytes | `RawMft::byte_reader` | Existing `RawMft` |
 
-All volume access is read-only. Parsing reports corrupt records as item-level
-errors where iteration can safely continue. See the [API guide](docs/api-guide.md)
+All volume access is read-only. `MftStream` reports corrupt slots as item-level
+errors where iteration can safely continue; raw scans skip malformed records. See the [API guide](docs/api-guide.md)
 for metadata completeness, attribute-list enrichment, and error contracts.
 
 ## Terminology

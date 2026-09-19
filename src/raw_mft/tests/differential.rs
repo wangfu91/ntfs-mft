@@ -335,7 +335,7 @@ impl Seek for FailingReader {
 }
 
 #[test]
-fn main_io_errors_preserve_each_iterators_continuation_contract() -> MftResult<()> {
+fn main_io_errors_terminate_both_iterators() -> MftResult<()> {
     let records = [record(0, &[]), record(0, &[]), record(0, &[])];
     let live_source = Arc::new(SparseVolumeFixture::new(vec![
         (0, records[0].clone()),
@@ -346,7 +346,7 @@ fn main_io_errors_preserve_each_iterators_continuation_contract() -> MftResult<(
     let mut entries = raw.scan_entries_with_options(scan_options(records.len() as u64))?;
     assert_eq!(entries.next().unwrap()?.record_number, 0);
     assert!(matches!(entries.next(), Some(Err(MftError::Io(_)))));
-    assert_eq!(entries.next().unwrap()?.record_number, 2);
+    assert!(entries.next().is_none());
     assert!(entries.next().is_none());
 
     let reader = FailingReader {

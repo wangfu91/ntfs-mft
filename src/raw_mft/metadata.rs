@@ -4,7 +4,7 @@ use crate::MftError;
 /// Whether metadata was observed and whether its supported attributes were inspected.
 ///
 /// This describes metadata, never the availability of arbitrary file contents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MftFieldState {
     /// Collection was explicitly disabled for this metadata category.
     NotCollected,
@@ -21,7 +21,8 @@ pub enum MftFieldState {
 }
 
 /// Completeness of the metadata categories represented by [`super::RawMftEntry`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct MftMetadata {
     /// `$STANDARD_INFORMATION` timestamps and flags.
     pub standard_information: MftFieldState,
@@ -37,6 +38,7 @@ pub struct MftMetadata {
 
 /// An attribute whose payload is outside the logical MFT stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct MftExternalPayload {
     /// Physical MFT record containing the attribute header.
     pub record_number: u64,
@@ -65,9 +67,9 @@ pub enum MftDiagnosticKind {
     /// A referenced record could not be read or validated.
     ExtensionRead {
         /// Full reference, including sequence number.
-        reference: u64,
+        reference: crate::NtfsFileReference,
         /// Original item-level error.
-        error: MftError,
+        error: std::sync::Arc<MftError>,
     },
     /// The reference sequence, base reference, or selected attribute did not match.
     ExtensionMismatch,
@@ -81,6 +83,7 @@ pub enum MftDiagnosticKind {
 
 /// A recoverable diagnostic associated with a parsed record.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct MftDiagnostic {
     /// Record at which the diagnostic was observed.
     pub record_number: u64,

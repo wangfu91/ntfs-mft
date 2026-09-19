@@ -118,7 +118,7 @@ fn sparse_fixture_serial_matches_both_parallel_schedulers() -> Result<(), Box<dy
             serial
                 .iter()
                 .cloned()
-                .map(crate::RawMftBatchEntry::from)
+                .map(crate::RawMftLeanEntry::from)
                 .collect::<Vec<_>>()
         );
     }
@@ -161,7 +161,7 @@ fn sparse_fixture_record_inventory_matches_independent_decoder() -> MftResult<()
         let record = FileRecord::parse(number as u64, None, &mut bytes)?;
         let entry = RawMftEntry::from_record_with_attr_list(&record, EntryBuildOptions::full()).0;
         assert!(entry.is_used);
-        assert_eq!(entry.base_record_number, 0);
+        assert_eq!(entry.base_reference(), None);
         files += 1;
         dirs += usize::from(entry.is_directory);
     }

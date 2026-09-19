@@ -14,12 +14,16 @@ record interpretation. `RawMft` and `MftStream` name the data access abstraction
 | --- | --- | --- | --- |
 | `raw.scan_entries()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
 | `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
-| `raw.parallel().lean()` | Batches of `RawMftBatchEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
+| `raw.parallel().lean()` | Batches of `RawMftLeanEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
 | `stream.iter_records()` | `MftRecord` per valid record position | All record positions from zero, including unused and extensions | Parse errors returned per position and iteration continues; I/O error stops iteration |
 
 MftStream extension I/O failures are attached to the base record's diagnostics;
-the iterator yields that record and then stops. Ordinary live volume scans use the
-bitmap for selection; if it is unavailable, inspect each entry's `is_used`.
+the iterator yields that partial record, then a terminal `MftError::ExtensionRead`,
+then stops. Standard `Result` collection therefore reports incomplete scans as
+errors. Ordinary live volume scans use the bitmap for selection;
+`bitmap_usage(number)` returns `None` for unavailable
+evidence or out-of-range slots. Unknown allocation is scanned conservatively;
+inspect each entry's `is_used`. Serial scan I/O errors are terminal.
 A successful raw scan does not prove complete metadata. Live volumes are not
 atomic snapshots.
 
@@ -46,21 +50,22 @@ Explicit chunks are clipped to selection and volume bounds; overlapping chunks
 are rejected. Results are delivered in supplied chunk order.
 
 Rich entries include timestamps, attributes, and ADS, subject to
-`collection_options`. Lean entries keep names, references, sizes,
-links, and basic flags; their options expose no ADS toggle.
+`collection_options`. `entry.metadata()` reports observed fields conservatively,
+without another parse or diagnostic allocations: unobserved fields stay unknown.
+Lean entries keep names, references, sizes, links, and basic flags; their options
+expose no ADS toggle.
 `options.into_lean()` explicitly retains selection/buffers/DOS-link policy and
 discards the rich-only metadata choices.
 
 ```rust,no_run
 use ntfs_mft::{MftResult, RawMft, RawMftScanOptions};
 
-fn visit(raw: &RawMft<'_>) -> Result<(), ntfs_mft::ScanError<std::convert::Infallible>> {
+fn visit(raw: &RawMft<'_>) -> MftResult<()> {
     let options = RawMftScanOptions::builder().range(24..).build();
-    raw.parallel().rich().scan_options(options).try_for_each_batch(|batch| {
+    raw.parallel().rich().scan_options(options).for_each_batch(|batch| {
         for entry in batch.entries {
             println!("{}: {}", entry.file_reference, entry.file_name);
         }
-        Ok(())
     })
 }
 ```
@@ -87,7 +92,9 @@ and `to_string_lossy()` or `Display` for readable text. `to_os_string()` is
 lossless on Windows; Unix native paths replace unpaired surrogates.
 
 `NtfsFileReference::try_from_parts(record, sequence)` rejects record-number
-overflow. Its record and sequence accessors return values directly. A record number alone
+overflow. Its record and sequence accessors return values directly.
+`base_reference()` returns `Option<NtfsFileReference>`, preserving the identity of an
+extension record's base, including record zero. A record number alone
 is not durable identity because deleted slots can be reused.
 
 Full-path reconstruction belongs to the caller. Build your application's tree

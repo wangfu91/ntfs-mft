@@ -9,7 +9,7 @@ use std::num::{NonZeroU64, NonZeroUsize};
 
 use ntfs_mft::{
     NtfsFileReference,
-    raw_mft::{RawMft, RawMftBatchEntry, RawMftChunkPlanOptions, RawMftScanOptions},
+    raw_mft::{RawMft, RawMftChunkPlanOptions, RawMftLeanEntry, RawMftScanOptions},
 };
 
 #[path = "../support/live_volume.rs"]
@@ -41,14 +41,14 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
         return Err("no work chunks in sampled range; select a populated NTFS volume".into());
     }
 
-    let serial_entries: Vec<_> = chunks
-        .iter()
-        .map(|chunk| {
-            raw_mft
-                .read_chunk(*chunk, options.clone())
-                .map_err(|error| format!("serial read_chunk failed for {:?}: {error}", chunk))
-        })
-        .collect::<Result<_, _>>()?;
+    let serial_batches = raw_mft
+        .parallel()
+        .lean()
+        .chunks(chunks.clone())
+        .scan_options(options.clone().into_lean())
+        .workers(NonZeroUsize::MIN)
+        .collect_batches()
+        .map_err(|error| format!("serial chunk scan failed: {error}"))?;
 
     let Some(worker_count) = NonZeroUsize::new(4) else {
         return Err("worker_count must be non-zero".into());
@@ -70,14 +70,14 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
 
     for ((chunk, serial_entries), parallel_batch) in chunks
         .iter()
-        .zip(serial_entries.iter())
+        .zip(serial_batches.iter())
         .zip(parallel_batches.iter())
     {
         assert_eq!(
             *chunk, parallel_batch.chunk,
             "parallel output must preserve chunk order"
         );
-        let serial_identity: Vec<_> = serial_entries.iter().map(entry_identity).collect();
+        let serial_identity: Vec<_> = serial_entries.entries.iter().map(entry_identity).collect();
         let parallel_identity: Vec<_> = parallel_batch.entries.iter().map(entry_identity).collect();
         assert_eq!(
             serial_identity, parallel_identity,
@@ -90,12 +90,18 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
 }
 
 fn entry_identity(
-    entry: &RawMftBatchEntry,
-) -> (u64, NtfsFileReference, u64, NtfsFileReference, bool) {
+    entry: &RawMftLeanEntry,
+) -> (
+    u64,
+    NtfsFileReference,
+    Option<NtfsFileReference>,
+    NtfsFileReference,
+    bool,
+) {
     (
         entry.record_number,
         entry.file_reference,
-        entry.base_record_number,
+        entry.base_reference(),
         entry.parent_reference,
         entry.is_directory,
     )

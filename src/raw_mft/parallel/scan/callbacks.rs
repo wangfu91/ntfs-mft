@@ -3,6 +3,35 @@ use super::*;
 use crate::ScanError;
 
 impl<'m, 'v> RawMftParallelScan<'m, 'v, Rich> {
+    /// Visit rich batches on the calling thread in supplied chunk order.
+    ///
+    /// The callback cannot fail; scanner failures still return an error.
+    /// Use [`Self::try_for_each_batch`] for application-defined errors.
+    ///
+    /// ```no_run
+    /// # fn scan(raw: &ntfs_mft::RawMft<'_>) -> ntfs_mft::MftResult<()> {
+    /// raw.parallel().rich().for_each_batch(|batch| {
+    ///     for entry in batch.entries {
+    ///         println!("{}", entry.file_name);
+    ///     }
+    /// })?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    /// Returns setup, chunk-selection, worker, or scan I/O failures.
+    pub fn for_each_batch<F>(self, mut visit: F) -> crate::MftResult<()>
+    where
+        F: FnMut(RawMftChunkBatch<RawMftEntry>),
+    {
+        self.try_for_each_batch(|batch| {
+            visit(batch);
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .map_err(MftError::from)
+    }
+
     /// Execute the scan and visit batches on the calling thread, preserving
     /// application errors as `ScanError::Consumer`. Returning an error stops
     /// delivery; already-running worker callbacks may finish before return.
@@ -84,13 +113,32 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Rich> {
 }
 
 impl<'m, 'v> RawMftParallelScan<'m, 'v, Lean> {
+    /// Visit lean batches on the calling thread in supplied chunk order.
+    ///
+    /// The callback cannot fail; scanner failures still return an error.
+    /// See [`RawMftParallelScan::<Rich>::for_each_batch`] for an example and
+    /// [`Self::try_for_each_batch`] for application-defined errors.
+    ///
+    /// # Errors
+    /// Returns setup, chunk-selection, worker, or scan I/O failures.
+    pub fn for_each_batch<F>(self, mut visit: F) -> crate::MftResult<()>
+    where
+        F: FnMut(RawMftChunkBatch<RawMftLeanEntry>),
+    {
+        self.try_for_each_batch(|batch| {
+            visit(batch);
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .map_err(MftError::from)
+    }
+
     /// Execute the scan and visit batches on the calling thread, preserving
     /// application errors as `ScanError::Consumer`. Returning an error stops
     /// delivery; already-running worker callbacks may finish before return.
     pub fn try_for_each_batch<E, F>(self, visit: F) -> Result<(), ScanError<E>>
     where
         E: Send,
-        F: FnMut(RawMftChunkBatch<RawMftBatchEntry>) -> Result<(), E>,
+        F: FnMut(RawMftChunkBatch<RawMftLeanEntry>) -> Result<(), E>,
     {
         self.try_map_chunks_for_each(Ok, visit)
     }
@@ -104,7 +152,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Lean> {
     ) -> Result<(), ScanError<E>>
     where
         E: Send,
-        F: Fn(RawMftChunkBatch<RawMftBatchEntry>) -> Result<T, E> + Sync,
+        F: Fn(RawMftChunkBatch<RawMftLeanEntry>) -> Result<T, E> + Sync,
         T: Send,
         V: FnMut(T) -> Result<(), E>,
     {
@@ -134,7 +182,7 @@ impl<'m, 'v> RawMftParallelScan<'m, 'v, Lean> {
     where
         E: Send,
         Init: Fn(RawMftWorkChunk) -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E> + Sync,
+        Fold: Fn(&mut T, RawMftLeanEntry) -> Result<(), E> + Sync,
         T: Send,
         V: FnMut(T) -> Result<(), E>,
     {
@@ -175,7 +223,7 @@ impl RawMftParallelScan<'_, '_, Lean> {
     where
         E: Send,
         Init: Fn() -> T + Sync,
-        Fold: Fn(&mut T, RawMftBatchEntry) -> Result<(), E> + Sync,
+        Fold: Fn(&mut T, RawMftLeanEntry) -> Result<(), E> + Sync,
         T: Send,
         V: FnMut(T) -> Result<(), E>,
     {

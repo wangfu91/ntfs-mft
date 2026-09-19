@@ -24,12 +24,13 @@ fn raw_mft_entry_display_is_compact() -> Result<(), crate::FileReferenceError> {
     use crate::{FileAttributes, Filetime, NtfsFileReference};
 
     let entry = RawMftEntry {
+        observed_fields: 0,
         collection_options: crate::RawMftEntryOptions::default(),
         record_number: 42,
         sequence_number: 1,
         file_reference: NtfsFileReference::try_from_parts(42, 1)?,
         parent_reference: NtfsFileReference::try_from_parts(5, 1)?,
-        base_record_number: 0,
+        base_reference: NtfsFileReference::new(0),
         hard_link_count: 2,
         flags: 0,
         is_used: true,

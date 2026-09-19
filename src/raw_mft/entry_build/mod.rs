@@ -7,6 +7,6 @@ mod fold;
 mod names;
 
 pub(crate) use batch::RawMftBatchScratch;
-pub use batch::{RawMftBatchEntry, RawMftChunkBatch};
+pub use batch::{RawMftChunkBatch, RawMftLeanEntry};
 pub use entry::{AdsInfo, RawMftEntry, RawMftLink};
 pub(crate) use entry::{AttributeListInfo, EntryBuildOptions};
