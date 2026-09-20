@@ -130,7 +130,7 @@ pub(super) fn enrich_from_attr_list(
         },
         reader,
         |type_id| needs.wants_type(type_id),
-        |reader, request| load_rich_extension(reader, boot, extent_map, request, build_options),
+        |reader, request| load_rich_extension(reader, extent_map, request, build_options),
         |ext_entry| {
             if needs.file_name {
                 entry.observed_fields |= ext_entry.observed_fields & 2;
@@ -183,13 +183,7 @@ pub(super) fn enrich_batch_from_attr_list(
         },
         reader,
         |reader, request| {
-            load_batch_extension(
-                reader,
-                boot,
-                extent_map,
-                request,
-                collect_dos_file_name_links,
-            )
+            load_batch_extension(reader, extent_map, request, collect_dos_file_name_links)
         },
     )
 }
@@ -224,7 +218,6 @@ pub(in crate::raw_mft) fn enrich_batch_from_attr_list_cached(
             )),
             None => load_batch_extension(
                 reader,
-                &mft.boot,
                 mft.extent_map.as_ref(),
                 request,
                 collect_dos_file_name_links,
@@ -310,12 +303,11 @@ fn parse_cached_batch_extension(
 /// exact `$ATTRIBUTE_LIST` references.
 fn load_rich_extension(
     reader: &mut VolumeReader,
-    boot: &BootSector,
     extent_map: &ExtentMap,
     request: ExtensionRecordRequest<'_>,
     build_options: EntryBuildOptions,
 ) -> Result<Option<RawMftEntry>, MftError> {
-    let Some(record) = parse_record_at(reader, boot, extent_map, request.record_number)? else {
+    let Some(record) = parse_record_at(reader, extent_map, request.record_number)? else {
         return Ok(None);
     };
     Ok(selected_attributes(
@@ -333,12 +325,11 @@ fn load_rich_extension(
 /// exactly referenced attributes.
 fn load_batch_extension(
     reader: &mut VolumeReader,
-    boot: &BootSector,
     extent_map: &ExtentMap,
     request: ExtensionRecordRequest<'_>,
     collect_dos_file_name_links: bool,
 ) -> Result<Option<RawMftBatchScratch>, MftError> {
-    let Some(record) = parse_record_at(reader, boot, extent_map, request.record_number)? else {
+    let Some(record) = parse_record_at(reader, extent_map, request.record_number)? else {
         return Ok(None);
     };
     Ok(selected_batch_entry(
@@ -489,17 +480,20 @@ where
     F: Fn(u32) -> bool,
 {
     let mut groups: Vec<(u64, Vec<AttributeListReference>)> = Vec::new();
+    let mut group_indices = std::collections::HashMap::<u64, usize>::new();
     for reference in parse_attribute_list_references(data).entries {
         let record_number = reference.record_number();
         if record_number == base_record_number || !wants_type(reference.type_id) {
             continue;
         }
-        match groups
-            .iter_mut()
-            .find(|(existing, _)| *existing == record_number)
-        {
-            Some((_, references)) => references.push(reference),
-            None => groups.push((record_number, vec![reference])),
+        match group_indices.entry(record_number) {
+            std::collections::hash_map::Entry::Occupied(index) => {
+                groups[*index.get()].1.push(reference);
+            }
+            std::collections::hash_map::Entry::Vacant(index) => {
+                index.insert(groups.len());
+                groups.push((record_number, vec![reference]));
+            }
         }
     }
     groups
@@ -787,6 +781,25 @@ mod tests {
         );
         assert_eq!(groups[0].1.len(), 1);
         assert_eq!(groups[1].1.len(), 1);
+    }
+
+    #[test]
+    fn large_reference_groups_keep_first_seen_and_per_record_order() {
+        let mut data = Vec::new();
+        for number in (100..10_100).rev() {
+            data.extend_from_slice(&attr_list_entry(NtfsAttributeType::FileName as u32, number));
+        }
+        for number in 100..10_100 {
+            data.extend_from_slice(&attr_list_entry(NtfsAttributeType::Data as u32, number));
+        }
+        let groups = collect_extension_reference_groups(&data, 42, |_| true);
+        assert_eq!(groups.len(), 10_000);
+        for ((number, references), expected) in groups.iter().zip((100..10_100).rev()) {
+            assert_eq!(*number, expected);
+            assert_eq!(references.len(), 2);
+            assert_eq!(references[0].type_id, NtfsAttributeType::FileName as u32);
+            assert_eq!(references[1].type_id, NtfsAttributeType::Data as u32);
+        }
     }
 
     fn complete_entry() -> RawMftEntry {

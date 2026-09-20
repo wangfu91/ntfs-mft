@@ -91,7 +91,7 @@ impl SerialConfig {
 pub struct SerialSummary {
     /// Number of visible base records yielded.
     pub records: u64,
-    /// Number of records that failed to parse mid-scan.
+    /// Zero for a completed workload; scan errors return `Err` instead of a summary.
     pub errors: u64,
     /// Sum of all file-name lengths (in UTF-16-ish chars) materialized.
     pub name_chars: u64,
@@ -147,16 +147,12 @@ pub fn run_serial_read(mft: &RawMft<'_>, config: &SerialConfig) -> Result<Serial
     let iter = mft.scan_entries_with_options(config.scan_options())?;
     let limit = config.max_records.unwrap_or(usize::MAX);
     for item in iter.take(limit) {
-        match item {
-            Ok(entry) => {
-                summary.records += 1;
-                summary.name_chars += entry.file_name.as_utf16().len() as u64;
-                summary.links += entry.links.len() as u64;
-                summary.ads += entry.alternate_data_streams.len() as u64;
-                summary.size_checksum ^= entry.real_size ^ entry.allocated_size;
-            }
-            Err(_) => summary.errors += 1,
-        }
+        let entry = item?;
+        summary.records += 1;
+        summary.name_chars += entry.file_name.as_utf16().len() as u64;
+        summary.links += entry.links.len() as u64;
+        summary.ads += entry.alternate_data_streams.len() as u64;
+        summary.size_checksum ^= entry.real_size ^ entry.allocated_size;
     }
     Ok(summary)
 }

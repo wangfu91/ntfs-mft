@@ -45,13 +45,15 @@ Boot geometry supplies sector size, cluster size, record size, and MFT location.
 Record size comes from that geometry; it is not fixed at 1 KiB.
 
 `ExtentMap` translates logical record numbers through fragmented physical
-extents and sparse holes. `record_offset_with_cursor` caches the segment index
-for sequential access. Chunk boundaries remain logical record ranges, not
+extents and sparse holes. `record_location` caches the segment index and checks
+complete record coverage. Chunk boundaries remain logical record ranges, not
 physical extent boundaries.
 
-`VolumeReader` buffers aligned reads. Windows uses `SetFilePointerEx`/`ReadFile`;
+`VolumeReader` buffers aligned reads. Windows uses explicit-offset `ReadFile`
+with a per-reader completion event;
 Linux and macOS use positional reads. macOS also queries device block alignment.
-The normal scan borrows record bytes from the buffer, avoiding a per-record copy.
+The normal scan borrows contiguous record bytes from the buffer, avoiding a
+per-record copy; records spanning physical extents use a reusable scratch buffer.
 A separate attribute reader handles random extension lookups without disturbing
 the sequential buffer.
 

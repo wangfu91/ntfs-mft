@@ -159,7 +159,7 @@ impl RecordInspection {
 /// Validate the in-record shape needed before any consumer interprets an
 /// attribute. Expensive evidence checks such as runlist decoding remain in
 /// `RecordInspection::observe` and are paid only by diagnostic callers.
-fn attribute_shape_is_valid(attr: &NtfsAttribute<'_>) -> bool {
+pub(in crate::raw_mft) fn attribute_shape_is_valid(attr: &NtfsAttribute<'_>) -> bool {
     let valid_name = !attr.has_name() || attr.name_bytes().is_some();
     let header_size = if attr.is_non_resident() { 64 } else { 24 };
     let valid_name =

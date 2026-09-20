@@ -15,6 +15,12 @@ pub(crate) struct ExtentLookupCursor {
     segment_index: usize,
 }
 
+/// Complete physical coverage of one record. Only split records allocate.
+pub(crate) enum RecordLocation {
+    Contiguous { offset: u64, len: usize },
+    Split(Vec<(u64, usize)>),
+}
+
 /// One contiguous VCN range in the `$MFT::$DATA` runlist.
 #[derive(Debug, Clone)]
 pub(crate) struct ExtentSegment {
@@ -41,6 +47,67 @@ pub(crate) struct ExtentMap {
 }
 
 impl ExtentMap {
+    /// Map every byte of a record, rejecting overflow or missing tail coverage.
+    /// A record touching a sparse hole has no usable raw FILE-record location.
+    pub(crate) fn record_location(
+        &self,
+        number: u64,
+        cursor: &mut ExtentLookupCursor,
+    ) -> Result<Option<RecordLocation>, MftError> {
+        if self.cluster_size == 0 || self.file_record_size == 0 {
+            return Err(MftError::InvalidDataRun("zero-sized record geometry"));
+        }
+        let Some(first_offset) = self.record_offset_with_cursor(number, cursor)? else {
+            return Ok(None);
+        };
+        let invalid = || MftError::InvalidDataRun("record extent range overflow or gap");
+        let mut logical = number
+            .checked_mul(self.file_record_size)
+            .ok_or_else(invalid)?;
+        let mut remaining = self.file_record_size;
+        let mut parts = Vec::new();
+        for segment in &self.segments[cursor.segment_index..] {
+            let start = segment
+                .vcn_start
+                .checked_mul(self.cluster_size)
+                .ok_or_else(invalid)?;
+            let length = segment
+                .clusters
+                .checked_mul(self.cluster_size)
+                .ok_or_else(invalid)?;
+            let end = start.checked_add(length).ok_or_else(invalid)?;
+            if logical < start || logical >= end {
+                return Err(invalid());
+            }
+            let Some(lcn) = segment.lcn else {
+                return Ok(None);
+            };
+            let offset = lcn
+                .checked_mul(self.cluster_size)
+                .and_then(|base| base.checked_add(logical - start))
+                .ok_or_else(invalid)?;
+            let count = remaining.min(end - logical);
+            offset.checked_add(count).ok_or_else(invalid)?;
+            let len = usize::try_from(count).map_err(|_| invalid())?;
+            if parts.is_empty() && count == self.file_record_size {
+                return Ok(Some(RecordLocation::Contiguous {
+                    offset: first_offset,
+                    len,
+                }));
+            }
+            parts.push((offset, len));
+            logical = logical.checked_add(count).ok_or_else(invalid)?;
+            remaining -= count;
+            if remaining == 0 {
+                return Ok(Some(RecordLocation::Split(parts)));
+            }
+        }
+        Err(MftError::InvalidMftRecord {
+            number,
+            reason: "record extends beyond MFT extent map",
+        })
+    }
+
     /// Build an extent map from the decoded runs of the `$MFT` data stream.
     pub fn from_runs(runs: &[DataRun], cluster_size: u64, file_record_size: u64) -> Self {
         let mut segments = Vec::with_capacity(runs.len());
@@ -93,6 +160,7 @@ impl ExtentMap {
     ///
     /// Returns `Ok(None)` for sparse regions and `Err` for out-of-range
     /// record numbers.
+    #[cfg(test)]
     pub fn record_offset(&self, record_number: u64) -> Result<Option<u64>, MftError> {
         let mut cursor = ExtentLookupCursor::default();
         self.record_offset_with_cursor(record_number, &mut cursor)
@@ -156,6 +224,79 @@ impl ExtentMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_record_mapping_rejects_missing_sparse_and_overflowing_tails() {
+        let mut cursor = ExtentLookupCursor::default();
+        let map = ExtentMap::from_runs(
+            &[DataRun::Data {
+                lcn: 2,
+                clusters: 1,
+            }],
+            512,
+            1024,
+        );
+        assert!(map.record_location(0, &mut cursor).is_err());
+        let map = ExtentMap::from_runs(
+            &[
+                DataRun::Data {
+                    lcn: 2,
+                    clusters: 1,
+                },
+                DataRun::Sparse { clusters: 1 },
+            ],
+            512,
+            1024,
+        );
+        assert!(map.record_location(0, &mut cursor).unwrap().is_none());
+        let map = ExtentMap::from_runs(
+            &[DataRun::Data {
+                lcn: u64::MAX,
+                clusters: 1,
+            }],
+            1,
+            1,
+        );
+        assert!(map.record_location(0, &mut cursor).is_err());
+    }
+
+    #[test]
+    fn complete_record_mapping_preserves_contiguous_fast_path_and_split_order() {
+        let map = ExtentMap::from_runs(
+            &[
+                DataRun::Data {
+                    lcn: 2,
+                    clusters: 3,
+                },
+                DataRun::Data {
+                    lcn: 10,
+                    clusters: 1,
+                },
+            ],
+            512,
+            1024,
+        );
+        let mut cursor = ExtentLookupCursor::default();
+        assert!(matches!(
+            map.record_location(0, &mut cursor).unwrap(),
+            Some(RecordLocation::Contiguous {
+                offset: 1024,
+                len: 1024
+            })
+        ));
+        let Some(RecordLocation::Split(parts)) = map.record_location(1, &mut cursor).unwrap()
+        else {
+            panic!("expected split record");
+        };
+        assert_eq!(parts, vec![(2048, 512), (5120, 512)]);
+        assert!(matches!(
+            map.record_location(0, &mut cursor).unwrap(),
+            Some(RecordLocation::Contiguous {
+                offset: 1024,
+                len: 1024
+            })
+        ));
+    }
 
     #[test]
     fn maps_record_numbers_in_single_run() {

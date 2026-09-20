@@ -57,25 +57,21 @@ fn run() -> Result<(), MftError> {
     let started = Instant::now();
     let mut count = 0u64;
     for result in mft.scan_entries()?.take(MAX_ENTRIES) {
-        match result {
-            Ok(entry) => {
-                let kind = if entry.is_directory { "DIR " } else { "FILE" };
-                println!(
-                    "{kind} #{:>10} size={:>12} alloc={:>12} links={} ads={} sparse={} compressed={} parent={} name={}",
-                    entry.record_number,
-                    entry.real_size,
-                    entry.allocated_size,
-                    entry.hard_link_count,
-                    entry.alternate_data_streams.len(),
-                    entry.is_sparse,
-                    entry.is_compressed,
-                    entry.parent_reference,
-                    entry.file_name.to_string_lossy(),
-                );
-                count += 1;
-            }
-            Err(e) => eprintln!("error: {e}"),
-        }
+        let entry = result?;
+        let kind = if entry.is_directory { "DIR " } else { "FILE" };
+        println!(
+            "{kind} #{:>10} size={:>12} alloc={:>12} links={} ads={} sparse={} compressed={} parent={} name={}",
+            entry.record_number,
+            entry.real_size,
+            entry.allocated_size,
+            entry.hard_link_count,
+            entry.alternate_data_streams.len(),
+            entry.is_sparse,
+            entry.is_compressed,
+            entry.parent_reference,
+            entry.file_name.to_string_lossy(),
+        );
+        count += 1;
     }
     eprintln!("Scan + output: {:.3?}", started.elapsed());
     eprintln!("Done. Yielded {count} records.");

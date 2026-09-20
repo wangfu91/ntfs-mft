@@ -70,16 +70,14 @@ pub(super) fn build_rich_entry(
 /// lean per-record readers below.
 pub(super) fn parse_record_at<'b>(
     reader: &'b mut VolumeReader,
-    boot: &BootSector,
     extent_map: &ExtentMap,
     record_number: u64,
 ) -> Result<Option<FileRecord<'b>>, MftError> {
-    let Some(offset) = extent_map.record_offset(record_number)? else {
+    let Some((offset, buf)) =
+        reader.record_buffer(extent_map, record_number, &mut Default::default())?
+    else {
         return Ok(None);
     };
-    let buf = reader
-        .buffer_at_mut(offset, boot.file_record_size as usize)
-        .map_err(io_err)?;
     if !FileRecord::is_valid(buf) {
         return Ok(None);
     }
@@ -90,12 +88,11 @@ pub(super) fn parse_record_at<'b>(
 /// `$ATTRIBUTE_LIST` payload.
 pub(super) fn read_record_raw(
     reader: &mut VolumeReader,
-    boot: &BootSector,
     extent_map: &ExtentMap,
     record_number: u64,
     build_options: EntryBuildOptions,
 ) -> Result<Option<(RawMftEntry, Option<AttributeListInfo>)>, MftError> {
-    let Some(rec) = parse_record_at(reader, boot, extent_map, record_number)? else {
+    let Some(rec) = parse_record_at(reader, extent_map, record_number)? else {
         return Ok(None);
     };
     Ok(Some(RawMftEntry::from_record_with_attr_list(
@@ -114,7 +111,7 @@ pub(super) fn read_record_at(
     build_options: EntryBuildOptions,
 ) -> Result<Option<RawMftEntry>, MftError> {
     let (mut entry, attr_list) =
-        match read_record_raw(reader, boot, extent_map, record_number, build_options)? {
+        match read_record_raw(reader, extent_map, record_number, build_options)? {
             Some(tuple) => tuple,
             None => return Ok(None),
         };
@@ -136,15 +133,49 @@ pub(super) fn read_record_at(
 
 /// Materialize the contents of a non-resident attribute into memory by
 /// reading its decoded data runs from disk.
+/// Metadata payloads are bounded independently of their untrusted run lengths.
 pub(super) fn read_nonresident(
     reader: &mut VolumeReader,
     runs: &[DataRun],
     cluster_size: u64,
     data_size: u64,
 ) -> Result<Vec<u8>, MftError> {
+    const MAX_METADATA_BYTES: u64 = 64 * 1024 * 1024;
+    if data_size > MAX_METADATA_BYTES {
+        return Err(MftError::InvalidDataRun(
+            "non-resident metadata exceeds the 64 MiB materialization limit",
+        ));
+    }
+    // Validate the complete requested range before allocating or performing I/O.
+    let mut uncovered = data_size;
+    for run in runs {
+        if uncovered == 0 {
+            break;
+        }
+        let clusters = match *run {
+            DataRun::Data { clusters, .. } | DataRun::Sparse { clusters } => clusters,
+        };
+        let bytes = clusters
+            .checked_mul(cluster_size)
+            .ok_or(MftError::InvalidDataRun("run byte length overflow"))?;
+        let used = bytes.min(uncovered);
+        if let DataRun::Data { lcn, .. } = *run {
+            lcn.checked_mul(cluster_size)
+                .and_then(|offset| offset.checked_add(used))
+                .ok_or(MftError::InvalidDataRun("run offset overflow"))?;
+        }
+        uncovered -= used;
+    }
+    if uncovered != 0 {
+        return Err(MftError::InvalidDataRun(
+            "data runs shorter than requested attribute size",
+        ));
+    }
     let capacity = usize::try_from(data_size)
         .map_err(|_| MftError::InvalidDataRun("attribute data size exceeds addressable memory"))?;
-    let mut out = Vec::with_capacity(capacity);
+    let mut out = Vec::new();
+    out.try_reserve_exact(capacity)
+        .map_err(|error| io_err(std::io::Error::other(error)))?;
     let mut remaining = data_size;
     for run in runs {
         if remaining == 0 {
@@ -236,6 +267,36 @@ mod tests {
         let mut reader = sparse_only_reader();
         let error =
             read_nonresident(&mut reader, &[DataRun::Sparse { clusters: 1 }], 4, 8).unwrap_err();
+        assert!(matches!(
+            error,
+            MftError::InvalidDataRun("data runs shorter than requested attribute size")
+        ));
+    }
+
+    #[test]
+    fn read_nonresident_rejects_untrusted_allocation_sizes() {
+        let mut reader = sparse_only_reader();
+        for size in [u64::MAX, 64 * 1024 * 1024 + 1] {
+            assert!(
+                read_nonresident(&mut reader, &[DataRun::Sparse { clusters: size }], 1, size,)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn read_nonresident_checks_coverage_before_io() {
+        let mut reader = sparse_only_reader();
+        let error = read_nonresident(
+            &mut reader,
+            &[DataRun::Data {
+                lcn: 0,
+                clusters: 1,
+            }],
+            4,
+            8,
+        )
+        .unwrap_err();
         assert!(matches!(
             error,
             MftError::InvalidDataRun("data runs shorter than requested attribute size")

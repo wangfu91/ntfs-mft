@@ -3,6 +3,7 @@ use super::*;
 mod differential;
 mod fixture;
 mod sparse_volume_fixture;
+mod split_record;
 
 #[test]
 fn options_defaults_are_sensible() {

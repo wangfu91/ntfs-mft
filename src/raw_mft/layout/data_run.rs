@@ -110,7 +110,10 @@ where
                 return Err(MftError::InvalidDataRun("relative offset underflow"));
             }
             prev_lcn = new_lcn;
-            Some(new_lcn as u64)
+            Some(
+                u64::try_from(new_lcn)
+                    .map_err(|_| MftError::InvalidDataRun("absolute LCN overflow"))?,
+            )
         };
 
         let run = match lcn_opt {
@@ -187,6 +190,17 @@ mod tests {
     fn rejects_negative_absolute_lcn() {
         // header 0x11 len=1 off=-5 -> previous lcn = 0, new lcn = -5
         let runs = [0x11u8, 0x01, 0xFB, 0x00];
+        assert!(decode_runs(&runs).is_err());
+    }
+
+    #[test]
+    fn rejects_absolute_lcn_overflow() {
+        let mut runs = Vec::new();
+        for delta in [i64::MAX, i64::MAX, 3] {
+            runs.extend_from_slice(&[0x81, 1]);
+            runs.extend_from_slice(&delta.to_le_bytes());
+        }
+        runs.push(0);
         assert!(decode_runs(&runs).is_err());
     }
 
