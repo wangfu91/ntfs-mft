@@ -78,13 +78,7 @@ fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
     let mut baseline_group = c.benchmark_group("raw_mft_ingest");
     baseline_group.bench_function("parallel_ingest", |b| {
         b.iter(|| {
-            let summary = match run_parallel_ingest(&mft, &config) {
-                Ok(summary) => summary,
-                Err(error) => {
-                    eprintln!("parallel ingest bench failed: {error}");
-                    ingest_support::BenchSummary::default()
-                }
-            };
+            let summary = run_parallel_ingest(&mft, &config).unwrap_or_else(|error| fail(error));
             std::hint::black_box(summary)
         });
     });
@@ -92,13 +86,7 @@ fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
     if include_serial_bench() {
         baseline_group.bench_function("serial_ingest", |b| {
             b.iter(|| {
-                let summary = match run_serial_ingest(&mft, &config) {
-                    Ok(summary) => summary,
-                    Err(error) => {
-                        eprintln!("serial ingest bench failed: {error}");
-                        ingest_support::BenchSummary::default()
-                    }
-                };
+                let summary = run_serial_ingest(&mft, &config).unwrap_or_else(|error| fail(error));
                 std::hint::black_box(summary)
             });
         });
@@ -113,13 +101,8 @@ fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
             let bench_id = BenchmarkId::new("parallel_ingest", worker_count.get());
             worker_group.bench_with_input(bench_id, &sweep_config, |b, sweep_config| {
                 b.iter(|| {
-                    let summary = match run_parallel_ingest(&mft, sweep_config) {
-                        Ok(summary) => summary,
-                        Err(error) => {
-                            eprintln!("parallel ingest worker sweep failed: {error}");
-                            ingest_support::BenchSummary::default()
-                        }
-                    };
+                    let summary =
+                        run_parallel_ingest(&mft, sweep_config).unwrap_or_else(|error| fail(error));
                     std::hint::black_box(summary)
                 });
             });
@@ -135,19 +118,19 @@ fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
             let bench_id = BenchmarkId::new("parallel_ingest", scheduling.label());
             scheduling_group.bench_with_input(bench_id, &sweep_config, |b, sweep_config| {
                 b.iter(|| {
-                    let summary = match run_parallel_ingest(&mft, sweep_config) {
-                        Ok(summary) => summary,
-                        Err(error) => {
-                            eprintln!("parallel ingest scheduling sweep failed: {error}");
-                            ingest_support::BenchSummary::default()
-                        }
-                    };
+                    let summary =
+                        run_parallel_ingest(&mft, sweep_config).unwrap_or_else(|error| fail(error));
                     std::hint::black_box(summary)
                 });
             });
         }
         scheduling_group.finish();
     }
+}
+
+fn fail(error: impl std::fmt::Display) -> ! {
+    eprintln!("ingest benchmark failed: {error}");
+    std::process::exit(1)
 }
 
 fn maybe_print_summary_table(mft: &RawMft<'_>, config: &ingest_support::BenchConfig) {

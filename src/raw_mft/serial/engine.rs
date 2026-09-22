@@ -9,7 +9,6 @@ use crate::{
         RawMft,
         layout::{extent::ExtentLookupCursor, record::FileRecord},
         options::RawMftScanOptions,
-        reader::io_err,
         volume_reader::VolumeReader,
     },
 };
@@ -19,7 +18,6 @@ pub(in crate::raw_mft) struct SerialParseState {
     next_record: u64,
     end_record: u64,
     offset_cursor: ExtentLookupCursor,
-    record_size: usize,
     include_unused_records: bool,
 }
 
@@ -44,7 +42,6 @@ impl SerialParseState {
             next_record: start_record.min(end_record),
             end_record,
             offset_cursor: ExtentLookupCursor::default(),
-            record_size: mft.boot.file_record_size as usize,
             include_unused_records: options.include_unused_records,
         }
     }
@@ -68,18 +65,11 @@ where
             continue;
         }
 
-        let offset_result = mft
-            .extent_map
-            .record_offset_with_cursor(record_number, &mut state.offset_cursor);
-        let offset = match offset_result {
-            Ok(Some(offset)) => offset,
-            Ok(None) => continue,
-            Err(error) => return Err(error),
+        let Some((offset, buf)) =
+            reader.record_buffer(&mft.extent_map, record_number, &mut state.offset_cursor)?
+        else {
+            continue;
         };
-
-        let buf = reader
-            .buffer_at_mut(offset, state.record_size)
-            .map_err(io_err)?;
 
         let is_valid = FileRecord::is_valid(buf);
         if !is_valid {
@@ -130,18 +120,11 @@ where
             continue;
         }
 
-        let offset = match mft
-            .extent_map
-            .record_offset_with_cursor(record_number, &mut state.offset_cursor)
-        {
-            Ok(Some(offset)) => offset,
-            Ok(None) => continue,
-            Err(error) => return Err(error.into()),
+        let Some((offset, buf)) =
+            reader.record_buffer(&mft.extent_map, record_number, &mut state.offset_cursor)?
+        else {
+            continue;
         };
-
-        let buf = reader
-            .buffer_at_mut(offset, state.record_size)
-            .map_err(io_err)?;
 
         // Classify from the raw header before the USA fixup mutates `buf`.
         let Some(base_reference) = FileRecord::peek_base_reference(buf) else {

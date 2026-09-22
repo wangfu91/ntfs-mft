@@ -60,6 +60,11 @@ pub(crate) fn decode_runs(runs: &[u8]) -> Result<Vec<DataRun>, MftError> {
     Ok(out)
 }
 
+/// Validate run encoding and offset arithmetic without retaining decoded runs.
+pub(crate) fn validate_runs(runs: &[u8]) -> Result<(), MftError> {
+    visit_runs(runs, |_| Ok(()))
+}
+
 /// Visit each decoded run in sequence.
 fn visit_runs<F>(runs: &[u8], mut visitor: F) -> Result<(), MftError>
 where
@@ -110,7 +115,10 @@ where
                 return Err(MftError::InvalidDataRun("relative offset underflow"));
             }
             prev_lcn = new_lcn;
-            Some(new_lcn as u64)
+            Some(
+                u64::try_from(new_lcn)
+                    .map_err(|_| MftError::InvalidDataRun("absolute LCN overflow"))?,
+            )
         };
 
         let run = match lcn_opt {
@@ -133,6 +141,7 @@ mod tests {
         // length = 0x05, offset = 0x0234 -> LCN 564
         let runs = [0x21u8, 0x05, 0x34, 0x02, 0x00];
         let rs = decode_runs(&runs).unwrap();
+        assert!(validate_runs(&runs).is_ok());
         assert_eq!(
             rs,
             vec![DataRun::Data {
@@ -175,12 +184,14 @@ mod tests {
     fn rejects_truncated_runs() {
         let runs = [0x21u8, 0x05]; // missing offset bytes + terminator
         assert!(decode_runs(&runs).is_err());
+        assert!(validate_runs(&runs).is_err());
     }
 
     #[test]
     fn rejects_zero_length_run() {
         let runs = [0x11u8, 0x00, 0x00, 0x00];
         assert!(decode_runs(&runs).is_err());
+        assert!(validate_runs(&runs).is_err());
     }
 
     #[test]
@@ -188,6 +199,19 @@ mod tests {
         // header 0x11 len=1 off=-5 -> previous lcn = 0, new lcn = -5
         let runs = [0x11u8, 0x01, 0xFB, 0x00];
         assert!(decode_runs(&runs).is_err());
+        assert!(validate_runs(&runs).is_err());
+    }
+
+    #[test]
+    fn rejects_absolute_lcn_overflow() {
+        let mut runs = Vec::new();
+        for delta in [i64::MAX, i64::MAX, 3] {
+            runs.extend_from_slice(&[0x81, 1]);
+            runs.extend_from_slice(&delta.to_le_bytes());
+        }
+        runs.push(0);
+        assert!(decode_runs(&runs).is_err());
+        assert!(validate_runs(&runs).is_err());
     }
 
     #[test]

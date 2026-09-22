@@ -4,7 +4,7 @@ use super::{
     MftDiagnostic, MftDiagnosticKind, MftExternalPayload, MftFieldState, MftMetadata,
     layout::{
         attribute::{AttributeListReference, NtfsAttribute, for_each_attribute_checked},
-        data_run::decode_runs,
+        data_run::validate_runs,
         record::FileRecord,
     },
 };
@@ -134,7 +134,7 @@ impl RecordInspection {
                         // The existing builder uses the first segment's sizes; do not
                         // replace them with continuation-header placeholder values.
                     }
-                    if decode_runs(&attr.data()[header.data_runs_offset as usize..]).is_err() {
+                    if validate_runs(&attr.data()[header.data_runs_offset as usize..]).is_err() {
                         self.diagnose(number, Some(kind), MftDiagnosticKind::MalformedAttribute);
                     }
                 }
@@ -159,7 +159,7 @@ impl RecordInspection {
 /// Validate the in-record shape needed before any consumer interprets an
 /// attribute. Expensive evidence checks such as runlist decoding remain in
 /// `RecordInspection::observe` and are paid only by diagnostic callers.
-fn attribute_shape_is_valid(attr: &NtfsAttribute<'_>) -> bool {
+pub(in crate::raw_mft) fn attribute_shape_is_valid(attr: &NtfsAttribute<'_>) -> bool {
     let valid_name = !attr.has_name() || attr.name_bytes().is_some();
     let header_size = if attr.is_non_resident() { 64 } else { 24 };
     let valid_name =

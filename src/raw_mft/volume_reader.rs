@@ -7,6 +7,7 @@
 //! buffers a configurable number of sectors. Higher-level code (the MFT
 //! iterator) then sees a familiar byte-oriented stream.
 
+use super::layout::extent::{ExtentLookupCursor, ExtentMap, RecordLocation};
 use crate::errors::MftError;
 use crate::volume::Volume;
 use std::io::{self, Read, Seek, SeekFrom};
@@ -49,6 +50,8 @@ pub(crate) struct VolumeReader {
     buf_pos: u64,
     /// Number of valid bytes in `buf`.
     buf_len: usize,
+    /// Reused only for records split across physical extents.
+    record_scratch: Vec<u8>,
 }
 
 impl VolumeReader {
@@ -92,6 +95,7 @@ impl VolumeReader {
             buf: vec![0u8; cap],
             buf_pos: u64::MAX,
             buf_len: 0,
+            record_scratch: Vec::new(),
         })
     }
 
@@ -236,6 +240,30 @@ impl VolumeReader {
         let inner_off = (offset - self.buf_pos) as usize;
         Ok(&mut self.buf[inner_off..inner_off + len])
     }
+
+    /// Borrow a complete logical record, gathering split extents when necessary.
+    pub(crate) fn record_buffer(
+        &mut self,
+        map: &ExtentMap,
+        number: u64,
+        cursor: &mut ExtentLookupCursor,
+    ) -> Result<Option<(u64, &mut [u8])>, MftError> {
+        match map.record_location(number, cursor)? {
+            None => Ok(None),
+            Some(RecordLocation::Contiguous { offset, len }) => {
+                Ok(Some((offset, self.buffer_at_mut(offset, len)?)))
+            }
+            Some(RecordLocation::Split(parts)) => {
+                let mut scratch = std::mem::take(&mut self.record_scratch);
+                scratch.clear();
+                for (offset, len) in &parts {
+                    scratch.extend_from_slice(self.buffer_at_mut(*offset, *len)?);
+                }
+                self.record_scratch = scratch;
+                Ok(Some((parts[0].0, &mut self.record_scratch)))
+            }
+        }
+    }
 }
 
 impl Read for VolumeReader {
@@ -247,6 +275,12 @@ impl Read for VolumeReader {
         if !self.buf_contains(self.position, 1) {
             let sector_pos = self.round_down(self.position);
             self.refill(sector_pos)?;
+            if !self.buf_contains(self.position, 1) {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "short read before requested volume position",
+                ));
+            }
         }
         let inner_off = (self.position - self.buf_pos) as usize;
         let avail = self.buf_len - inner_off;
@@ -261,17 +295,10 @@ impl Seek for VolumeReader {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let new_pos = match pos {
             SeekFrom::Start(n) => n,
-            SeekFrom::Current(n) => {
-                if n >= 0 {
-                    self.position
-                        .checked_add(n as u64)
-                        .ok_or_else(|| io::Error::other("seek overflow"))?
-                } else {
-                    self.position
-                        .checked_sub((-n) as u64)
-                        .ok_or_else(|| io::Error::other("seek underflow"))?
-                }
-            }
+            SeekFrom::Current(n) => self
+                .position
+                .checked_add_signed(n)
+                .ok_or_else(|| io::Error::other("seek overflow or underflow"))?,
             SeekFrom::End(_) => {
                 return Err(io::Error::other("seek from end not supported"));
             }
@@ -284,6 +311,43 @@ impl Seek for VolumeReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_refill_before_requested_position_returns_eof() {
+        let source = std::sync::Arc::new(crate::volume::sparse_fixture::SparseVolumeFixture::new(
+            vec![(0, vec![0xaa; 512]), (1024, vec![7; 100])],
+        ));
+        let volume = source.open().unwrap();
+        let mut reader = VolumeReader::new(&volume, 512, buffer_bytes(512)).unwrap();
+        let mut out = [0];
+        reader.read_exact(&mut out).unwrap();
+        assert_eq!(out, [0xaa]);
+        reader.seek(SeekFrom::Start(1224)).unwrap();
+        out[0] = 0xff;
+        assert_eq!(
+            reader.read(&mut out).unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+        assert_eq!(
+            out,
+            [0xff],
+            "short refill must not expose stale cached bytes"
+        );
+        assert_eq!(reader.stream_position().unwrap(), 1224);
+    }
+
+    #[test]
+    fn minimum_relative_seek_is_checked_without_negation() {
+        let source = std::sync::Arc::new(crate::volume::sparse_fixture::SparseVolumeFixture::new(
+            vec![(0, vec![7; 512])],
+        ));
+        let volume = source.open().unwrap();
+        let mut reader = VolumeReader::new(&volume, 512, buffer_bytes(512)).unwrap();
+        assert!(reader.seek(SeekFrom::Current(i64::MIN)).is_err());
+        assert_eq!(reader.stream_position().unwrap(), 0);
+        reader.seek(SeekFrom::Start(1u64 << 63)).unwrap();
+        assert_eq!(reader.seek(SeekFrom::Current(i64::MIN)).unwrap(), 0);
+    }
 
     fn buffer_bytes(value: usize) -> NonZeroUsize {
         NonZeroUsize::new(value).expect("test buffer size must be non-zero")

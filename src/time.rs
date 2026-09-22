@@ -177,14 +177,18 @@ fn system_time_to_filetime_raw(value: SystemTime) -> Option<u64> {
                 .checked_add(intervals)
                 .and_then(|raw| u64::try_from(raw).ok())
         }
-        Err(err) => {
-            let intervals = err.duration().as_nanos() / 100;
-            if intervals > WINDOWS_TO_UNIX_OFFSET_100NS as u128 {
-                None
-            } else {
-                Some(WINDOWS_TO_UNIX_OFFSET_100NS - intervals as u64)
-            }
-        }
+        Err(err) => filetime_before_unix_epoch(err.duration()),
+    }
+}
+
+fn filetime_before_unix_epoch(duration: Duration) -> Option<u64> {
+    let nanos = duration.as_nanos();
+    // Check the exact instant before truncating sub-tick precision: rounding
+    // must not move a time before 1601 into the representable range.
+    if nanos > WINDOWS_TO_UNIX_OFFSET_100NS as u128 * 100 {
+        None
+    } else {
+        Some(WINDOWS_TO_UNIX_OFFSET_100NS - (nanos / 100) as u64)
     }
 }
 
@@ -195,6 +199,18 @@ fn system_time_to_filetime_raw(value: SystemTime) -> Option<u64> {
 mod portable_tests {
     use super::*;
     use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn rejects_subtick_times_before_windows_epoch() {
+        let epoch_distance = Duration::from_secs(WINDOWS_TO_UNIX_OFFSET_100NS / 10_000_000);
+        assert_eq!(filetime_before_unix_epoch(epoch_distance), Some(0));
+        for nanos in [1, 99, 100] {
+            assert_eq!(
+                filetime_before_unix_epoch(epoch_distance + Duration::from_nanos(nanos)),
+                None
+            );
+        }
+    }
 
     #[test]
     fn unix_units_round_down_on_both_sides_of_epoch() {

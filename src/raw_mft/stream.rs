@@ -100,6 +100,9 @@ pub struct MftStream<R: Read + Seek> {
     options: MftStreamOptions,
     record_count: u64,
     record_buffer: Vec<u8>,
+    // Known source cursor after a complete read. Avoid seeking over buffered
+    // sequential input; invalidate before I/O because errors may move it.
+    reader_position: Option<u64>,
 }
 
 impl<R: Read + Seek> std::fmt::Debug for MftStream<R> {
@@ -167,6 +170,7 @@ impl<R: Read + Seek> MftStream<R> {
             options,
             record_count: size / record_size,
             record_buffer: Vec::new(),
+            reader_position: Some(0),
         })
     }
 
@@ -202,9 +206,14 @@ impl<R: Read + Seek> MftStream<R> {
                 .ok_or(MftError::InvalidOptions(
                     "MFT stream record offset overflow",
                 ))?;
-        self.reader.seek(SeekFrom::Start(offset))?;
+        if self.reader_position != Some(offset) {
+            self.reader_position = None;
+            self.reader.seek(SeekFrom::Start(offset))?;
+        }
         bytes.resize(self.options.record_size, 0);
+        self.reader_position = None;
         self.reader.read_exact(&mut bytes)?;
+        self.reader_position = offset.checked_add(self.options.record_size as u64);
         let record = FileRecord::parse(number, None, &mut bytes)?;
         let header = record.header;
         Ok(RecordData {

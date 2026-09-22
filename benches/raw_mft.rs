@@ -77,7 +77,7 @@ fn raw_mft_serial_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("raw_mft_serial");
     group.bench_function("read", |b| {
         b.iter(|| {
-            let summary = run_serial_read(&mft, &config).unwrap_or_default();
+            let summary = run_serial_read(&mft, &config).unwrap_or_else(|error| fail(error));
             std::hint::black_box(summary)
         });
     });
@@ -91,13 +91,19 @@ fn raw_mft_serial_benchmarks(c: &mut Criterion) {
             sweep.bench_with_input(bench_id, &buffer_bytes, |b, &buffer_bytes| {
                 b.iter(|| {
                     let sweep_config = config.with_buffer_bytes(buffer_bytes);
-                    let summary = run_serial_read(&mft, &sweep_config).unwrap_or_default();
+                    let summary =
+                        run_serial_read(&mft, &sweep_config).unwrap_or_else(|error| fail(error));
                     std::hint::black_box(summary)
                 });
             });
         }
         sweep.finish();
     }
+}
+
+fn fail(error: impl std::fmt::Display) -> ! {
+    eprintln!("serial read benchmark failed: {error}");
+    std::process::exit(1)
 }
 
 /// Whether the optional buffer-size sweep group should run.

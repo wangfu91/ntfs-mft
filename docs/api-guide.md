@@ -27,6 +27,11 @@ inspect each entry's `is_used`. Serial scan I/O errors are terminal.
 A successful raw scan does not prove complete metadata. Live volumes are not
 atomic snapshots.
 
+Nonresident metadata materialization (`$MFT::$BITMAP` and `$ATTRIBUTE_LIST`)
+is limited to 64 MiB per payload. Oversized payloads return an error during
+bootstrap; best-effort entry enrichment leaves the affected metadata unknown.
+Run coverage and offset arithmetic are checked before allocation or I/O.
+
 ## Selection and metadata are separate choices
 
 ```rust

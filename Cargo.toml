@@ -95,6 +95,14 @@ name = "raw_mft_serial_read"
 
 # Benchmark-matching executables for flamegraphs and ETW captures.
 [[example]]
+name = "mft_stream_profile"
+path = "tools/profiling/mft_stream.rs"
+
+[[example]]
+name = "mft_stream_allocations_profile"
+path = "tools/profiling/mft_stream_allocations.rs"
+
+[[example]]
 name = "raw_mft_parallel_ingest_profile"
 path = "tools/profiling/raw_mft_parallel_ingest.rs"
 
