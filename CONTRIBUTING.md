@@ -92,6 +92,27 @@ Maintainers preparing a release should follow the
 - Keep unrelated refactoring out of a fix. For performance claims, include the
   workload, environment, and reproducible measurements.
 
+## Offline performance measurements
+
+`mft_stream` measures the licensed fixture in memory and through a warm file,
+with extension resolution both disabled and enabled. It checks the known
+success/error inventory on every iteration. Its profiling executables share
+the same workload and require no raw-volume access:
+
+```sh
+cargo bench --locked --bench mft_stream -- --save-baseline before
+cargo run --locked --profile bench --example mft_stream_profile -- memory records 100
+cargo run --locked --profile bench --example mft_stream_profile -- file extensions 100
+cargo run --locked --profile bench --example mft_stream_allocations_profile
+```
+
+Keep baseline and candidate executables built with the same harness, toolchain,
+profile and fixture. `tools/profiling/compare_mft_stream.ps1` alternates their
+run order and rejects mismatched result fingerprints. Use allocation counts
+separately from timings; cumulative requested bytes are not retained heap or
+working set. See the [performance audit](docs/audits/2026-09-21-performance.md)
+for reproduction commands and measured scope.
+
 ## Fixture privacy and provenance
 
 Do not attach personal disk images, raw MFT captures, USN journals, or unreviewed

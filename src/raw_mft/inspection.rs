@@ -4,7 +4,7 @@ use super::{
     MftDiagnostic, MftDiagnosticKind, MftExternalPayload, MftFieldState, MftMetadata,
     layout::{
         attribute::{AttributeListReference, NtfsAttribute, for_each_attribute_checked},
-        data_run::decode_runs,
+        data_run::validate_runs,
         record::FileRecord,
     },
 };
@@ -134,7 +134,7 @@ impl RecordInspection {
                         // The existing builder uses the first segment's sizes; do not
                         // replace them with continuation-header placeholder values.
                     }
-                    if decode_runs(&attr.data()[header.data_runs_offset as usize..]).is_err() {
+                    if validate_runs(&attr.data()[header.data_runs_offset as usize..]).is_err() {
                         self.diagnose(number, Some(kind), MftDiagnosticKind::MalformedAttribute);
                     }
                 }

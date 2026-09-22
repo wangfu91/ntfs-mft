@@ -434,6 +434,102 @@ struct FailingReader {
     inner: Cursor<Vec<u8>>,
     fail_at: u64,
 }
+
+#[derive(Default)]
+struct ReaderCalls {
+    reads: std::cell::Cell<usize>,
+    seeks: std::cell::Cell<usize>,
+    fail_read: std::cell::Cell<bool>,
+    read_error_pending: std::cell::Cell<bool>,
+    fail_seek: std::cell::Cell<bool>,
+}
+
+struct CountedReader {
+    inner: Cursor<Vec<u8>>,
+    calls: std::rc::Rc<ReaderCalls>,
+}
+
+impl Read for CountedReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.calls.reads.set(self.calls.reads.get() + 1);
+        if self.calls.read_error_pending.replace(false) {
+            return Err(io::Error::other("injected failure after partial read"));
+        }
+        if self.calls.fail_read.replace(false) {
+            // read_exact can consume part of a record before its next read fails.
+            self.calls.read_error_pending.set(true);
+            let partial = buf.len().min(13);
+            return self.inner.read(&mut buf[..partial]);
+        }
+        self.inner.read(buf)
+    }
+}
+
+impl Seek for CountedReader {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.calls.seeks.set(self.calls.seeks.get() + 1);
+        if self.calls.fail_seek.replace(false) {
+            self.inner.set_position(512);
+            return Err(io::Error::other(
+                "injected seek failure after cursor movement",
+            ));
+        }
+        self.inner.seek(pos)
+    }
+}
+
+#[test]
+fn sequential_records_preserve_buffered_read_ahead_even_after_parse_errors() -> MftResult<()> {
+    let mut bytes = record(1024, 0, &[resident(0x80, 1, "", b"data")]).repeat(16);
+    bytes[4 * 1024] = 0; // Recoverable non-FILE slot must not discard read-ahead.
+    let calls = std::rc::Rc::new(ReaderCalls::default());
+    let reader = CountedReader {
+        inner: Cursor::new(bytes),
+        calls: calls.clone(),
+    };
+    let mut stream =
+        MftStream::from_reader(std::io::BufReader::with_capacity(8192, reader), options()?)?;
+    let rows: Vec<_> = stream.iter_records().collect();
+    assert_eq!(rows.iter().filter(|row| row.is_ok()).count(), 15);
+    assert_eq!(rows.iter().filter(|row| row.is_err()).count(), 1);
+    assert_eq!(
+        calls.seeks.get(),
+        2,
+        "only constructor geometry seeks are needed"
+    );
+    assert_eq!(calls.reads.get(), 2, "one buffered read per eight records");
+    assert_eq!(stream.read_record(0)?.entry.real_size, 4);
+    assert_eq!(stream.read_record(15)?.entry.real_size, 4);
+    Ok(())
+}
+
+#[test]
+fn explicit_reads_recover_after_io_errors_move_the_source_cursor() -> MftResult<()> {
+    for fail_seek in [false, true] {
+        let bytes = [
+            record(1024, 0, &[resident(0x80, 1, "", b"one")]),
+            record(1024, 0, &[resident(0x80, 1, "", b"second")]),
+        ]
+        .concat();
+        let calls = std::rc::Rc::new(ReaderCalls::default());
+        let reader = CountedReader {
+            inner: Cursor::new(bytes),
+            calls: calls.clone(),
+        };
+        let mut stream = MftStream::from_reader(reader, options()?)?;
+        assert_eq!(stream.read_record(0)?.entry.real_size, 3);
+        if fail_seek {
+            calls.fail_seek.set(true);
+            assert!(stream.read_record(0).is_err());
+        } else {
+            calls.fail_read.set(true);
+            assert!(stream.read_record(1).is_err());
+        }
+        assert_eq!(stream.read_record(1)?.entry.real_size, 6);
+        assert_eq!(stream.read_record(0)?.entry.real_size, 3);
+    }
+    Ok(())
+}
 impl Read for FailingReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.inner.position() >= self.fail_at {
