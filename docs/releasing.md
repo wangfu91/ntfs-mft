@@ -1,29 +1,30 @@
 # Release checklist
 
-This project publishes the same source as a GitHub release and a crates.io
-package. Complete the checks below from a clean checkout with hydrated Git LFS
-fixtures. Preparing a release does not authorize publishing it.
+Prepare and validate locally before changing GitHub visibility or publishing.
+Publication and account settings are explicit maintainer actions.
 
-## Before publication
+## Review the release
 
-1. Confirm the repository is intended to be public. Review the full Git history,
-   issues, pull requests, Actions logs, and release artifacts for credentials,
-   personal filesystem metadata, private paths, or material without redistribution
-   rights. Checking only the current tree is insufficient.
-2. Confirm fixture provenance, hashes, privacy review, and licenses in
-   `tests/fixtures/omerbenamram-mft/README.md` and
-   `tests/fixtures/sparse-volume-fixture/README.md`. Do not replace fixture bytes
-   without updating their provenance and independent expectations.
-3. Confirm GitHub private vulnerability reporting is enabled, or verify the
-   email fallback in `SECURITY.md`.
-4. Confirm the `ntfs-mft` crate name is controlled by the intended crates.io
-   account and that the account has a verified email and two-factor authentication.
-5. Update `CHANGELOG.md`, remove the `unreleased` marker, and use the same version
-   in `Cargo.toml`, the Git tag, the GitHub release, and crates.io.
+- Review the current tree **and Git history**, issues, pull requests, Actions
+  logs, and existing artifacts for credentials, private data, and redistribution
+  concerns. Removing a file from the current tree does not remove its history.
+- Verify fixture hashes and review the [upstream fixture](../tests/fixtures/omerbenamram-mft/README.md)
+  and [sparse volume fixture](../tests/fixtures/sparse-volume-fixture/README.md)
+  provenance. Preserve the library and upstream MIT notices. The sparse fixture
+  contains Microsoft-origin bytes; this crate's MIT license grants no additional
+  rights to those bytes. Do not assume an upstream sample is anonymized.
+- Verify the private reporting email in [SECURITY.md](../SECURITY.md). After
+  making the repository public, enable GitHub private vulnerability reporting if
+  desired and check its reporting link.
+- Check crate-name availability and the intended publishing account. A name is
+  allocated on first publication, not reserved by a successful dry run. Verify
+  the account email and use an appropriately scoped publishing token or trusted
+  publishing configuration. Never put credentials in the repository or logs.
+- Confirm the version in `Cargo.toml` and `Cargo.lock`. At release time, date the
+  matching `CHANGELOG.md` section and remove its `unreleased` marker. Use that
+  version for the tag and GitHub release too.
 
-## Validation
-
-Run:
+## Validate a clean checkout
 
 ```text
 git lfs pull
@@ -36,24 +37,37 @@ cargo package --locked
 cargo publish --dry-run --locked
 ```
 
-Review `cargo package --list` and inspect the generated `.crate` archive. Confirm
-that the archive includes both fixture licenses and contains no build output,
-credentials, personal logs, or unrelated binaries. Keep elevated device results
-separate from portable tests and CI. Run live-device checks from `CONTRIBUTING.md`
-when raw-volume behavior changed.
+Set `RUSTDOCFLAGS=-D warnings` for rustdoc. Run a current dependency advisory
+check, such as `cargo audit`, and review findings in the affected dependency's
+context. The workspace includes the pinned parser comparison and Windows parity
+harnesses; they are not published.
+
+Inspect `cargo package --list` and the generated `target/package/ntfs-mft-VERSION.crate`:
+
+- Source, examples, fixture bytes, provenance and required notices are present.
+- No Git LFS pointers, credentials, build output or unrelated files are included.
+- The normalized package manifest has no unpublished runtime dependencies.
+
+Test the extracted package as well as the checkout when changing package
+contents. Cargo's packaging verification builds the library; it does not run
+its tests or examples. Keep local, CI, and live-device results separate.
+Use [CONTRIBUTING.md](../CONTRIBUTING.md#validation) for opt-in device checks.
 
 ## Publish
 
-Publication is an explicit maintainer action:
+1. Merge the reviewed release commit and confirm all required native CI jobs
+   actually passed. A job blocked by account billing or runner setup provides
+   no platform validation.
+2. Make the repository public when approved and check its README, links,
+   description, license and security contact as an unauthenticated visitor.
+3. From the validated clean commit, run `cargo publish --locked`. Verify the
+   crate page and docs.rs build before announcing the release.
+4. Tag that exact commit as `vX.Y.Z` (sign it when signing is configured), push
+   the tag, and create a GitHub release using the matching changelog section.
+5. Verify a fresh consumer resolves the published crate on each supported
+   platform. Record any checks not run.
 
-1. Merge the reviewed release commit and wait for required CI checks to pass.
-2. Publish with `cargo publish --locked` and verify the crate page, README,
-   license, repository link, and docs.rs build.
-3. Create a signed `vX.Y.Z` tag from the published commit and push it.
-4. Create the GitHub release from that tag using the matching changelog section.
-5. Verify a new consumer can resolve the crates.io release on each supported
-   platform. Record any platform checks that were not run.
-
-Crates.io versions cannot be overwritten. If publication is wrong, yank the
-affected version, document why, and publish a corrected version rather than
-moving the Git tag or rewriting release history.
+A dry run does not upload a crate or prove permission to publish it. Crates.io
+versions cannot be overwritten; yanking a version does not erase its contents.
+See Cargo's [publishing guide](https://doc.rust-lang.org/cargo/reference/publishing.html)
+and [`cargo publish` reference](https://doc.rust-lang.org/cargo/commands/cargo-publish.html).

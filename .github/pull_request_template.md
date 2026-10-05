@@ -9,7 +9,7 @@ results, and skipped checks. Explain any checks you could not run.
 
 ## Compatibility and documentation
 
-Note public API, platform, Rust toolchain, or export-format changes.
+Note public API, platform, Rust toolchain, or metadata-contract changes.
 
 ## Contribution checklist
 

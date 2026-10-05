@@ -34,19 +34,25 @@ Run from the repository root:
 
 ```sh
 cargo fmt --all -- --check
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-cargo doc --locked --no-deps
+cargo test --workspace --locked
+cargo clippy --workspace --locked --all-targets -- -D warnings
+cargo doc --package ntfs-mft --locked --no-deps
 cargo package --locked
 cargo publish --dry-run --locked
 ```
 
-For parser changes, also run the pinned comparison harness:
+The workspace checks include both test harnesses. For focused parser work, run
+the pinned comparison harness directly:
 
 ```sh
 cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
 cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets -- -D warnings
 ```
+
+Set `RUSTDOCFLAGS=-D warnings` when building release documentation. Document only
+the `ntfs-mft` package: the differential harness deliberately compiles the same
+library source and would collide with its rustdoc output. Packaging checks need
+a clean checkout; inspect `cargo package --list` before publication.
 
 For Windows API or live-volume behavior, see the
 [parity harness](integration-tests/README.md) and [validation guide](docs/VALIDATION.md).
@@ -62,7 +68,7 @@ From an independent Administrator PowerShell on Windows:
 
 ```powershell
 $env:NTFS_MFT_TEST_DRIVE = 'C'
-cargo test --test mft_byte_reader --test volume_accessors --test raw_mft_parallel_chunk_consistency -- --ignored --nocapture
+cargo test --locked --test mft_byte_reader --test volume_accessors --test raw_mft_parallel_chunk_consistency -- --ignored --nocapture
 cargo test --manifest-path integration-tests/Cargo.toml --locked --test raw_mft_mft_consistency -- --ignored --nocapture
 ```
 
