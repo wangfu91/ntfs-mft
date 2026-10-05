@@ -55,6 +55,15 @@ of rich parallel scans. `RawMftChunkPlanOptions` controls partition size only.
 Explicit chunks are clipped to selection and volume bounds; overlapping chunks
 are rejected. Results are delivered in supplied chunk order.
 
+Chunk planning is fallible. `plan_chunks_with_options` returns
+`MftResult<Vec<RawMftWorkChunk>>`; automatic parallel planning propagates the same
+errors. Plans are limited to 4,194,304 candidate chunks before bitmap filtering
+(64 MiB of chunk descriptors). Explicit plans apply this limit to nonempty
+intersections after clipping. Exceeding the limit returns
+`MftError::InvalidOptions`; planning allocation failures return `MftError::Io`.
+Split large scans into smaller selected record ranges. This limit does not bound
+total scan memory, including entry batches, worker buffers, or collected output.
+
 Rich entries include timestamps, attributes, and ADS, subject to
 `collection_options`. `entry.metadata()` reports observed fields conservatively,
 without another parse or diagnostic allocations: unobserved fields stay unknown.

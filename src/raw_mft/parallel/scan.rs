@@ -127,7 +127,8 @@ impl<'m, 'v, P> RawMftParallelScan<'m, 'v, P> {
     /// intersections are discarded. Supplied order is preserved. Overlapping
     /// intersections are rejected with [`MftError::InvalidOptions`] before any
     /// records are scanned. Unused records are filtered using the scan options.
-    /// Omitted chunks are never recreated.
+    /// Omitted chunks are never recreated. At execution, more than 4,194,304
+    /// nonempty intersections are rejected before copying the plan.
     pub fn chunks(mut self, chunks: Vec<RawMftWorkChunk>) -> Self {
         self.chunks = Some(chunks);
         self
@@ -154,20 +155,23 @@ impl<'m, 'v, P> RawMftParallelScan<'m, 'v, P> {
                     .end_record()
                     .unwrap_or(self.mft.record_count())
                     .min(self.mft.record_count());
-                let chunks: Vec<_> = chunks
-                    .iter()
-                    .filter_map(|chunk| {
-                        let start_record = chunk.start_record.max(range.start_record());
-                        let end_record = chunk.end_record.min(end);
-                        (start_record < end_record).then_some(RawMftWorkChunk {
-                            start_record,
-                            end_record,
-                        })
+                let selected = chunks.iter().filter_map(|chunk| {
+                    let start_record = chunk.start_record.max(range.start_record());
+                    let end_record = chunk.end_record.min(end);
+                    (start_record < end_record).then_some(RawMftWorkChunk {
+                        start_record,
+                        end_record,
                     })
-                    .collect();
+                });
+                let mut chunks = crate::raw_mft::chunk_plan::allocate_chunk_plan(
+                    selected.clone().count() as u64,
+                )?;
+                chunks.extend(selected);
                 // Validate a sorted copy, retaining caller order for execution.
                 // Overlapping reads could also reapply USA fixups in reused buffers.
-                let mut ordered = chunks.clone();
+                let mut ordered =
+                    crate::raw_mft::chunk_plan::allocate_chunk_plan(chunks.len() as u64)?;
+                ordered.extend_from_slice(&chunks);
                 ordered.sort_unstable_by_key(|chunk| chunk.start_record);
                 if ordered
                     .windows(2)
@@ -179,9 +183,9 @@ impl<'m, 'v, P> RawMftParallelScan<'m, 'v, P> {
                 }
                 Ok(chunks)
             }
-            None => Ok(self
+            None => self
                 .mft
-                .plan_chunks_with_options(self.chunk_plan.clone(), &self.scan_options)),
+                .plan_chunks_with_options(self.chunk_plan.clone(), &self.scan_options),
         }
     }
 

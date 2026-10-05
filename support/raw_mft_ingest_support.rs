@@ -285,15 +285,18 @@ pub fn summary_run_count() -> NonZeroUsize {
 }
 
 /// Describe the workload shape produced by the current benchmark config.
-pub fn workload_shape(mft: &RawMft<'_>, config: &BenchConfig) -> BenchWorkloadShape {
-    BenchWorkloadShape {
+pub fn workload_shape(
+    mft: &RawMft<'_>,
+    config: &BenchConfig,
+) -> Result<BenchWorkloadShape, MftError> {
+    Ok(BenchWorkloadShape {
         record_count: mft.record_count(),
         planned_chunks: mft
-            .plan_chunks_with_options(config.chunk_plan_options(), &config.iter_options())
+            .plan_chunks_with_options(config.chunk_plan_options(), &config.iter_options())?
             .len(),
         file_record_size: mft.file_record_size(),
         cluster_size: mft.cluster_size(),
-    }
+    })
 }
 
 /// Run the parallel ingest workload and return a compact summary.
@@ -302,7 +305,7 @@ pub fn run_parallel_ingest(
     config: &BenchConfig,
 ) -> Result<BenchSummary, ntfs_mft::ScanError<std::convert::Infallible>> {
     let iter_options = config.iter_options();
-    let chunks = mft.plan_chunks_with_options(config.chunk_plan_options(), &iter_options);
+    let chunks = mft.plan_chunks_with_options(config.chunk_plan_options(), &iter_options)?;
     let record_table_len = record_count_hint(mft, config);
     let mut records = Vec::with_capacity(record_table_len);
     records.resize_with(record_table_len, || None);

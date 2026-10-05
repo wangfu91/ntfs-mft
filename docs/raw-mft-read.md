@@ -117,6 +117,13 @@ only partition size, defaulting to at most 16,384 logical records per chunk.
 The planner keeps dense bounded bands and omits bands with no used records
 unless the scan options include unused records.
 
+Planning checks a limit of 4,194,304 candidate chunks before bitmap filtering,
+equivalent to 64 MiB of chunk descriptors. A plan exceeding that limit returns
+`MftError::InvalidOptions`; a failed planning allocation returns `MftError::Io`.
+For very large scans, process smaller selected record ranges separately. The
+limit covers planning descriptors, not total scan memory: worker buffers,
+entries, and collected results consume additional memory.
+
 ```rust,no_run
 use ntfs_mft::{MftResult, RawMft, RawMftChunkPlanOptions, RawMftScanOptions};
 use std::num::NonZeroU64;
@@ -141,12 +148,13 @@ Builder order does not change selection. Explicit `.chunks(...)` are candidate
 ranges: execution intersects each with the scan range and volume bounds, drops
 empty intersections, and preserves supplied order. Overlapping intersections
 are rejected with `MftError::InvalidOptions` before scanning; adjacent ranges
-are valid. Returned batch ranges and fold initializer ranges
+are valid. The same chunk-count limit applies to nonempty intersections after
+clipping. Returned batch ranges and fold initializer ranges
 are the clipped ranges. Unused-record filtering still uses the scan options.
 Omitted chunks are never recreated, even when unused records are enabled.
 Calling `.chunk_plan(...)` switches back to automatic planning.
 
-For manual planning, call `raw.plan_chunks_with_options(chunk_options, &scan_options)`
+For manual planning, call `raw.plan_chunks_with_options(chunk_options, &scan_options)?`
 and pass the same scan options to parallel execution. Prefer automatic planning
 when the selection may change. For sequential chunk execution, configure
 `.parallel().lean().workers(NonZeroUsize::MIN)`;

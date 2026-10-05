@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect_dos_file_name_links(false)
         .build();
 
-    let chunks = raw_mft.plan_chunks_with_options(chunk_plan, &options);
+    let chunks = raw_mft.plan_chunks_with_options(chunk_plan, &options)?;
 
     let start = Instant::now();
     let chunk_count = chunks.len();

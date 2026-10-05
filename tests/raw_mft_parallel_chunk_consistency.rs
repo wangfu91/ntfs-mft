@@ -34,6 +34,7 @@ fn raw_mft_parallel_chunk_path_matches_serial_chunk_path() -> Result<(), String>
         .build();
     let chunks: Vec<_> = raw_mft
         .plan_chunks_with_options(chunk_options, &options)
+        .map_err(|error| format!("chunk planning failed: {error}"))?
         .into_iter()
         .take(8)
         .collect();

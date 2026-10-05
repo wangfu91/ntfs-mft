@@ -60,6 +60,101 @@ fn plan() -> RawMftChunkPlanOptions {
         .build()
 }
 
+fn mft_with_oversized_capacity(volume: &Volume) -> RawMft<'_> {
+    let mut raw = mft(volume);
+    raw.extent_map = Arc::new(ExtentMap::from_runs(
+        &[DataRun::Data {
+            lcn: 0,
+            clusters: 1u64 << 48,
+        }],
+        1024,
+        1024,
+    ));
+    raw.bitmap = Arc::from([]);
+    raw
+}
+
+#[test]
+fn oversized_capacity_fails_planning_and_all_parallel_projections() -> MftResult<()> {
+    let volume = volume()?;
+    let raw = mft_with_oversized_capacity(&volume);
+    assert!(matches!(
+        raw.plan_chunks(),
+        Err(MftError::InvalidOptions(_))
+    ));
+    for include_unused in [false, true] {
+        let options = RawMftScanOptions::builder()
+            .include_unused_records(include_unused)
+            .build();
+        assert!(matches!(
+            raw.plan_chunks_with_options(RawMftChunkPlanOptions::default(), &options),
+            Err(MftError::InvalidOptions(_))
+        ));
+        assert!(matches!(
+            raw.parallel()
+                .rich()
+                .scan_options(options.clone())
+                .for_each_batch(|_| { panic!("oversized plan must not reach a batch callback") }),
+            Err(MftError::InvalidOptions(_))
+        ));
+        assert!(matches!(
+            raw.parallel()
+                .lean()
+                .scan_options(options.clone().into_lean())
+                .collect_batches(),
+            Err(MftError::InvalidOptions(_))
+        ));
+        assert!(matches!(
+            raw.parallel()
+                .lean()
+                .scan_options(options.into_lean())
+                .try_fold_records_cached_enrich(
+                    || (),
+                    |_, _| Ok::<_, std::convert::Infallible>(()),
+                    |_| panic!("oversized plan must not reach a result callback"),
+                ),
+            Err(crate::ScanError::Scanner(MftError::InvalidOptions(_)))
+        ));
+    }
+
+    let bounded = RawMftScanOptions::builder()
+        .range(0..32)
+        .include_unused_records(true)
+        .build();
+    assert_eq!(raw.plan_chunks_with_options(plan(), &bounded)?.len(), 8);
+    let batches = raw
+        .parallel()
+        .lean()
+        .scan_options(bounded.into_lean())
+        .collect_batches()?;
+    assert_eq!(numbers(batches), (0..32).collect::<Vec<_>>());
+    Ok(())
+}
+
+#[test]
+fn huge_lean_chunk_reaches_read_error_without_range_sized_allocation() -> MftResult<()> {
+    let volume = volume()?;
+    let raw = mft_with_oversized_capacity(&volume);
+    let options = RawMftScanOptions::builder()
+        .range(32..)
+        .include_unused_records(true)
+        .build();
+    let chunk = RawMftWorkChunk {
+        start_record: 32,
+        end_record: raw.record_count(),
+    };
+    let error = raw
+        .parallel()
+        .lean()
+        .scan_options(options.into_lean())
+        .chunks(vec![chunk])
+        .workers(NonZeroUsize::MIN)
+        .collect_batches()
+        .expect_err("missing backing bytes must fail normally");
+    assert!(matches!(error, MftError::Io(_)));
+    Ok(())
+}
+
 #[test]
 fn allocation_queries_distinguish_unknown_and_keep_unknown_slots() -> MftResult<()> {
     let volume = volume()?;
@@ -193,7 +288,7 @@ fn automatic_selection_matches_serial_for_ranges_usage_and_builder_order() -> Mf
                     .scan_options(options.clone().into_lean());
                 assert_eq!(
                     first.resolved_chunks()?,
-                    raw.plan_chunks_with_options(plan(), &options)
+                    raw.plan_chunks_with_options(plan(), &options)?
                 );
                 assert_eq!(numbers(first.collect_batches()?), expected);
                 assert_eq!(numbers(second.collect_batches()?), expected);
