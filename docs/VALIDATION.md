@@ -25,6 +25,7 @@ Each report is a snapshot. Keep its revision, platform, commands and limitations
 with its results; do not infer current CI or release readiness from an older run.
 
 - [September 2026 correctness and security audit](audits/2026-09-21-correctness-security.md)
+- [October 2026 release review and outstanding checks](audits/2026-10-05-release-readiness.md)
 - [September 2026 parser performance measurements](audits/2026-09-21-performance.md)
 - [Earlier platform validation](audits/historical-platform-validation.md)
 - [Logical-stream test coverage and earlier Windows smoke test](mft-stream-validation.md)

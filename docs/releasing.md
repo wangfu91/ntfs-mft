@@ -22,7 +22,8 @@ Publication and account settings are explicit maintainer actions.
   publishing configuration. Never put credentials in the repository or logs.
 - Confirm the version in `Cargo.toml` and `Cargo.lock`. At release time, date the
   matching `CHANGELOG.md` section and remove its `unreleased` marker. Use that
-  version for the tag and GitHub release too.
+  version for the tag and GitHub release too. Replace the README's prepublication
+  path-dependency instructions with the published crates.io dependency.
 
 ## Validate a clean checkout
 
