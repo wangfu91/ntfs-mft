@@ -1,15 +1,11 @@
 # Live volume scan internals
 
-A **live volume scan** uses `RawMft` to read NTFS boot metadata and `$MFT`
-directly from the volume/device. `MftStream` instead parses a logical `$MFT`
-stream; an **offline MFT scan** supplies that stream from an extracted file or
-buffer. It does not use Windows
-FSCTL enumeration. ReFS is rejected with `MftError::UnsupportedFilesystem`.
-All volume access is read-only; see [Windows](windows-raw-volume-access.md) and
-[macOS](macos-raw-volume-access.md) access requirements.
-
-For public entry points and their different contracts, start with
-[Choosing an MFT API](api-guide.md).
+`RawMft` reads NTFS boot metadata and `$MFT` directly from a volume or device.
+It does not use Windows FSCTL enumeration. ReFS is rejected with
+`MftError::UnsupportedFilesystem`. All volume access is read-only; see
+[Windows](windows-raw-volume-access.md) and [macOS](macos-raw-volume-access.md)
+access requirements. Start with the [API guide](api-guide.md) for public entry
+points and the [stream contract](offline-mft.md) for `MftStream` parsing.
 
 ## Discovery and I/O
 
@@ -50,8 +46,8 @@ complete record coverage. Chunk boundaries remain logical record ranges, not
 physical extent boundaries.
 
 `VolumeReader` buffers aligned reads. Windows uses explicit-offset `ReadFile`
-with a per-reader completion event;
-Linux and macOS use positional reads. macOS also queries device block alignment.
+with a per-reader completion event; Linux and macOS use positional reads.
+macOS also queries device block alignment.
 The normal scan borrows contiguous record bytes from the buffer, avoiding a
 per-record copy; records spanning physical extents use a reusable scratch buffer.
 A separate attribute reader handles random extension lookups without disturbing
@@ -73,7 +69,8 @@ handles. A live scan is not an atomic snapshot.
 5. Build a `RawMftEntry` and enrich missing metadata from its attribute list.
 
 Default scans start at record 24 and exclude unused records. Invalid records
-are logged and skipped; scan I/O errors are returned once and terminate iteration.
+are skipped; parse failures are logged. Scan I/O errors are returned once and
+terminate iteration.
 `bitmap_usage` returns `None` when allocation evidence is unavailable; those
 slots remain scan candidates. Inspect `entry.is_used` for the FILE-header state.
 This output is a best-effort base-record view, not a guaranteed Explorer listing.
@@ -94,11 +91,22 @@ extension records, and merges usable metadata. It follows only one level and
 does not yield extensions as separate files. Raw iteration discards enrichment
 errors; consumers requiring completeness diagnostics should use `MftStream`.
 
-File references combine a 48-bit record number and a 16-bit sequence number.
-The scanner preserves both parts in file and parent references. Applications
-that reconstruct paths should validate complete references and handle missing
-ancestors, reused slots, cycles, and multiple hard links. The library does not
-construct paths or directory trees.
+Rich serial and parallel scans share metadata construction and enrichment.
+Lean parallel scans keep names, references, sizes, links, and basic flags; their
+options omit ADS settings. `.into_lean()` explicitly discards rich-only choices.
+Cached enrichment is lean-only.
+
+`RawMftEntry::metadata()` reports observed presence and disabled collection;
+it leaves completeness unverified and missing fields unknown. It does not
+reparse attributes or allocate diagnostics. For per-slot parsing evidence, use
+`MftStream::from_raw_mft(raw)` or construct a stream from `raw.byte_reader()`.
+Retain each record's `metadata`, `diagnostics`, and `external_payloads`.
+
+File and parent references preserve a 48-bit record number and a 16-bit sequence
+number. `base_reference()` is `None` for base records and `Some(full_reference)`
+for extensions, including extensions of record zero. Consumers that reconstruct
+paths must match full references and handle missing ancestors, reused slots,
+cycles, and multiple hard links. The library does not construct paths or trees.
 
 ## Chunk planning
 
@@ -113,16 +121,15 @@ unless the scan options include unused records.
 use ntfs_mft::{MftResult, RawMft, RawMftChunkPlanOptions, RawMftScanOptions};
 use std::num::NonZeroU64;
 
-fn scan(raw: &RawMft<'_>) -> MftResult<()> {
+fn scan(raw: &RawMft<'_>, records_per_chunk: NonZeroU64) -> MftResult<()> {
     let options = RawMftScanOptions::builder()
-        .start_record(0)
-        .end_record(Some(1000))
+        .range(0..1000)
         .include_unused_records(true)
         .build();
     raw.parallel().rich()
         .scan_options(options)
         .chunk_plan(RawMftChunkPlanOptions::builder()
-            .max_records_per_chunk(NonZeroU64::new(256).unwrap())
+            .max_records_per_chunk(records_per_chunk)
             .build())
         .for_each_batch(|batch| {
             println!("{} entries", batch.entries.len());
@@ -162,45 +169,11 @@ Results may finish out of order. The coordinator buffers them and invokes the
 visitor in the supplied chunk order. Worker errors, unexpected channel closure,
 and worker panics fail the operation.
 
-`try_map_chunks_for_each` transforms each parsed batch on its worker. `try_fold_chunks` initializes
-an accumulator per chunk and folds entries into it, avoiding an intermediate
-batch vector. Both preserve ordered result delivery.
+`try_map_chunks_for_each` transforms each parsed batch on its worker.
+`try_fold_chunks` initializes an accumulator per chunk and folds entries into
+it, avoiding an intermediate batch vector. Both preserve ordered result delivery.
 
-## Benchmarks and tests
-
-`benches/raw_mft_ingest.rs` and its profile example share
-`support/raw_mft_ingest_support.rs`. The benchmark disables ADS and DOS aliases;
-both planning and scanning exclude unused records. Its defaults
-are 2,048-record chunks, 256 KiB/16 KiB buffers, and available parallelism capped
-at 10 workers. These are workload-specific benchmark settings.
-
-See [parallel measurements and commands](raw-mft-parallel-ingest-findings.md)
-and [serial measurements](raw-mft-serial-read-findings.md). The
-[sparse-volume fixture](../tests/fixtures/sparse-volume-fixture/README.md) tests bootstrapping,
-fragmented bitmap loading, and serial/parallel agreement without a device.
-The [module map](../src/raw_mft/README.md) locates the implementation.
-
-## Metadata projections
-
-Choose `.parallel().rich()` for `RawMftEntry` or `.parallel().lean()` for
-`RawMftLeanEntry`. Lean scan options expose only supported selection, buffers,
-and DOS-link collection. `.into_lean()` explicitly discards rich-only settings.
-Cached enrichment is lean-only. Rich serial and parallel scans share the same
-materialization and enrichment implementation.
-
-## Metadata evidence
-
-The fast raw APIs remain tolerant: malformed, non-FILE, and extension records
-may be skipped, and an empty collected field does not prove that metadata is
-absent. `RawMftEntry::metadata()` reports cheaply observed presence and disabled
-collection; it conservatively leaves completeness unverified and missing fields
-unknown. It does not reparse attributes or allocate diagnostics. When each logical
-record position and its parsing evidence matter, use
-`MftStream::from_raw_mft(raw)` or construct a stream with custom options from
-`raw.byte_reader()`. Retain each `MftRecord`'s `metadata`, `diagnostics`, and
-`external_payloads` when exporting or auditing results.
-
-## Application callback errors
+### Application callback errors
 
 Both projections provide `try_for_each_batch`, `try_map_chunks_for_each`, and
 `try_fold_chunks`. Lean scans also provide `try_fold_records_cached_enrich`.
@@ -219,9 +192,16 @@ already-running worker callbacks may finish before the call returns. No
 rollback of prior callback side effects is implied. Mapping and folding run
 on workers; ordered visitation runs on the calling thread.
 
-## NTFS identity
+## Benchmarks and tests
 
-File and parent references use `NtfsFileReference`, preserving both the 48-bit
-record number and 16-bit sequence. `base_reference` is `None` for base records
-and `Some(full_reference)` for extensions, including extensions of record zero.
-Record numbers alone cannot identify reused slots reliably.
+`benches/raw_mft_ingest.rs` and its profile example share
+`support/raw_mft_ingest_support.rs`. The benchmark disables ADS and DOS aliases;
+both planning and scanning exclude unused records. Its defaults
+are 2,048-record chunks, 256 KiB/16 KiB buffers, and available parallelism capped
+at 10 workers. These are workload-specific benchmark settings.
+
+See [parallel measurements and commands](raw-mft-parallel-ingest-findings.md)
+and [serial measurements](raw-mft-serial-read-findings.md). The
+[sparse-volume fixture](../tests/fixtures/sparse-volume-fixture/README.md) tests
+bootstrapping, fragmented bitmap loading, and serial/parallel agreement without
+a device. The [module map](../src/raw_mft/README.md) locates the implementation.

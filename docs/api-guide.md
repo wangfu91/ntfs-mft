@@ -1,31 +1,32 @@
 # Choosing an MFT API
 
-Use a live volume scan for a best-effort base-record listing from a volume. Use
-`MftStream` when each logical record position, including invalid or extension
-records, needs an explicit outcome or metadata evidence.
-
-A **live volume scan** reads directly from an NTFS volume/device. An **offline
-MFT scan** parses an extracted logical `$MFT` file or buffer. `read` denotes a
-single-record or byte operation, `scan` denotes traversal, and `parse` denotes
-record interpretation. `RawMft` and `MftStream` name the data access abstractions;
-`MftStream` can parse either source, so using it does not imply offline input.
+Use `RawMft` for a best-effort base-record listing from an NTFS volume. Use
+`MftStream` for per-slot outcomes and metadata evidence, from either an extracted
+logical `$MFT` or a live volume. All volume access is read-only; live reads are
+not atomic filesystem snapshots.
 
 | Entry point | Result | Default selection | Error behavior |
 | --- | --- | --- | --- |
 | `raw.scan_entries()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
 | `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
 | `raw.parallel().lean()` | Batches of `RawMftLeanEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
-| `stream.iter_records()` | `MftRecord` per valid record position | All record positions from zero, including unused and extensions | Parse errors returned per position and iteration continues; I/O error stops iteration |
+| `stream.iter_records()` | `Result<MftRecord, MftError>` per slot | All positions from zero, including unused and extensions | Parse errors returned per position and iteration continues; I/O error stops iteration |
 
-MftStream extension I/O failures are attached to the base record's diagnostics;
-the iterator yields that partial record, then a terminal `MftError::ExtensionRead`,
-then stops. Standard `Result` collection therefore reports incomplete scans as
-errors. Ordinary live volume scans use the bitmap for selection;
-`bitmap_usage(number)` returns `None` for unavailable
-evidence or out-of-range slots. Unknown allocation is scanned conservatively;
-inspect each entry's `is_used`. Serial scan I/O errors are terminal.
-A successful raw scan does not prove complete metadata. Live volumes are not
-atomic snapshots.
+## Errors and completeness
+
+Raw scans skip sparse, non-FILE, malformed, and extension records. Enrichment
+failures are not returned, so a successful scan does not prove complete metadata.
+`bitmap_usage(number)` returns `None` for unavailable or out-of-range allocation
+evidence. Unknown allocation is scanned conservatively; inspect each entry's
+`is_used` for the FILE-header state.
+
+`MftStream` returns record-validation errors per slot and preserves partial
+metadata with diagnostics. When an extension lookup fails with an I/O error, the
+iterator yields the partial base record, then `MftError::ExtensionRead`, then
+stops. `collect::<MftResult<Vec<_>>>()` reports that I/O failure as an error;
+successful collection still requires checking each record's metadata and
+diagnostics for recoverable limitations. A direct `read_record` call retains
+extension failures in the returned record's diagnostics.
 
 Nonresident metadata materialization (`$MFT::$BITMAP` and `$ATTRIBUTE_LIST`)
 is limited to 64 MiB per payload. Oversized payloads return an error during
@@ -75,11 +76,11 @@ fn visit(raw: &RawMft<'_>) -> MftResult<()> {
 }
 ```
 
-There is deliberately no terminal scan operation on `raw.parallel()` until the
-caller chooses `.rich()` or `.lean()`. For application-specific callback errors,
-use the `try_*` terminal methods and match `ScanError::Scanner` or
+Choose `.rich()` or `.lean()` before executing a parallel scan. For fallible
+callbacks, use the `try_*` methods and match `ScanError::Scanner` or
 `ScanError::Consumer`. Worker callbacks already in progress may finish after
-another callback fails; completed side effects are not rolled back.
+another callback fails; completed side effects are not rolled back. Batch
+visitors run on the calling thread; map and fold callbacks run on workers.
 
 ## Preserve evidence, names, and identity
 

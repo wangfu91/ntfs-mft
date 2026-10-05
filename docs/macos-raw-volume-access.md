@@ -39,8 +39,9 @@ sudo env NTFS_MFT_TEST_VOLUME=/Volumes/Windows ./target/debug/deps/macos_raw_mft
 
 Repeat with `NTFS_MFT_TEST_VOLUME=/dev/diskNsM` for direct-device access. The test checks
 serial scans, both parallel schedulers, root-record lookup, independent cursors,
-and stream ownership. It skips without a selected source and fails on errors
-when one is supplied. Use a stable volume: live scans are not atomic snapshots.
+and stream ownership. Selecting it with `--ignored` requires a configured source;
+missing configuration, failed opens, and scan errors fail the test.
+Use a stable volume: live scans are not atomic snapshots.
 No mount, unmount, write, repair, or permission change is performed.
 
 See Apple's [statfs contract](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/statfs.2.html)

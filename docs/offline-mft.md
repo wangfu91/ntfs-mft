@@ -1,14 +1,14 @@
 # Logical MFT stream parsing
 
-`MftStream` parses a logical `$MFT` stream. An **offline MFT scan** uses an
-already extracted file or buffer as that stream; `from_raw_mft()` and
-`byte_reader()` instead derive it from a live volume, retaining that source's
-consistency limitations.
-Single-record and byte operations are called **reads**.
+`MftStream` parses every slot of a logical `$MFT`, retaining record errors and
+metadata evidence. Use an extracted file or buffer for offline parsing, or
+`MftStream::from_raw_mft(&raw)` for a live volume. Live input keeps the volume's
+access requirements and consistency limitations.
 
 `MftStream<R: Read + Seek>` owns a reader (or a borrowed reader such as `&mut R`).
 `from_path` uses a read-only buffered file. `Cursor<Vec<u8>>` and `Cursor<&[u8]>`
-support owned and borrowed buffers. No device access or elevated privileges are required.
+support owned and borrowed buffers. File and buffer inputs require no device
+access or elevated privileges.
 
 The parser retains one reusable base-record byte buffer, bounded by the configured
 record size (at most 64 KiB). Extension records use independent buffers. Returned
@@ -75,7 +75,10 @@ remain unavailable to `MftStream`, even though the backing source is a volume.
   one report. Extension I/O errors are attached to the yielded partial base entry;
   the iterator then returns `MftError::ExtensionRead` once before terminating.
   This error describes the failed dependency, not an additional record slot.
-  The original error is shared with the diagnostic so both retain its source. Restarting iteration or explicitly reading a slot is allowed.
+  The original error is shared with the diagnostic so both retain its source.
+  A direct `read_record` call returns the partial record with diagnostics; it
+  does not issue the iterator's additional terminal error. Restarting iteration
+  or explicitly reading a slot is allowed.
 - The iterator exclusively borrows the stream. Extension reads use the same
   reader; subsequent slot reads seek explicitly, so random lookups cannot disturb
   iteration order. `into_inner` makes no promise about the final cursor position.
@@ -99,8 +102,9 @@ An incomplete list can affect all categories. A physical extension record's
 categories remain incomplete because its base was not inspected.
 
 Completeness covers the supported metadata representation, not every NTFS
-attribute type and not file-content availability. Unknown attributes are not
-decoded into `RawMftEntry`. Non-resident data headers can provide valid sizes while their contents remain outside the input. `external_payloads`
+attribute type or file-content availability. Unknown attributes are not decoded
+into `RawMftEntry`. Non-resident data headers can provide valid sizes while their
+contents remain outside the input. `external_payloads`
 identifies observed non-resident attributes by record number, type and instance
 ID. An empty list is not evidence of absence if inspection was incomplete.
 
@@ -125,7 +129,8 @@ Missing records, mismatched references, malformed attributes/lists and nested
 lists produce structured diagnostics, retaining usable base metadata. Nested
 lists are not followed, including cycles back to the base. A self-reference in
 the base list is checked against the base's own attribute, not read recursively.
-Non-resident lists cannot be resolved without the original volume.
+Non-resident lists remain unresolved, including with a volume-backed
+`MftByteReader`: this parser has no external-payload reader.
 
 Split data streams are only partially represented: the first segment supplies
 sizes, continuation segments do not overwrite them, and `SplitDataStream`

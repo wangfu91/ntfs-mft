@@ -2,57 +2,52 @@
 
 Read-only NTFS Master File Table parsing and scanning for Windows, Linux, and macOS.
 
-This library reads the boot sector and fragmented `$MFT` streams directly,
-validates FILE records and update sequence arrays, and exposes timestamps,
-names, sizes, hard links, alternate data streams, and file attributes. It includes
-serial and parallel live volume scans and logical MFT stream parsing.
-
-See [Choosing an MFT API](docs/api-guide.md) for scan defaults, metadata choices,
-error behavior, and examples.
-
-## Choose an API
-
-| Need | Start with | Input |
-| --- | --- | --- |
-| Scan an NTFS volume serially | `Volume::raw_mft` and `RawMft::scan_entries` | Mounted volume or device |
-| Process a volume in parallel | `RawMft::parallel().rich()` or `.lean()` | Mounted volume or device |
-| Parse an extracted `$MFT` | `MftStream::from_path` | Logical `$MFT` file |
-| Parse bytes or a custom stream | `MftStream::from_reader` | `Read + Seek` source |
-| Read arbitrary logical MFT bytes | `RawMft::byte_reader` | Existing `RawMft` |
-
-All volume access is read-only. `MftStream` reports corrupt slots as item-level
-errors where iteration can safely continue; raw scans skip malformed records. See the [API guide](docs/api-guide.md)
-for metadata completeness, attribute-list enrichment, and error contracts.
-
-## Terminology
-
-- **Live volume scan** reads MFT records directly from an NTFS volume/device.
-- **Offline MFT scan** parses an already extracted logical `$MFT` file or buffer.
-- **Read** means a single-record read or byte-stream operation; **scan** means
-  traversing records. **Parse** means interpreting the NTFS record bytes.
-
-`RawMft` accesses a volume and supports live volume scans. `MftStream` parses a
-logical byte stream from either source: a file-backed stream is an offline MFT
-scan; `MftStream::from_raw_mft()` still reads a live volume. Source and parsing
-policy are separate. A live volume scan is not an atomic filesystem snapshot.
+Read an NTFS volume or an extracted `$MFT` to inspect names, timestamps, sizes,
+hard links, alternate data streams, and file attributes. Volume scans support
+fragmented MFTs and serial or parallel processing. Names retain their original
+UTF-16, and file references retain record and sequence numbers.
 
 ## Installation
 
-This crate does not declare a minimum supported Rust version. After publication,
-add it from crates.io with:
-
-```toml
-[dependencies]
-ntfs-mft = "0.1"
-```
-
-Version 0.1.0 is being prepared for its first publication. Until then, clone this
-repository and use a local path dependency:
+Version 0.1.0 is being prepared for its first crates.io publication. Until then,
+clone this repository and use a path dependency:
 
 ```toml
 [dependencies]
 ntfs-mft = { path = "../ntfs-mft" }
 ```
+
+After publication, use `ntfs-mft = "0.1"`. Development and CI use the latest
+stable Rust; no minimum supported Rust version is declared.
+
+## Parse an extracted MFT
+
+Use `MftStream` with a logical `$MFT` file and its record size. This requires
+ordinary file permissions and works on every supported OS:
+
+```rust,no_run
+use ntfs_mft::{MftResult, MftStream, MftStreamOptions};
+
+fn main() -> MftResult<()> {
+    // Use the source volume's record size; 1024 is common, but not universal.
+    let options = MftStreamOptions::new(1024)?;
+    let mut mft = MftStream::from_path("extracted.MFT", options)?;
+    for result in mft.iter_records() {
+        let record = result?;
+        println!("{} {:?}", record.entry, record.metadata);
+    }
+    Ok(())
+}
+```
+
+The stream includes every slot, including unused and extension records. Invalid
+records return per-slot errors; the example stops at the first error. To continue
+past recoverable parse errors, handle each `Result` instead of using `?`.
+Keep `metadata`, `diagnostics`, and `external_payloads` with exported entries:
+an empty field may mean unknown, not absent. See the
+[stream contract](docs/offline-mft.md) for input requirements and error handling.
+
+## Scan a volume
 
 ```rust,no_run
 use ntfs_mft::{MftResult, Volume};
@@ -64,102 +59,57 @@ fn main() -> MftResult<()> {
     let volume = Volume::from_mount_point("/media/user/windows")?;
     #[cfg(target_os = "macos")]
     let volume = Volume::from_mount_point("/Volumes/Windows")?;
+
     let mft = volume.raw_mft()?;
     for entry in mft.scan_entries()?.take(20) {
-        println!("{}", entry?.file_name.to_string_lossy());
+        println!("{}", entry?.file_name);
     }
     Ok(())
 }
 ```
 
-## Logical MFT stream parsing
+Volume scans default to record 24 onward, exclude bitmap-unused slots, and skip
+malformed and extension records. Scan I/O failures end iteration. Metadata enrichment
+is best effort; a successful scan does not establish complete metadata.
 
-`MftStream` parses a logical `$MFT` stream. A standalone extracted `$MFT` file
-uses ordinary file permissions; it also accepts `Read + Seek` sources through
-`from_reader`, including `Cursor<&[u8]>` for borrowed memory:
+| Need | API |
+| --- | --- |
+| Scan a volume serially | `RawMft::scan_entries` |
+| Process a volume in parallel | `RawMft::parallel().rich()` or `.lean()` |
+| Parse an extracted file or `Read + Seek` source | `MftStream::from_path` or `from_reader` |
+| Inspect every slot of a live MFT | `MftStream::from_raw_mft` |
+| Read logical MFT bytes | `RawMft::byte_reader` |
 
-```rust,no_run
-use ntfs_mft::{MftResult, MftStream, MftStreamOptions};
+See the [API guide](docs/api-guide.md) for selection, metadata options, and error
+contracts. `MftStream` can use either offline or live input; it does not make a
+live source into a snapshot.
 
-fn main() -> MftResult<()> {
-    let options = MftStreamOptions::new(1024)?;
-    let mut mft = MftStream::from_path("extracted.MFT", options)?;
-    for record in mft.iter_records() {
-        match record {
-            Ok(record) => println!("{} {:?}", record.entry, record.metadata),
-            Err(error) => eprintln!("{error}"),
-        }
-    }
-    Ok(())
-}
-```
+## Limits and access requirements
 
-Record size is explicit; there is no automatic geometry detection. Iteration
-includes system, unused, extension, and non-FILE slots. Each bad slot returns an
-error. Enable `options.resolve_extensions(true)` for one level of resident
-attribute-list references. Always retain `metadata`, `diagnostics`, and
-`external_payloads` when exporting: a missing value may be unknown, not absent.
-An MFT-only stream cannot supply non-resident attribute payloads or arbitrary
-file contents. See [the MFT stream API contract](docs/offline-mft.md).
+- All device access is read-only. Windows requires Administrator privileges and
+  a launch context permitting raw-volume I/O; see
+  [Windows access requirements](docs/windows-raw-volume-access.md). Linux and macOS
+  require read permission for the backing device; see
+  [macOS access and validation](docs/macos-raw-volume-access.md).
+- NTFS only; ReFS is rejected. Live scans are not atomic filesystem snapshots.
+- Attribute-list enrichment follows one level. `MftStream` resolves only
+  resident attribute lists and cannot read external attribute payloads or general
+  file contents, including when backed by a volume.
+- Full paths and directory trees belong to the consumer. USN journal APIs are
+  provided separately by [usn-journal-rs](https://crates.io/crates/usn-journal-rs).
 
-For direct volume input, use `MftStream::from_raw_mft(&raw)` with an existing
-`RawMft`. It discovers the record size and opens an independent handle. For custom
-parser options, pass `raw.byte_reader()?` to `MftStream::from_reader` and use
-`raw.file_record_size()`. The adapter handles fragmented extents through
-`Read + Seek`. Raw-volume permissions and live-scan consistency limits still apply.
+## Development and documentation
 
-## Scope and limitations
+Tests and packaging require hydrated [Git LFS](https://git-lfs.com/) fixtures.
+Run `git lfs pull` after cloning; LFS pointer files are not usable fixtures.
 
-- NTFS only; ReFS is rejected. For USN journal APIs check [usn-journal-rs](https://crates.io/crates/usn-journal-rs).
-  Windows FSCTL enumeration is used only by local parity-test helpers.
-- Windows raw volume access requires Administrator privileges and a launch context
-  permitting raw-volume I/O; see [MSIX runtime requirements](docs/windows-raw-volume-access.md).
-  Linux and macOS require read permission for the backing device (typically root
-  on macOS); see [macOS access and validation](docs/macos-raw-volume-access.md).
-  All device opens are read-only.
-- A live scan is not an atomic filesystem snapshot; concurrent changes can affect results.
-- Attribute-list enrichment is one level deep.
-- Full-path reconstruction and directory trees belong to the consumer. Records
-  retain names, namespaces, file/parent references, and hard-link metadata.
-
-## Development
-
-Install [Git LFS](https://git-lfs.com/) before cloning, then run `git lfs pull`
-from the repository root. Tests and packaging need the actual fixture bytes;
-Git LFS pointer files are not usable fixtures.
-
-```text
-cargo build --locked
-cargo fmt --all -- --check
-cargo test --locked
-cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
-cargo clippy --locked --all-targets -- -D warnings
-cargo package --locked
-cargo run --example raw_mft_serial_read -- C
-cargo run --example raw_mft_parallel_chunks -- C
-cargo run --example deletion_forensic -- C
-cargo bench --bench raw_mft
-cargo bench --bench raw_mft_ingest
-```
-
-On Linux and macOS, pass an NTFS mount point or `/dev/...` device instead of `C`.
-Device tests are ignored by default. Select them with `--ignored` and explicitly
-set `NTFS_MFT_TEST_DRIVE` on Windows or `NTFS_MFT_TEST_VOLUME` on Linux/macOS;
-ReFS rejection uses `NTFS_MFT_REFS_TEST_DRIVE`. Once selected, missing prerequisites
-and runtime errors fail the test. See [live-test commands](CONTRIBUTING.md#validation).
-Benchmarks use the same source variables with their own defaults; tuning uses
-`NTFS_MFT_BENCH_*` and `NTFS_MFT_SERIAL_*`.
-
-See [Windows API parity tests](integration-tests/README.md),
-[offline parser differential tests](differential-tests/README.md), and
-[implementation](docs/raw-mft-read.md).
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, validation, and fixture
-requirements, and the [Code of Conduct](CODE_OF_CONDUCT.md) for community
-expectations. Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
-Maintainers can use the [release checklist](docs/releasing.md) for GitHub and
-crates.io publication.
+- [Contributing](CONTRIBUTING.md): setup, validation, live-device tests, and benchmarks.
+- [Implementation guide](docs/raw-mft-read.md): bootstrapping, record parsing, and parallel scans.
+- [Differential tests](differential-tests/README.md) and [Windows API parity tests](integration-tests/README.md).
+- [Release checklist](docs/releasing.md) and [changelog](CHANGELOG.md).
+- [Security reporting](SECURITY.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-MIT; see [LICENSE](LICENSE).
+MIT; see [LICENSE](LICENSE). Binary fixtures have their own provenance and notices
+under [`tests/fixtures`](tests/fixtures).
