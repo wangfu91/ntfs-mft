@@ -36,6 +36,3 @@ workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 mft.workspace = true
-
-[target.'cfg(windows)'.dev-dependencies]
-injectorpp.workspace = true
