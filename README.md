@@ -72,17 +72,8 @@ Volume scans default to record 24 onward, exclude bitmap-unused slots, and skip
 malformed and extension records. Scan I/O failures end iteration. Metadata enrichment
 is best effort; a successful scan does not establish complete metadata.
 
-| Need | API |
-| --- | --- |
-| Scan a volume serially | `RawMft::scan_entries` |
-| Process a volume in parallel | `RawMft::parallel().rich()` or `.lean()` |
-| Parse an extracted file or `Read + Seek` source | `MftStream::from_path` or `from_reader` |
-| Inspect every slot of a live MFT | `MftStream::from_raw_mft` |
-| Read logical MFT bytes | `RawMft::byte_reader` |
-
-See the [API guide](docs/api-guide.md) for selection, metadata options, and error
-contracts. `MftStream` can use either offline or live input; it does not make a
-live source into a snapshot.
+See the [API guide](docs/api-guide.md) for parallel scans, selection, metadata
+options, and error contracts.
 
 ## Limits and access requirements
 

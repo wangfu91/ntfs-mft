@@ -1,17 +1,16 @@
 # Contributing
 
 Bug reports, documentation fixes, tests, and focused pull requests are welcome.
-For a substantial API change, open an issue describing the use case first so
-maintainers and contributors can agree on scope.
+For a substantial API change, open an issue with the use case first.
 
-Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems
-privately as described in [SECURITY.md](SECURITY.md).
+Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately
+as described in [SECURITY.md](SECURITY.md).
 
 ## Setup
 
-Use the latest stable Rust toolchain, a platform linker/toolchain, Python 3, and
-[Git LFS](https://git-lfs.com/). Windows builds use the MSVC toolchain and Visual
-Studio C++ build tools. CI covers Windows, Linux, and macOS.
+Use the latest stable Rust, a platform linker, Python 3, and [Git LFS](https://git-lfs.com/).
+Windows builds require the MSVC toolchain and Visual Studio C++ build tools.
+No minimum supported Rust version is declared.
 
 ```sh
 git lfs install
@@ -21,16 +20,13 @@ git lfs pull
 python tests/fixtures/sparse-volume-fixture/verify.py
 ```
 
-Use `python3` if that is your platform's Python command. The fixture files must
-be hydrated before tests or packaging; a small text file beginning with
-`version https://git-lfs.github.com/spec/v1` is a pointer, not a fixture.
+Use `python3` if needed. Tests and packaging require full fixture bytes; files
+beginning with `version https://git-lfs.github.com/spec/v1` are LFS pointers.
 
 ## Validation
 
-The workspace tracks its root `Cargo.lock` so development and CI checks use the
-same dependency graph. Published library consumers resolve their own graph.
-
-Run from the repository root:
+Run from the repository root. The workspace shares the tracked `Cargo.lock`;
+published consumers resolve their own dependency graph.
 
 ```sh
 cargo fmt --all -- --check
@@ -41,28 +37,28 @@ cargo package --locked
 cargo publish --dry-run --locked
 ```
 
-The workspace checks include both test harnesses. For focused parser work, run
-the pinned comparison harness directly:
+Set `RUSTDOCFLAGS=-D warnings` for rustdoc. Document only `ntfs-mft`: the
+differential harness compiles the same library source and would collide with
+its documentation output. Packaging requires a clean checkout.
 
-```sh
-cargo test --manifest-path differential-tests/Cargo.toml --locked --lib differential_tests
-cargo clippy --manifest-path differential-tests/Cargo.toml --locked --all-targets -- -D warnings
-```
+| Check | Scope |
+| --- | --- |
+| Root tests | Parser, metadata, synthetic I/O, fixtures, and public APIs |
+| [Differential harness](differential-tests/README.md) | Comparison with a pinned independent parser |
+| [Windows parity harness](integration-tests/README.md) | Portable decoders and opt-in Windows API comparisons |
+| Native CI | Build, tests, Clippy, rustdoc, and packaging on Windows, Linux, and macOS |
+| Live-device tests | The configured device, OS, permissions, and launch context |
+| Package and publish dry run | Archive construction and verification build; no upload or remote docs.rs build |
 
-Set `RUSTDOCFLAGS=-D warnings` when building release documentation. Document only
-the `ntfs-mft` package: the differential harness deliberately compiles the same
-library source and would collide with its rustdoc output. Packaging checks need
-a clean checkout; inspect `cargo package --list` before publication.
+Ordinary runs and CI ignore device tests. Record the revision, platform,
+commands, results, and limitations; keep fixture, CI, and live-device evidence
+separate. An older run does not establish current release readiness.
 
-For Windows API or live-volume behavior, see the
-[parity harness](integration-tests/README.md) and [validation guide](docs/VALIDATION.md).
-Live-device tests are marked `#[ignore]`; ordinary test runs and CI execute
-portable/fixture checks and report device checks as ignored. Running them with
-`--ignored` requires explicit volume configuration and appropriate permissions.
-Missing configuration, failed opens, unexpected filesystems, scan errors, and
-insufficient comparison data fail the selected test; they are not success skips.
-Use only devices you are authorized to inspect. Distinguish fixture, live-device,
-and CI evidence when reporting results.
+### Live-device tests
+
+Use only devices you are authorized to inspect. Selected tests fail on missing
+configuration, failed opens, unexpected filesystems, scan errors, or insufficient
+comparison data. Ignored tests provide no device evidence.
 
 From an independent Administrator PowerShell on Windows:
 
@@ -72,38 +68,20 @@ cargo test --locked --test mft_byte_reader --test volume_accessors --test raw_mf
 cargo test --manifest-path integration-tests/Cargo.toml --locked --test raw_mft_mft_consistency -- --ignored --nocapture
 ```
 
-The separate ReFS check requires `NTFS_MFT_REFS_TEST_DRIVE` to name an actual
-ReFS volume; select it explicitly with
-`cargo test --test refs_unsupported -- --ignored --nocapture`.
-There are no default test drive letters.
+For the separate ReFS rejection test, set `NTFS_MFT_REFS_TEST_DRIVE` to an actual
+ReFS volume and run `cargo test --locked --test refs_unsupported -- --ignored --nocapture`.
+There are no default test drive letters. See [Windows access](docs/windows-raw-volume-access.md)
+for launch restrictions.
 
-On Linux/macOS, set `NTFS_MFT_TEST_VOLUME` to the NTFS mount root or `/dev/...`
-device. Build tests with `--no-run`, then run the exact executable printed by
-Cargo with `--ignored --nocapture` in a context allowed to read that device.
-See [macOS instructions](docs/macos-raw-volume-access.md) for an example.
+On Linux/macOS, set `NTFS_MFT_TEST_VOLUME` to an NTFS mount root or device.
+Build with `--no-run`, then execute the exact test binary with `--ignored --nocapture`
+in a context allowed to read the device. See [macOS access](docs/macos-raw-volume-access.md).
 
-The project does not declare or test a minimum supported Rust version. CI uses
-the latest stable toolchain on each supported desktop OS.
+## Benchmarks and profiling
 
-Maintainers preparing a release should follow the
-[GitHub and crates.io release checklist](docs/releasing.md).
-
-## Changes and pull requests
-
-- Explain the problem, resulting behavior, and validation evidence.
-- Preserve read-only volume access, narrow unsafe/FFI boundaries, and explicit
-  errors. Preserve unknown or partial metadata instead of inventing valid values.
-- Add focused regression coverage for behavior changes. Document public API
-  changes and update the changelog when appropriate.
-- Keep unrelated refactoring out of a fix. For performance claims, include the
-  workload, environment, and reproducible measurements.
-
-## Offline performance measurements
-
-`mft_stream` measures the licensed fixture in memory and through a warm file,
-with extension resolution both disabled and enabled. It checks the known
-success/error inventory on every iteration. Its profiling executables share
-the same workload and require no raw-volume access:
+The `mft_stream` benchmark and profiling executables share an offline workload:
+the pinned fixture in memory or through a warm file, with extension resolution
+disabled/enabled. Each scan checks the expected success/error inventory.
 
 ```sh
 cargo bench --locked --bench mft_stream -- --save-baseline before
@@ -112,26 +90,43 @@ cargo run --locked --profile bench --example mft_stream_profile -- file extensio
 cargo run --locked --profile bench --example mft_stream_allocations_profile
 ```
 
-Keep baseline and candidate executables built with the same harness, toolchain,
-profile and fixture. [The comparison script](tools/profiling/compare_mft_stream.ps1)
-alternates their run order and rejects mismatched result fingerprints. Pass the
-preserved executables with `-Baseline` and `-Candidate`; `-Rounds` and
-`-Iterations` control repetitions. Run timings without concurrent builds,
-benchmarks, or profiling. Use allocation counts separately from timings;
-cumulative requested bytes are not retained heap or working set.
+Preserve baseline and candidate executables built with the same harness,
+toolchain, profile, and fixture. [The comparison script](tools/profiling/compare_mft_stream.ps1)
+accepts `-Baseline`, `-Candidate`, `-Rounds`, and `-Iterations`; it alternates run
+order and rejects mismatched result fingerprints. Keep the fixture at the path
+used by both executables.
+
+For live serial and parallel measurements, use [`raw_mft`](benches/raw_mft.rs)
+and [`raw_mft_ingest`](benches/raw_mft_ingest.rs). On Windows, select the NTFS
+drive with `NTFS_MFT_TEST_DRIVE`; on Linux/macOS, use `NTFS_MFT_TEST_VOLUME`.
+The matching profile targets are `raw_mft_serial_read_profile` and
+`raw_mft_parallel_ingest_profile`. Run with raw-device permissions and inspect
+the output: a setup skip is not a measurement.
+
+Keep volume state, selection, metadata options, worker/chunk settings, and
+buffers consistent. Run timings without concurrent builds, benchmarks, or
+profiling. Report repeated measurements and the platform/build configuration.
+Allocation requests are separate from timings, retained heap, and working set.
+
+## Changes and pull requests
+
+Explain the problem, resulting behavior, and validation. Preserve read-only I/O,
+narrow unsafe boundaries, and explicit errors and unknown metadata. Add focused
+coverage and update API documentation and the changelog for behavior changes.
+Keep unrelated refactoring out of a fix.
+
+Maintainers preparing a release should follow the [release checklist](docs/releasing.md).
 
 ## Fixture privacy and provenance
 
-Do not attach personal disk images, raw MFT captures, USN journals, or unreviewed
-scan exports to public issues or PRs. Even an MFT-only capture can expose names,
-timestamps, identifiers, deleted-record slack, and complete resident file contents.
+Do not attach personal disk images, MFT captures, journals, or unreviewed exports
+to public issues or PRs. An MFT can expose names, timestamps, identifiers,
+deleted-record slack, and complete resident file contents.
 
-Prefer a minimal synthetic reproducer. Before proposing a binary fixture,
-document its source, redistribution license or permission, privacy review,
-hash, extraction or generation steps, and expected results. Put large fixtures
-in Git LFS and provide an independent verifier. Do not silently sanitize an
-existing fixture: a changed artifact needs new provenance and expectations.
+Prefer minimal synthetic data. Any new binary fixture needs its source,
+redistribution rights, privacy review, hash, extraction/generation steps,
+expected results, and an independent verifier. Use Git LFS for large fixtures.
+A changed fixture needs new provenance and expectations.
 
-Unless explicitly stated otherwise, contributions are provided under the
-repository's [MIT license](LICENSE). Preserve required third-party notices and
-only submit material you have the right to contribute.
+Contributions use the repository's [MIT license](LICENSE) unless stated otherwise.
+Preserve third-party notices and submit only material you have the right to contribute.

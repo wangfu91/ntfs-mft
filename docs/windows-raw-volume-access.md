@@ -1,4 +1,4 @@
-# Windows raw-volume access and MSIX
+# Windows raw-volume access
 
 Live NTFS access requires administrator privileges and a launch context that
 permits raw-volume I/O. A successful handle open does not guarantee readable data.
@@ -30,7 +30,7 @@ packaged app's elevation and actual read behavior.
 See Microsoft's [Application manifest reference](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/uapmanifestschema/element-f-application)
 and [desktop runtime models](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes).
 
-## Diagnosis and evidence
+## Troubleshooting
 
 Test an actual raw read in the deployed launch context, then compare it with an
 independently opened administrator terminal. Elevation, package identity, or an
@@ -38,12 +38,4 @@ innermost-Job query alone cannot establish access. These error codes can also
 come from other drivers; neither MSIX packaging nor Job membership alone proves
 the cause. Exported MFT files use ordinary file I/O instead.
 
-In my Windows 11 investigation, Codex and its sudo-elevated child belonged to the
-package's outer Silo Job. Matching external probes succeeded. Minifilter tracing
-identified `wcifs!WcPreRead`; telemetry recorded `BlockedOperation`, and the driver
-branch returned `STATUS_NOT_SUPPORTED` for isolated raw reads. An ordinary Job
-in an independent administrator process did not reproduce the failure.
-
-I resolved this in SpaceRover with `win32App`; Codex was not repackaged for that
-comparison. The failure occurred during MFT bootstrapping, before the byte-stream
-adapter. See the [live stream test](mft-stream-validation.md).
+See [live-device testing](../CONTRIBUTING.md#live-device-tests) for test commands.

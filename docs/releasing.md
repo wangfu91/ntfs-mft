@@ -1,7 +1,6 @@
 # Release checklist
 
-Prepare and validate locally before changing GitHub visibility or publishing.
-Publication and account settings are explicit maintainer actions.
+Validate a reviewed commit before making the repository public or publishing.
 
 ## Review the release
 
@@ -27,21 +26,9 @@ Publication and account settings are explicit maintainer actions.
 
 ## Validate a clean checkout
 
-```text
-git lfs pull
-python tests/fixtures/sparse-volume-fixture/verify.py
-cargo fmt --all -- --check
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo doc --package ntfs-mft --no-deps --locked
-cargo package --locked
-cargo publish --dry-run --locked
-```
-
-Set `RUSTDOCFLAGS=-D warnings` for rustdoc. Run a current dependency advisory
-check, such as `cargo audit`, and review findings in the affected dependency's
-context. The workspace includes the pinned parser comparison and Windows parity
-harnesses; they are not published.
+Hydrate and verify fixtures, then run the [contributor checks](../CONTRIBUTING.md#validation),
+including warning-free rustdoc and the publish dry run. Run a current dependency
+advisory check, such as `cargo audit`, and review findings in context.
 
 Inspect `cargo package --list` and the generated `target/package/ntfs-mft-VERSION.crate`:
 
@@ -49,16 +36,14 @@ Inspect `cargo package --list` and the generated `target/package/ntfs-mft-VERSIO
 - No Git LFS pointers, credentials, build output or unrelated files are included.
 - The normalized package manifest has no unpublished runtime dependencies.
 
-Test the extracted package as well as the checkout when changing package
-contents. Cargo's packaging verification builds the library; it does not run
-its tests or examples. Keep local, CI, and live-device results separate.
-Use [CONTRIBUTING.md](../CONTRIBUTING.md#validation) for opt-in device checks.
+Test the extracted package when changing package contents. Cargo's verification
+builds the library but does not run its tests or examples. Follow the
+[validation scope and device instructions](../CONTRIBUTING.md#validation)
+when reporting release evidence.
 
 ## Publish
 
-1. Merge the reviewed release commit and confirm all required native CI jobs
-   actually passed. A job blocked by account billing or runner setup provides
-   no platform validation.
+1. Merge the reviewed release commit and confirm required native CI passed.
 2. Make the repository public when approved and check its README, links,
    description, license and security contact as an unauthenticated visitor.
 3. From the validated clean commit, run `cargo publish --locked`. Verify the

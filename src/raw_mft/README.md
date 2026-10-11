@@ -11,14 +11,8 @@
 | `serial/`, `parallel/` | Record scanning and worker execution |
 | `chunk_plan.rs`, `options.rs` | Logical chunk ranges and scan configuration |
 
-The read path is boot sector → MFT runlist → extent map → FILE record → USA
-fixup → attributes. Extent lookup handles fragmented storage; each parallel
-worker owns its readers and shares immutable discovery data.
-
 Start with the [API guide](../../docs/api-guide.md) for public entry points and
-the [stream contract](../../docs/offline-mft.md) for per-slot parsing. See
-[reader internals](../../docs/raw-mft-read.md) for volume behavior and constraints,
-[serial findings](../../docs/raw-mft-serial-read-findings.md) and
-[parallel findings](../../docs/raw-mft-parallel-ingest-findings.md) for measured
-performance. Use Criterion benchmarks for timing and the matching profile
-examples for flamegraphs or ETW.
+the [stream contract](../../docs/offline-mft.md) for per-slot parsing.
+[Reader internals](../../docs/raw-mft-read.md) describe the scan pipeline;
+[contributor guidance](../../CONTRIBUTING.md#benchmarks-and-profiling) covers
+benchmarks and matching profile targets.
