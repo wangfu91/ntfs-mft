@@ -43,6 +43,7 @@ fn main() -> MftResult<()> {
 The stream includes every slot, including unused and extension records. Invalid
 records return per-slot errors; the example stops at the first error. To continue
 past recoverable parse errors, handle each `Result` instead of using `?`.
+Extension resolution is disabled by default; enable it with `.resolve_extensions(true)`.
 Keep `metadata`, `diagnostics`, and `external_payloads` with exported entries:
 an empty field may mean unknown, not absent. See the
 [stream contract](docs/offline-mft.md) for input requirements and error handling.
@@ -80,8 +81,8 @@ options, and error contracts.
 - All device access is read-only. Windows requires Administrator privileges and
   a launch context permitting raw-volume I/O; see
   [Windows access requirements](docs/windows-raw-volume-access.md). Linux and macOS
-  require read permission for the backing device; see
-  [macOS access and validation](docs/macos-raw-volume-access.md).
+  require read permission for the backing device; see the
+  [Linux](docs/linux-raw-volume-access.md) and [macOS](docs/macos-raw-volume-access.md) guides.
 - NTFS only; ReFS is rejected. Live scans are not atomic filesystem snapshots.
 - Attribute-list enrichment follows one level. `MftStream` resolves only
   resident attribute lists and cannot read external attribute payloads or general
@@ -94,6 +95,8 @@ options, and error contracts.
 Tests and packaging require hydrated [Git LFS](https://git-lfs.com/) fixtures.
 Run `git lfs pull` after cloning; LFS pointer files are not usable fixtures.
 
+- Examples: [serial preview](examples/raw_mft_serial_read.rs),
+  [parallel chunks](examples/raw_mft_parallel_chunks.rs), and [unused records](examples/deletion_forensic.rs).
 - [Contributing](CONTRIBUTING.md): setup, validation, live-device tests, and benchmarks.
 - [Implementation guide](docs/raw-mft-read.md): bootstrapping, record parsing, and parallel scans.
 - [Differential tests](differential-tests/README.md) and [Windows API parity tests](integration-tests/README.md).

@@ -15,17 +15,23 @@ logical MFT or a volume. Device access is read-only; live reads are not snapshot
 
 Selection and metadata collection are separate options:
 
-```rust
-use ntfs_mft::{RawMftEntryOptions, RawMftScanOptions};
+```rust,no_run
+use ntfs_mft::{MftResult, RawMft, RawMftEntryOptions, RawMftScanOptions};
 
-let metadata = RawMftEntryOptions::builder()
-    .collect_alternate_data_streams(false)
-    .build();
-let options = RawMftScanOptions::builder()
-    .range(0..1000)
-    .include_unused_records(true)
-    .entry(metadata)
-    .build();
+fn scan(raw: &RawMft<'_>) -> MftResult<()> {
+    let metadata = RawMftEntryOptions::builder()
+        .collect_alternate_data_streams(false)
+        .build();
+    let options = RawMftScanOptions::builder()
+        .range(0..1000)
+        .include_unused_records(true)
+        .entry(metadata)
+        .build();
+    for entry in raw.scan_entries_with_options(options)? {
+        println!("{}", entry?.file_name);
+    }
+    Ok(())
+}
 ```
 
 Scan options default to `24..`; `RawMftRecordRange::default()` represents `0..`.
@@ -33,6 +39,17 @@ The range builder accepts standard `u64` Rust ranges. Serial scans and rich
 parallel planning/execution share `RawMftScanOptions`. Lean scans use
 `RawMftLeanScanOptions`; `options.into_lean()` retains selection, buffers, and
 DOS-link policy while discarding rich-only metadata settings.
+
+| Setting | Default |
+| --- | --- |
+| Record range | `24..` |
+| Bitmap-unused records | Excluded; unknown allocation remains eligible |
+| ADS collection | Enabled for rich entries; unavailable for lean entries |
+| Shadowed DOS 8.3 name links | Retained |
+| Main read buffer | 256 KiB per reader |
+| Attribute read buffer | 16 KiB per reader |
+| Parallel workers | `thread::available_parallelism()`, capped by nonempty chunk count |
+| Parallel scheduling | `Dynamic` |
 
 `RawMftChunkPlanOptions` controls partition size, defaulting to 16,384 records
 per chunk. Both `plan_chunks` and `plan_chunks_with_options` return
@@ -77,6 +94,22 @@ use `try_*` methods and match `ScanError::Scanner(MftError)` or
 `ScanError::Consumer(E)`. The consumer error must be `Send`. Already-running
 worker callbacks may finish after another fails; completed side effects are
 not rolled back.
+
+### Cached enrichment
+
+`raw.parallel().lean().try_fold_records_cached_enrich(init, fold, visit)`
+captures extension records during scanning and enriches deferred base records
+in a second phase. It always uses dynamic scheduling, ignoring `.scheduling(...)`.
+It creates an accumulator per worker and one for the second phase, rather than
+one per chunk. The calling thread visits worker accumulators in worker creation
+order, followed by the second-phase accumulator after both phases succeed;
+record and chunk order are not preserved.
+
+The second-phase `fold` runs on the calling thread. Accumulators can be empty,
+and callbacks should support merging independent partial results. Missing
+dependencies can be read outside the selected chunks without adding output
+records. Captured extensions and deferred records require additional memory.
+Callback errors retain `ScanError::Consumer`; enrichment remains best effort.
 
 ## Metadata and errors
 
