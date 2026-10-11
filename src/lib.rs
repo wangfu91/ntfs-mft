@@ -48,8 +48,8 @@
 //!
 //! Raw volume access requires suitable OS privileges. For an extracted `$MFT`,
 //! use [`MftStream::from_path`] with [`MftStreamOptions`], using ordinary file
-//! permissions. See the [API guide](https://github.com/wangfu91/ntfs-mft/blob/master/docs/api-guide.md)
-//! and [release notes](https://github.com/wangfu91/ntfs-mft/blob/master/CHANGELOG.md).
+//! permissions. See the [API guide](https://github.com/wangfu91/ntfs-mft/blob/main/docs/api-guide.md)
+//! and [release notes](https://github.com/wangfu91/ntfs-mft/blob/main/CHANGELOG.md).
 
 mod ntfs_name;
 pub use ntfs_name::NtfsName;

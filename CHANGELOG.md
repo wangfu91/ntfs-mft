@@ -7,6 +7,8 @@ Initial public release.
 - Read NTFS Master File Tables directly from volumes on Windows, Linux, and
   macOS using read-only I/O.
 - Scan live volumes serially or in parallel, including fragmented `$MFT` data.
+- Bound chunk plans and return planning errors through `MftResult`, including
+  from `plan_chunks_with_options`.
 - Parse extracted logical `$MFT` streams from files, byte buffers, and custom
   `Read + Seek` sources.
 - Expose record metadata including names, timestamps, sizes, file attributes,

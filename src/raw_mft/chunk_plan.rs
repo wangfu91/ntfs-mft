@@ -2,6 +2,31 @@
 
 use std::num::NonZeroU64;
 
+use crate::{MftError, MftResult};
+
+// Bound eager planning independently of the untrusted extent-map capacity.
+// This limits chunk descriptors, not entries or application-owned scan results.
+const MAX_CHUNK_PLAN_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CHUNK_PLAN_CHUNKS: usize = MAX_CHUNK_PLAN_BYTES / size_of::<RawMftWorkChunk>();
+
+fn checked_chunk_count(count: u64) -> MftResult<usize> {
+    if count > MAX_CHUNK_PLAN_CHUNKS as u64 {
+        return Err(MftError::InvalidOptions(
+            "chunk plan exceeds 64 MiB of descriptors; scan smaller record ranges",
+        ));
+    }
+    usize::try_from(count).map_err(|_| MftError::InvalidOptions("chunk count exceeds usize"))
+}
+
+pub(super) fn allocate_chunk_plan(count: u64) -> MftResult<Vec<RawMftWorkChunk>> {
+    let count = checked_chunk_count(count)?;
+    let mut chunks = Vec::new();
+    chunks
+        .try_reserve_exact(count)
+        .map_err(|error| MftError::Io(std::io::Error::other(error)))?;
+    Ok(chunks)
+}
+
 /// A deterministic logical record range for raw `$MFT` parsing work. [start_record, end_record)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RawMftWorkChunk {
@@ -83,16 +108,19 @@ pub(crate) fn build_work_chunks<F>(
     max_records_per_chunk: NonZeroU64,
     include_unused_records: bool,
     mut is_used: F,
-) -> Vec<RawMftWorkChunk>
+) -> MftResult<Vec<RawMftWorkChunk>>
 where
     F: FnMut(u64) -> bool,
 {
     if start_record >= end_record {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let max_records_per_chunk = max_records_per_chunk.get();
-    let mut chunks = Vec::new();
+    // Check all candidate bands before filtering or allocating. A forged range
+    // must not cause excessive planning work even when its bitmap is empty.
+    let count = (end_record - start_record).div_ceil(max_records_per_chunk);
+    let mut chunks = allocate_chunk_plan(count)?;
     let mut chunk_start = start_record;
     while chunk_start < end_record {
         let chunk_end = chunk_start
@@ -108,7 +136,7 @@ where
         chunk_start = chunk_end;
     }
 
-    chunks
+    Ok(chunks)
 }
 
 #[cfg(test)]
@@ -125,7 +153,8 @@ mod tests {
         let used = [false, true, true, false, true, true, true, false];
         let chunks = build_work_chunks(0, used.len() as u64, chunk_size, false, |n| {
             used[n as usize]
-        });
+        })
+        .expect("small plan");
         assert_eq!(
             chunks,
             vec![RawMftWorkChunk {
@@ -146,7 +175,8 @@ mod tests {
         ];
         let chunks = build_work_chunks(0, used.len() as u64, chunk_size, false, |n| {
             used[n as usize]
-        });
+        })
+        .expect("small plan");
         assert_eq!(
             chunks,
             vec![
@@ -168,7 +198,7 @@ mod tests {
         let Some(chunk_size) = NonZeroU64::new(3) else {
             return Err("chunk size must be non-zero".into());
         };
-        let chunks = build_work_chunks(10, 18, chunk_size, false, |_| true);
+        let chunks = build_work_chunks(10, 18, chunk_size, false, |_| true).expect("small plan");
         assert_eq!(
             chunks,
             vec![
@@ -197,7 +227,8 @@ mod tests {
         let used = [true, false, true, false, true, false, true, false];
         let chunks = build_work_chunks(0, used.len() as u64, chunk_size, false, |n| {
             used[n as usize]
-        });
+        })
+        .expect("small plan");
         assert_eq!(
             chunks,
             vec![
@@ -217,16 +248,24 @@ mod tests {
     #[test]
     fn empty_range_produces_no_chunks() {
         let chunk_size = NonZeroU64::new(8).expect("non-zero");
-        assert!(build_work_chunks(5, 5, chunk_size, true, |_| true).is_empty());
+        assert!(
+            build_work_chunks(5, 5, chunk_size, true, |_| true)
+                .expect("empty plan")
+                .is_empty()
+        );
         // A start beyond the end must also produce nothing (no underflow).
-        assert!(build_work_chunks(10, 5, chunk_size, true, |_| true).is_empty());
+        assert!(
+            build_work_chunks(10, 5, chunk_size, true, |_| true)
+                .expect("empty plan")
+                .is_empty()
+        );
     }
 
     #[test]
     fn include_unused_keeps_fully_unused_bands() {
         let chunk_size = NonZeroU64::new(4).expect("non-zero");
         // Every record unused, but include_unused_records = true keeps all bands.
-        let chunks = build_work_chunks(0, 12, chunk_size, true, |_| false);
+        let chunks = build_work_chunks(0, 12, chunk_size, true, |_| false).expect("small plan");
         assert_eq!(
             chunks,
             vec![
@@ -249,7 +288,7 @@ mod tests {
     #[test]
     fn range_smaller_than_chunk_yields_single_chunk() {
         let chunk_size = NonZeroU64::new(64).expect("non-zero");
-        let chunks = build_work_chunks(3, 9, chunk_size, true, |_| true);
+        let chunks = build_work_chunks(3, 9, chunk_size, true, |_| true).expect("small plan");
         assert_eq!(
             chunks,
             vec![RawMftWorkChunk {
@@ -291,6 +330,56 @@ mod tests {
                 .max_records_per_chunk()
                 .get(),
             16384
+        );
+    }
+
+    #[test]
+    fn oversized_plan_is_rejected_before_bitmap_filtering() {
+        let end = super::MAX_CHUNK_PLAN_CHUNKS as u64 + 1;
+        let error = build_work_chunks(0, end, NonZeroU64::MIN, false, |_| {
+            panic!("oversized plan must fail before reading allocation evidence")
+        })
+        .expect_err("oversized plan");
+        assert!(matches!(error, crate::MftError::InvalidOptions(_)));
+        assert!(matches!(
+            build_work_chunks(0, u64::MAX, NonZeroU64::MIN, true, |_| false),
+            Err(crate::MftError::InvalidOptions(_))
+        ));
+    }
+
+    #[test]
+    fn plan_limit_is_inclusive_without_allocating_the_boundary_plan() {
+        let limit = super::MAX_CHUNK_PLAN_CHUNKS as u64;
+        assert_eq!(
+            super::checked_chunk_count(limit).expect("inclusive limit"),
+            limit as usize
+        );
+        assert!(super::checked_chunk_count(limit + 1).is_err());
+        assert!(super::checked_chunk_count(u64::MAX).is_err());
+    }
+
+    #[test]
+    fn plan_near_u64_limit_has_exact_final_boundary() {
+        let chunks = build_work_chunks(
+            u64::MAX - 5,
+            u64::MAX,
+            NonZeroU64::new(3).expect("nonzero"),
+            true,
+            |_| false,
+        )
+        .expect("two chunks");
+        assert_eq!(
+            chunks,
+            vec![
+                RawMftWorkChunk {
+                    start_record: u64::MAX - 5,
+                    end_record: u64::MAX - 2
+                },
+                RawMftWorkChunk {
+                    start_record: u64::MAX - 2,
+                    end_record: u64::MAX
+                },
+            ]
         );
     }
 }

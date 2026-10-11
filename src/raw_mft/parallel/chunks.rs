@@ -3,6 +3,7 @@
 use std::num::NonZeroUsize;
 
 use crate::{
+    MftResult,
     errors::MftError,
     raw_mft::{
         RawMft,
@@ -20,8 +21,12 @@ use super::executor;
 
 impl<'a> RawMft<'a> {
     /// Build deterministic logical work chunks for raw `$MFT` parsing.
-    #[must_use]
-    pub fn plan_chunks(&self) -> Vec<RawMftWorkChunk> {
+    ///
+    /// # Errors
+    /// Returns [`MftError::InvalidOptions`] when the candidate plan exceeds
+    /// 64 MiB of chunk descriptors, or [`MftError::Io`] if allocation fails.
+    /// Select smaller record ranges with [`Self::plan_chunks_with_options`].
+    pub fn plan_chunks(&self) -> MftResult<Vec<RawMftWorkChunk>> {
         self.plan_chunks_with_options(
             RawMftChunkPlanOptions::default(),
             &RawMftScanOptions::default(),
@@ -32,12 +37,17 @@ impl<'a> RawMft<'a> {
     ///
     /// Pass the same scan options to execution. A precomputed plan cannot recover
     /// ranges or unused bands omitted by the options used to create it.
-    #[must_use]
+    ///
+    /// # Errors
+    /// Returns [`MftError::InvalidOptions`] if the selected range would require
+    /// more than 4,194,304 candidate chunks (64 MiB), before bitmap filtering.
+    /// Scan smaller record ranges to stay within this bound. Allocation failures
+    /// return [`MftError::Io`]. This is not a limit on total scan-result memory.
     pub fn plan_chunks_with_options(
         &self,
         options: RawMftChunkPlanOptions,
         scan_options: &RawMftScanOptions,
-    ) -> Vec<RawMftWorkChunk> {
+    ) -> MftResult<Vec<RawMftWorkChunk>> {
         let range = scan_options.range();
         let end_record = range
             .end_record()
@@ -107,7 +117,8 @@ impl<'a> RawMft<'a> {
         reader: &mut VolumeReader,
         attr_reader: &mut VolumeReader,
     ) -> Result<Vec<RawMftLeanEntry>, MftError> {
-        let mut entries = Vec::with_capacity(chunk.record_len().min(usize::MAX as u64) as usize);
+        // Grow with parsed entries, never with an untrusted logical range size.
+        let mut entries = Vec::new();
         self.for_each_batch_entry_in_range_with_readers(
             chunk.start_record,
             chunk.end_record,

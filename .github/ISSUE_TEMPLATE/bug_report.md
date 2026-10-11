@@ -22,7 +22,7 @@ Provide minimal code or commands and a synthetic input, if needed.
 
 - Crate version or commit:
 - OS, architecture, and Rust version:
-- Enabled features and scan options:
+- API and scan options:
 - Offline fixture or live volume (filesystem type and privilege context):
 
 ## Evidence

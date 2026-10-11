@@ -26,9 +26,9 @@ Offline files and images need only ordinary read permission.
 Build as the ordinary user, then run in a context allowed to read the device:
 
 ```sh
-cargo build --example raw_mft_serial_read
+cargo build --locked --example raw_mft_serial_read
 sudo ./target/debug/examples/raw_mft_serial_read /Volumes/Windows
-cargo test --test macos_raw_mft --no-run
+cargo test --locked --test macos_raw_mft --no-run
 ```
 
 The device test is ignored by default. Use the exact executable filename printed by Cargo:
@@ -39,9 +39,9 @@ sudo env NTFS_MFT_TEST_VOLUME=/Volumes/Windows ./target/debug/deps/macos_raw_mft
 
 Repeat with `NTFS_MFT_TEST_VOLUME=/dev/diskNsM` for direct-device access. The test checks
 serial scans, both parallel schedulers, root-record lookup, independent cursors,
-and stream ownership. It skips without a selected source and fails on errors
-when one is supplied. Use a stable volume: live scans are not atomic snapshots.
-No mount, unmount, write, repair, or permission change is performed.
+and stream ownership. Use a stable volume: live scans are not atomic snapshots.
+See [live-test requirements](../CONTRIBUTING.md#live-device-tests). The library
+does not mount, unmount, write, repair, or change permissions.
 
 See Apple's [statfs contract](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/statfs.2.html)
 and [mounted-device check in spec_open](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/miscfs/specfs/spec_vnops.c).

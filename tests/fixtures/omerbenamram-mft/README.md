@@ -26,6 +26,19 @@ expected to parse, including unused and extension records.
 The fixture and its license are included in Cargo packages so packaged-source
 tests remain self-contained.
 
+## Privacy
+
+This upstream sample is not documented as synthetic or anonymized.
+It includes profile paths, browser-cache metadata, deleted-record data, and
+confidential-looking filenames. Upstream licensing does not establish privacy
+consent or additional rights to embedded third-party contents. An MFT can also
+contain complete resident file contents and record slack.
+
+The pinned bytes are retained unchanged for reproducible parser comparisons.
+Treat extracted names and contents as potentially sensitive; avoid reproducing
+them in public examples or reports. New regression fixtures should use minimal
+synthetic data, following [the fixture requirements](../../../CONTRIBUTING.md#fixture-privacy-and-provenance).
+
 ## Git LFS
 
 Run `git lfs install` and `git lfs pull` after cloning. Building and packaging

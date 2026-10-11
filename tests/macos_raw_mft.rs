@@ -37,7 +37,7 @@ fn macos_volume_serial_parallel_and_owned_byte_stream() -> MftResult<()> {
             .max_records_per_chunk(NonZeroU64::new(16).unwrap())
             .build(),
         &options,
-    );
+    )?;
     assert!(
         chunks.len() > 1,
         "test must exercise multiple worker chunks"

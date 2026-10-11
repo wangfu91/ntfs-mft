@@ -24,6 +24,18 @@ use windows::core::Owned;
 /// Returns the underlying Win32 error if opening the process token or reading
 /// its elevation state fails.
 pub fn is_elevated() -> windows::core::Result<bool> {
+    is_elevated_with(open_process_token, token_is_elevated)
+}
+
+fn is_elevated_with<Token>(
+    open_token: impl FnOnce() -> windows::core::Result<Token>,
+    query_elevation: impl FnOnce(&Token) -> windows::core::Result<bool>,
+) -> windows::core::Result<bool> {
+    let token = open_token()?;
+    query_elevation(&token)
+}
+
+fn open_process_token() -> windows::core::Result<Owned<HANDLE>> {
     let mut handle: HANDLE = HANDLE::default();
     // SAFETY: `GetCurrentProcess` returns a pseudo-handle with the
     // necessary access; `&mut handle` is a valid out-pointer. The Win32
@@ -32,18 +44,20 @@ pub fn is_elevated() -> windows::core::Result<bool> {
     unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut handle)? };
     // SAFETY: `handle` was initialised by the successful `OpenProcessToken`
     // call above and ownership has not been transferred elsewhere.
-    let handle = unsafe { Owned::new(handle) };
+    Ok(unsafe { Owned::new(handle) })
+}
 
+fn token_is_elevated(handle: &Owned<HANDLE>) -> windows::core::Result<bool> {
     let mut elevation = TOKEN_ELEVATION::default();
     let mut returned_length = 0;
 
-    // SAFETY: `*handle` is a live token handle owned by the local
+    // SAFETY: `**handle` is a live token handle borrowed from the
     // `Owned` wrapper; `&mut elevation` and `&mut returned_length` are
     // valid out-pointers, and the buffer length matches the size of
     // `TOKEN_ELEVATION` exactly.
     unsafe {
         GetTokenInformation(
-            *handle,
+            **handle,
             TokenElevation,
             Some(&mut elevation as *mut _ as *mut _),
             size_of::<TOKEN_ELEVATION>() as u32,
@@ -56,75 +70,65 @@ pub fn is_elevated() -> windows::core::Result<bool> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
+    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_INVALID_HANDLE};
+
     use super::*;
-    use injectorpp::interface::injector::*;
 
-    // Mocked tests for error scenarios
-    mod mocked_privilege_tests {
-        use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_INVALID_HANDLE};
+    struct MockToken<'a>(&'a Cell<usize>);
 
-        use super::*;
-
-        #[test]
-        fn test_open_process_token_failure() {
-            let mut injector = InjectorPP::new();
-
-            // Mock OpenProcessToken to return an error
-            injector
-                .when_called(injectorpp::func!(
-                    unsafe{} fn (OpenProcessToken)(
-                        HANDLE,
-                        windows::Win32::Security::TOKEN_ACCESS_MASK,
-                        *mut HANDLE
-                    ) -> windows::core::Result<()>
-                ))
-                .will_execute(injectorpp::fake!(
-                    func_type: unsafe fn(
-                        _process: HANDLE,
-                        _access: windows::Win32::Security::TOKEN_ACCESS_MASK,
-                        _token: *mut HANDLE
-                    ) -> windows::core::Result<()>,
-                    returns: Err(windows::core::Error::from(ERROR_ACCESS_DENIED))
-                ));
-
-            let result = is_elevated();
-            assert!(result.is_err());
-            if let Err(err) = result {
-                assert_eq!(err.code(), ERROR_ACCESS_DENIED.into());
-            }
+    impl Drop for MockToken<'_> {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
         }
+    }
 
-        #[test]
-        fn test_get_token_information_failure() {
-            let mut injector = InjectorPP::new();
+    #[test]
+    fn test_open_process_token_failure() {
+        let queried = Cell::new(false);
+        let result = is_elevated_with(
+            || Err::<MockToken<'_>, _>(windows::core::Error::from(ERROR_ACCESS_DENIED)),
+            |_| {
+                queried.set(true);
+                Ok(false)
+            },
+        );
 
-            // Mock GetTokenInformation to return an error
-            injector
-                .when_called(injectorpp::func!(
-                    unsafe{} fn (GetTokenInformation)(
-                        HANDLE,
-                        windows::Win32::Security::TOKEN_INFORMATION_CLASS,
-                        Option<*mut std::ffi::c_void>,
-                        u32,
-                        *mut u32
-                    ) -> windows::core::Result<()>
-                ))
-                .will_execute(injectorpp::fake!(
-                    func_type: unsafe fn(
-                        _token: HANDLE,
-                        _class: windows::Win32::Security::TOKEN_INFORMATION_CLASS,
-                        _info: Option<*mut std::ffi::c_void>,
-                        _length: u32,
-                        _return_length: *mut u32
-                    ) -> windows::core::Result<()>,
-                    returns: Err(windows::core::Error::from(ERROR_INVALID_HANDLE))
-                ));
+        assert!(matches!(result, Err(error) if error.code() == ERROR_ACCESS_DENIED.into()));
+        assert!(!queried.get());
+    }
 
-            let result = is_elevated();
-            assert!(result.is_err());
-            if let Err(err) = result {
-                assert_eq!(err.code(), ERROR_INVALID_HANDLE.into());
-            }
+    #[test]
+    fn test_get_token_information_failure_closes_token() {
+        let drops = Cell::new(0);
+        let result = is_elevated_with(
+            || Ok(MockToken(&drops)),
+            |token| {
+                assert_eq!(token.0.get(), 0);
+                Err(windows::core::Error::from(ERROR_INVALID_HANDLE))
+            },
+        );
+
+        assert!(matches!(result, Err(error) if error.code() == ERROR_INVALID_HANDLE.into()));
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn test_get_token_information_success_closes_token() -> windows::core::Result<()> {
+        for elevated in [false, true] {
+            let drops = Cell::new(0);
+            let result = is_elevated_with(
+                || Ok(MockToken(&drops)),
+                |token| {
+                    assert_eq!(token.0.get(), 0);
+                    Ok(elevated)
+                },
+            )?;
+
+            assert_eq!(result, elevated);
+            assert_eq!(drops.get(), 1);
         }
+        Ok(())
     }
 }

@@ -63,7 +63,7 @@ fn sparse_fixture_serial_matches_both_parallel_schedulers() -> Result<(), Box<dy
             .max_records_per_chunk(NonZeroU64::new(16).unwrap())
             .build(),
         &options,
-    );
+    )?;
     assert!(chunks.len() > 1);
     for scheduling in [
         RawMftParallelScheduling::Dynamic,

@@ -68,7 +68,8 @@ fn raw_mft_ingest_benchmarks(c: &mut Criterion) {
             return;
         }
     };
-    let shape = workload_shape(&mft, &config);
+    let shape = workload_shape(&mft, &config)
+        .unwrap_or_else(|error| fail(format!("chunk planning failed: {error}")));
     eprintln!(
         "raw_mft_ingest workload: record_count={} planned_chunks={} file_record_size={} cluster_size={}",
         shape.record_count, shape.planned_chunks, shape.file_record_size, shape.cluster_size,

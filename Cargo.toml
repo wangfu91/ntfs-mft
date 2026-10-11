@@ -25,7 +25,6 @@ resolver = "3"
 [workspace.dependencies]
 bitflags = "2.13.2"
 criterion = "0.8.2"
-injectorpp = "0.5.1"
 libc = "0.2.189"
 log = "0.4.34"
 mft = { git = "https://github.com/omerbenamram/mft", rev = "dc36db7d3b83d68c0eecb75225c9955cfd7b2f2d", default-features = false }
@@ -121,9 +120,6 @@ harness = false
 [[bench]]
 name = "mft_stream"
 harness = false
-
-[target.'cfg(windows)'.dev-dependencies]
-injectorpp.workspace = true
 
 [profile.test]
 opt-level = 0

@@ -41,7 +41,7 @@ these low-level comparisons. The corpus contains 13,068 FILE records, 13,064 SI,
 18,506 FN, and 12,089 DATA attributes, plus 20 zero slots. Counts guard coverage;
 `src/raw_mft/tests/fixture.rs` supplies independent expected metadata.
 
-## Investigated differences
+## Known parser differences
 
 * **Timestamp precision:** upstream `src/utils.rs::windows_filetime_to_timestamp`
   explicitly divides ticks by 10 before converting to microseconds. Only that
@@ -88,8 +88,8 @@ selection policy and platform string conversion remain implementation-specific.
 
 These comparisons do not validate bootstrapping, real-device I/O, live consistency,
 external payloads, runlist discovery, cross-record enrichment, paths, or volume
-scan scheduling. They are neither fuzzing nor performance evidence. See the
-[live stream test](../docs/mft-stream-validation.md) for separate device coverage.
+scan scheduling. They are neither fuzzing nor performance evidence. See
+[live-device testing](../CONTRIBUTING.md#live-device-tests) for separate coverage.
 
 ## Semantics references
 

@@ -353,28 +353,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "injectorpp"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4246d63520cabe3a0e87ba93966ead97dbd956707a202b1d52e889b372e16f9"
-dependencies = [
- "injectorpp-macros",
- "libc",
- "mach2",
-]
-
-[[package]]
-name = "injectorpp-macros"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad25aed265c78382383711aa69555dfdf8b15ca0b7933aa6624d07cc21033baf"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -468,15 +446,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mach2"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a1b95cd5421ec55b445b5ae102f5ea0e768de1f82bd3001e11f426c269c3aea"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -510,7 +479,6 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.13.2",
  "criterion",
- "injectorpp",
  "libc",
  "log",
  "rustc-hash",
@@ -525,7 +493,6 @@ name = "ntfs-mft-differential-tests"
 version = "0.0.0"
 dependencies = [
  "bitflags 2.13.2",
- "injectorpp",
  "libc",
  "log",
  "mft",

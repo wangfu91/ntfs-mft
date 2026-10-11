@@ -1,38 +1,19 @@
 # Choosing an MFT API
 
-Use a live volume scan for a best-effort base-record listing from a volume. Use
-`MftStream` when each logical record position, including invalid or extension
-records, needs an explicit outcome or metadata evidence.
+Use `RawMft` for a best-effort base-record listing from an NTFS volume.
+Use `MftStream` for per-slot outcomes and metadata evidence from an extracted
+logical MFT or a volume. Device access is read-only; live reads are not snapshots.
 
-A **live volume scan** reads directly from an NTFS volume/device. An **offline
-MFT scan** parses an extracted logical `$MFT` file or buffer. `read` denotes a
-single-record or byte operation, `scan` denotes traversal, and `parse` denotes
-record interpretation. `RawMft` and `MftStream` name the data access abstractions;
-`MftStream` can parse either source, so using it does not imply offline input.
+| API | Output | Selection and errors |
+| --- | --- | --- |
+| `raw.scan_entries()` | `RawMftEntry` | Starts at record 24; excludes bitmap-unused slots and extensions; skips malformed records; scan I/O errors end iteration |
+| `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults; scanner/callback errors end the operation |
+| `raw.parallel().lean()` | Batches of `RawMftLeanEntry` | Same raw defaults with reduced metadata |
+| `stream.iter_records()` | `MftResult<MftRecord>` per slot | Starts at zero, includes unused and extension records; parse errors are recoverable, I/O errors terminal |
 
-| Entry point | Result | Default selection | Error behavior |
-| --- | --- | --- | --- |
-| `raw.scan_entries()` | `RawMftEntry` | Records `24..`, excludes bitmap-unused slots, skips extensions | Invalid records skipped; scan I/O errors returned |
-| `raw.parallel().rich()` | Batches of `RawMftEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
-| `raw.parallel().lean()` | Batches of `RawMftLeanEntry` | Same raw defaults | Same tolerant parsing; scanner/callback errors end the operation |
-| `stream.iter_records()` | `MftRecord` per valid record position | All record positions from zero, including unused and extensions | Parse errors returned per position and iteration continues; I/O error stops iteration |
+## Selection and planning
 
-MftStream extension I/O failures are attached to the base record's diagnostics;
-the iterator yields that partial record, then a terminal `MftError::ExtensionRead`,
-then stops. Standard `Result` collection therefore reports incomplete scans as
-errors. Ordinary live volume scans use the bitmap for selection;
-`bitmap_usage(number)` returns `None` for unavailable
-evidence or out-of-range slots. Unknown allocation is scanned conservatively;
-inspect each entry's `is_used`. Serial scan I/O errors are terminal.
-A successful raw scan does not prove complete metadata. Live volumes are not
-atomic snapshots.
-
-Nonresident metadata materialization (`$MFT::$BITMAP` and `$ATTRIBUTE_LIST`)
-is limited to 64 MiB per payload. Oversized payloads return an error during
-bootstrap; best-effort entry enrichment leaves the affected metadata unknown.
-Run coverage and offset arithmetic are checked before allocation or I/O.
-
-## Selection and metadata are separate choices
+Selection and metadata collection are separate options:
 
 ```rust
 use ntfs_mft::{RawMftEntryOptions, RawMftScanOptions};
@@ -47,20 +28,35 @@ let options = RawMftScanOptions::builder()
     .build();
 ```
 
-Live volume scan options default to `24..`; standalone `RawMftRecordRange::default()`
-represents `0..`. All standard `u64` Rust ranges are accepted by `.range()`.
-The same rich options govern serial scanning and both planning and execution
-of rich parallel scans. `RawMftChunkPlanOptions` controls partition size only.
-Explicit chunks are clipped to selection and volume bounds; overlapping chunks
-are rejected. Results are delivered in supplied chunk order.
+Scan options default to `24..`; `RawMftRecordRange::default()` represents `0..`.
+The range builder accepts standard `u64` Rust ranges. Serial scans and rich
+parallel planning/execution share `RawMftScanOptions`. Lean scans use
+`RawMftLeanScanOptions`; `options.into_lean()` retains selection, buffers, and
+DOS-link policy while discarding rich-only metadata settings.
 
-Rich entries include timestamps, attributes, and ADS, subject to
-`collection_options`. `entry.metadata()` reports observed fields conservatively,
-without another parse or diagnostic allocations: unobserved fields stay unknown.
-Lean entries keep names, references, sizes, links, and basic flags; their options
-expose no ADS toggle.
-`options.into_lean()` explicitly retains selection/buffers/DOS-link policy and
-discards the rich-only metadata choices.
+`RawMftChunkPlanOptions` controls partition size, defaulting to 16,384 records
+per chunk. Both `plan_chunks` and `plan_chunks_with_options` return
+`MftResult<Vec<RawMftWorkChunk>>`. Automatic planning limits plans to 4,194,304
+candidate chunks before bitmap filtering (64 MiB of descriptors); explicit
+plans apply the limit to nonempty intersections after clipping.
+Exceeding it returns `MftError::InvalidOptions`; allocation failure returns
+`MftError::Io`. Use smaller selected ranges for larger scans. This cap does not
+bound worker buffers, entry batches, caches, or collected output.
+
+Explicit `.chunks(...)` are clipped to selection and volume bounds. Empty
+intersections are dropped, overlaps rejected, and supplied order retained.
+Batch and fold-initializer ranges are the clipped ranges. Unused-record
+filtering still follows scan options; omitted chunks are not recreated.
+Calling `.chunk_plan(...)` switches back to automatic planning, and builder
+order does not change selection. For manual planning, pass the same scan
+options to `plan_chunks_with_options` and execution.
+
+`bitmap_usage(number)` returns `None` for unavailable or out-of-range evidence.
+Unknown allocation is scanned conservatively; `entry.is_used` is the FILE-header state.
+
+## Parallel callbacks
+
+Choose `.rich()` or `.lean()` before configuring and executing a parallel scan:
 
 ```rust,no_run
 use ntfs_mft::{MftResult, RawMft, RawMftScanOptions};
@@ -75,45 +71,55 @@ fn visit(raw: &RawMft<'_>) -> MftResult<()> {
 }
 ```
 
-There is deliberately no terminal scan operation on `raw.parallel()` until the
-caller chooses `.rich()` or `.lean()`. For application-specific callback errors,
-use the `try_*` terminal methods and match `ScanError::Scanner` or
-`ScanError::Consumer`. Worker callbacks already in progress may finish after
-another callback fails; completed side effects are not rolled back.
+Batch visitors run on the calling thread in chunk order. Map/fold callbacks run
+on workers; a single worker executes chunks serially. For fallible callbacks,
+use `try_*` methods and match `ScanError::Scanner(MftError)` or
+`ScanError::Consumer(E)`. The consumer error must be `Send`. Already-running
+worker callbacks may finish after another fails; completed side effects are
+not rolled back.
 
-## Preserve evidence, names, and identity
+## Metadata and errors
 
-Use `MftRecord.metadata` to distinguish absent, present, and unknown fields, and
-retain its diagnostics when completeness matters. Raw attribute-list enrichment
-remains selective; use `MftStream` inspection for its supported
-extension-validation evidence.
-`MftStreamOptions::new(size)` defaults to no extension resolution; enable
-`.resolve_extensions(true)` for one level of resident attribute-list references.
-An MFT-only source cannot recover arbitrary nonresident attribute payloads.
+Rich entries include timestamps, attributes, and ADS subject to collection
+options. Lean entries retain names, references, sizes, links, and basic flags;
+they have no ADS toggle. Raw scans skip sparse and non-FILE slots; enrichment
+failures are not returned to callers.
+A successful scan or `entry.metadata()` does not establish complete metadata:
+unobserved fields remain unknown.
 
-`NtfsName` retains exact UTF-16 for selected names, links, and ADS on every host.
-Use `as_utf16()` for identity/export, `try_to_string()` for checked Unicode,
-and `to_string_lossy()` or `Display` for readable text. `to_os_string()` is
-lossless on Windows; Unix native paths replace unpaired surrogates.
+`MftRecord` carries metadata states, diagnostics, and unavailable external
+payloads. Preserve them alongside `entry` when completeness matters.
+`MftStreamOptions::new(size)` disables extension resolution by default;
+`.resolve_extensions(true)` follows one level of resident attribute-list references.
+The [stream contract](offline-mft.md) explains partial results, terminal extension
+I/O errors, and unavailable payloads.
+
+Nonresident bitmap and attribute-list materialization is limited to 64 MiB per
+payload. Oversized bootstrap payloads return an error; best-effort enrichment
+leaves affected metadata unknown. Run coverage and offset arithmetic are checked
+before allocation or I/O.
+
+## Names and references
+
+`NtfsName` retains exact UTF-16 across hosts. Use `as_utf16()` for identity/export,
+`try_to_string()` for checked Unicode, and `to_string_lossy()` or `Display` for
+readable text. `to_os_string()` is lossless on Windows; Unix native paths replace
+unpaired surrogates.
 
 `NtfsFileReference::try_from_parts(record, sequence)` rejects record-number
-overflow. Its record and sequence accessors return values directly.
-`base_reference()` returns `Option<NtfsFileReference>`, preserving the identity of an
-extension record's base, including record zero. A record number alone
-is not durable identity because deleted slots can be reused.
+overflow. `base_reference()` is `None` for base records and `Some(full_reference)`
+for extensions, including a base at record zero. Match record and sequence
+numbers together: deleted slots can be reused.
 
-Full-path reconstruction belongs to the caller. Build your application's tree
-from the returned names, namespaces, file references, parent references, and
-hard-link metadata. Include root record 5 and required ancestors when scanning
-for a complete tree; default live scans start at record 24. Match full references,
-including sequence numbers, and handle missing parents and concurrent changes.
+Path reconstruction belongs to consumers. Include root record 5 and required
+ancestors for a complete tree; default scans start at record 24. Handle missing
+parents, reused slots, multiple hard links, and concurrent changes.
 
-## Parsing a logical stream
+## Logical streams
 
-`MftStream::from_path(path, options)` and `from_reader(reader, options)` require
-an explicit `usize` record size. If you already have a `RawMft`, use
-`MftStream::from_raw_mft(&raw)` to infer geometry and open an independent handle.
-The resulting stream can outlive `raw` and its volume. For custom options, use
+`MftStream::from_path` and `from_reader` require an explicit record size.
+`MftStream::from_raw_mft(&raw)` infers geometry and opens an independent handle,
+so the stream can outlive the raw MFT and its volume. For custom options, use
 `from_reader(raw.byte_reader()?, options)` with `raw.file_record_size()`.
-
-See [raw scan details](raw-mft-read.md) and [MFT stream parsing](offline-mft.md) for their full contracts.
+See the [stream guide](offline-mft.md) for input requirements, byte-reader
+behavior, metadata states, and extension handling.
