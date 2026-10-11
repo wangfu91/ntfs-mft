@@ -11,8 +11,8 @@ unnamed `$MFT::$DATA` runlist, builds an `ExtentMap`, and loads the MFT allocati
 bitmap when available. Sector, cluster, and record sizes come from boot geometry;
 1 KiB records are common but not required. ReFS is rejected.
 
-The read path is boot sector → MFT runlist → extent map → FILE record → USA
-fixup → attributes. Extent lookup maps logical record numbers across fragmented
+The read path is boot sector -> MFT runlist -> extent map -> FILE record -> USA
+fixup -> attributes. Extent lookup maps logical record numbers across fragmented
 storage and sparse holes, checks complete record coverage, and caches the
 segment index. Chunk boundaries are logical ranges, independent of physical extents.
 
@@ -23,9 +23,13 @@ records spanning extents use a reusable scratch buffer. A separate reader serves
 random attribute lookups without disturbing sequential read-ahead.
 
 `Volume` retains its source for reopening. Linux resolves mounts through
-`/proc/self/mountinfo`; macOS uses `statfs`. Workers and owned byte streams reopen
-independent read-only handles. Platform requirements are documented for
-[Windows](windows-raw-volume-access.md) and [macOS](macos-raw-volume-access.md).
+`/proc/self/mountinfo`; macOS uses `statfs`. Ordinary parallel workers and owned
+byte streams reopen independent read-only sources. Windows cached-enrichment
+workers instead own duplicated handles to the scan's existing kernel file
+object, using explicit offsets and separate completion events; Linux/macOS
+cached workers reopen the source. Platform requirements are documented for
+[Windows](windows-raw-volume-access.md), [Linux](linux-raw-volume-access.md),
+and [macOS](macos-raw-volume-access.md).
 
 ## Record parsing and enrichment
 
@@ -76,14 +80,19 @@ and parsing. One worker uses serial chunk processing.
 - `Dynamic` workers claim the next chunk through a shared atomic index.
 - `Contiguous` workers receive fixed bands of chunk indices.
 
-Workers can finish out of order. The coordinator buffers completed results
-and visits them in supplied chunk order. Scanner errors, unexpected channel
-closure, and worker panics fail the operation.
+For ordinary chunk operations, workers can finish out of order. The coordinator
+buffers completed results and visits them in supplied chunk order. Scanner
+errors, unexpected channel closure, and worker panics fail the operation.
 
-Mapping transforms each batch on its worker. Folding builds an accumulator per
-chunk without an intermediate entry vector. Lean cached enrichment uses captured
-extension records and reads missing dependencies from the volume, including
-outside selected ranges. Dependency reads do not add output records.
+Mapping transforms each batch on its worker. Ordinary folding builds an
+accumulator per chunk without an intermediate entry vector. Lean cached
+enrichment always uses dynamic scheduling, builds one accumulator per worker,
+and then enriches deferred records into a second-phase accumulator on the
+calling thread. It visits the worker accumulators followed by the second-phase
+result, without preserving record or chunk order. It uses captured extension
+records and reads missing dependencies from the volume, including outside
+selected ranges. Dependency reads do not add output records. See the
+[cached-enrichment contract](api-guide.md#cached-enrichment) for callback behavior.
 
 The [sparse fixture](../tests/fixtures/sparse-volume-fixture/README.md) exercises
 bootstrap, fragmented bitmap loading, byte streams, and serial/parallel agreement.

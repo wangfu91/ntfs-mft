@@ -45,6 +45,36 @@ remain allowed.
 successful collection still requires checking metadata and diagnostics for
 recoverable limitations.
 
+To retain partial records while continuing past corrupt slots, handle each result:
+
+```rust,no_run
+use ntfs_mft::{MftRecord, MftResult, MftStream, MftStreamOptions};
+
+fn inspect(path: &str, record_size: usize) -> MftResult<Vec<MftRecord>> {
+    let options = MftStreamOptions::new(record_size)?.resolve_extensions(true);
+    let mut stream = MftStream::from_path(path, options)?;
+    let mut records = Vec::new();
+    for result in stream.iter_records() {
+        match result {
+            Ok(record) => {
+                for diagnostic in &record.diagnostics {
+                    eprintln!("{diagnostic:?}");
+                }
+                // Retain metadata, diagnostics, and external payload evidence.
+                records.push(record);
+            }
+            Err(error) if error.is_parse_error() => eprintln!("{error}"),
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(records)
+}
+```
+
+This returns I/O failures, including the terminal `ExtensionRead`, rather than
+silently returning a successful partial collection. For large streams, process
+each owned `MftRecord` as it arrives instead of retaining the whole collection.
+
 ## Metadata and payloads
 
 Interpret zero, empty, and `None` fields in `MftRecord.entry` alongside

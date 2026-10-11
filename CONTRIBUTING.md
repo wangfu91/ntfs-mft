@@ -79,6 +79,8 @@ for launch restrictions.
 On Linux/macOS, set `NTFS_MFT_TEST_VOLUME` to an NTFS mount root or device.
 Build with `--no-run`, then execute the exact test binary with `--ignored --nocapture`
 in a context allowed to read the device. See [macOS access](docs/macos-raw-volume-access.md).
+The [Linux guide](docs/linux-raw-volume-access.md#permissions-and-testing) gives
+the Linux smoke-test commands and accepted source paths.
 
 ## Benchmarks and profiling
 
