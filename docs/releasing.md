@@ -15,14 +15,13 @@ Validate a reviewed commit before publishing.
 - Verify the private reporting email in [SECURITY.md](../SECURITY.md). After
   making the repository public, enable GitHub private vulnerability reporting if
   desired and check its reporting link.
-- Check crate-name availability and the intended publishing account. A name is
-  allocated on first publication, not reserved by a successful dry run. Verify
-  the account email and use an appropriately scoped publishing token or trusted
-  publishing configuration. Never put credentials in the repository or logs.
+- Verify the intended publishing account has permission to publish `ntfs-mft`.
+  Verify the account email and use an appropriately scoped publishing token
+  or trusted publishing configuration. Never put credentials in the repository or logs.
 - Confirm the version in `Cargo.toml` and `Cargo.lock`. At release time, date the
   matching `CHANGELOG.md` section and remove its `unreleased` marker. Use that
-  version for the tag and GitHub release too. Replace the README's prepublication
-  path-dependency instructions with the published crates.io dependency.
+  version for the tag and GitHub release too. Keep the README's crates.io
+  dependency instructions aligned with the release.
 
 ## Validate a clean checkout
 

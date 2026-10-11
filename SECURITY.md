@@ -17,9 +17,8 @@ necessary evidence privately first.
 
 Maintainers will coordinate investigation and disclosure with the reporter.
 Response times depend on maintainer availability; no response-time guarantee is
-made. Before the first release, report against the default branch. After
-publication, try to reproduce on the latest release as well; older versions do
-not have a separate maintenance commitment.
+made. Try to reproduce on the [latest published release](https://crates.io/crates/ntfs-mft)
+as well; older versions do not have a separate maintenance commitment.
 
 ## Scope and trust boundaries
 
