@@ -1,5 +1,10 @@
 # ntfs-mft
 
+[![crates.io](https://img.shields.io/crates/v/ntfs-mft.svg)](https://crates.io/crates/ntfs-mft)
+[![docs.rs](https://docs.rs/ntfs-mft/badge.svg)](https://docs.rs/ntfs-mft)
+[![CI](https://github.com/wangfu91/ntfs-mft/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/wangfu91/ntfs-mft/actions/workflows/rust.yml)
+[![License](https://img.shields.io/crates/l/ntfs-mft.svg)](https://github.com/wangfu91/ntfs-mft/blob/main/LICENSE)
+
 Read-only NTFS Master File Table parsing and scanning for Windows, Linux, and macOS.
 
 Read an NTFS volume or an extracted `$MFT` to inspect names, timestamps, sizes,
@@ -9,16 +14,15 @@ UTF-16, and file references retain record and sequence numbers.
 
 ## Installation
 
-Version 0.1.0 is being prepared for its first crates.io publication. Until then,
-clone this repository and use a path dependency:
+Install from [crates.io](https://crates.io/crates/ntfs-mft):
 
 ```toml
 [dependencies]
-ntfs-mft = { path = "../ntfs-mft" }
+ntfs-mft = "0.1"
 ```
 
-After publication, use `ntfs-mft = "0.1"`. Development and CI use the latest
-stable Rust; no minimum supported Rust version is declared.
+Development and CI use the latest stable Rust; no minimum supported Rust version
+is declared.
 
 ## Parse an extracted MFT
 
@@ -95,6 +99,7 @@ options, and error contracts.
 Tests and packaging require hydrated [Git LFS](https://git-lfs.com/) fixtures.
 Run `git lfs pull` after cloning; LFS pointer files are not usable fixtures.
 
+- [API reference](https://docs.rs/ntfs-mft) on docs.rs.
 - Examples: [serial preview](examples/raw_mft_serial_read.rs),
   [parallel chunks](examples/raw_mft_parallel_chunks.rs), and [unused records](examples/deletion_forensic.rs).
 - [Contributing](CONTRIBUTING.md): setup, validation, live-device tests, and benchmarks.
