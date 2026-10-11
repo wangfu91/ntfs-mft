@@ -113,11 +113,12 @@ cargo run --locked --profile bench --example mft_stream_allocations_profile
 ```
 
 Keep baseline and candidate executables built with the same harness, toolchain,
-profile and fixture. `tools/profiling/compare_mft_stream.ps1` alternates their
-run order and rejects mismatched result fingerprints. Use allocation counts
-separately from timings; cumulative requested bytes are not retained heap or
-working set. See the [performance audit](docs/audits/2026-09-21-performance.md)
-for reproduction commands and measured scope.
+profile and fixture. [The comparison script](tools/profiling/compare_mft_stream.ps1)
+alternates their run order and rejects mismatched result fingerprints. Pass the
+preserved executables with `-Baseline` and `-Candidate`; `-Rounds` and
+`-Iterations` control repetitions. Run timings without concurrent builds,
+benchmarks, or profiling. Use allocation counts separately from timings;
+cumulative requested bytes are not retained heap or working set.
 
 ## Fixture privacy and provenance
 
