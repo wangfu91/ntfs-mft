@@ -46,13 +46,16 @@ its documentation output. Packaging requires a clean checkout.
 | Root tests | Parser, metadata, synthetic I/O, fixtures, and public APIs |
 | [Differential harness](differential-tests/README.md) | Comparison with a pinned independent parser |
 | [Windows parity harness](integration-tests/README.md) | Portable decoders and opt-in Windows API comparisons |
-| Native CI | Build, tests, Clippy, rustdoc, and packaging on Windows, Linux, and macOS |
+| Native CI | Tests, workspace Clippy, and rustdoc on Windows, Linux, and macOS; formatting and package verification on Linux |
 | Live-device tests | The configured device, OS, permissions, and launch context |
 | Package and publish dry run | Archive construction and verification build; no upload or remote docs.rs build |
 
 Ordinary runs and CI ignore device tests. Record the revision, platform,
 commands, results, and limitations; keep fixture, CI, and live-device evidence
 separate. An older run does not establish current release readiness.
+
+CI runs on pull requests and pushes to `main`. Release tags reuse the same
+checks before publishing; see the [release checklist](docs/releasing.md).
 
 ### Live-device tests
 
